@@ -112,7 +112,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    sendEvent({ ...progress, statuses });
+    sendEvent({ ...progress, statuses, avgTimeMs: progress.avgTimeMs, estimatedRemainingMs: progress.estimatedRemainingMs });
 
     if (isJobDone(jobId)) {
       clearInterval(interval);

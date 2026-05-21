@@ -11,6 +11,8 @@ export interface ImageEntry {
   error?: string;
   prompt?: string; // the prompt text sent to the API for this image
   reasoningContent?: string; // reasoning_content from the API (some models)
+  processingStartedAt?: number; // timestamp when processing began
+  processingDurationMs?: number; // ms taken to complete (completed or failed)
 }
 
 export interface CaptionJob {
@@ -100,6 +102,16 @@ export function updateImageStatus(
   const entry = job.images.get(filename);
   if (!entry) return;
 
+  // Track processing start time
+  if (status === "processing" && !entry.processingStartedAt) {
+    entry.processingStartedAt = Date.now();
+  }
+
+  // Track processing duration when done
+  if ((status === "completed" || status === "failed") && entry.processingStartedAt) {
+    entry.processingDurationMs = Date.now() - entry.processingStartedAt;
+  }
+
   entry.status = status;
   if (caption !== undefined) entry.caption = caption;
   if (error !== undefined) entry.error = error;
@@ -127,11 +139,15 @@ export function getProgress(jobId: string): {
   processing: number;
   completed: number;
   failed: number;
+  avgTimeMs?: number;       // average ms per completed/failed image
+  estimatedRemainingMs?: number; // estimated ms remaining
 } {
   const job = jobs.get(jobId);
   if (!job) return { total: 0, queued: 0, processing: 0, completed: 0, failed: 0 };
 
   let queued = 0, processing = 0, completed = 0, failed = 0;
+  const durations: number[] = [];
+
   for (const entry of job.images.values()) {
     switch (entry.status) {
       case "queued": queued++; break;
@@ -139,13 +155,26 @@ export function getProgress(jobId: string): {
       case "completed": completed++; break;
       case "failed": failed++; break;
     }
+    if (entry.processingDurationMs != null) {
+      durations.push(entry.processingDurationMs);
+    }
   }
 
-  return {
+  const result: ReturnType<typeof getProgress> = {
     total: job.images.size,
     queued,
     processing,
     completed,
     failed,
   };
+
+  // Calculate average time and remaining estimate if we have data
+  if (durations.length > 0) {
+    const avgTimeMs = durations.reduce((a, b) => a + b, 0) / durations.length;
+    const remainingImages = queued;
+    result.avgTimeMs = avgTimeMs;
+    result.estimatedRemainingMs = Math.round(avgTimeMs * remainingImages);
+  }
+
+  return result;
 }

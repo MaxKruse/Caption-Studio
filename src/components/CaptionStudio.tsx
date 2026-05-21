@@ -27,6 +27,8 @@ interface ProgressState {
   failed: number;
   done?: boolean;
   statuses?: Record<string, ImageStatus>;
+  avgTimeMs?: number;        // average ms per finished image
+  estimatedRemainingMs?: number; // estimated ms left
 }
 
 interface ToastState {
@@ -55,9 +57,68 @@ function getFileExtension(name: string): string {
   return parts.length > 1 ? parts.pop()!.toLowerCase() : "";
 }
 
+/** Format milliseconds to a compact human-readable duration string. */
+export function formatDuration(ms: number): string {
+  const secs = Math.floor(ms / 1000);
+  if (secs === 0) return "<1s";
+  const hours = Math.floor(secs / 3600);
+  const minutes = Math.floor((secs % 3600) / 60);
+  const remainingSecs = secs % 60;
+  const parts: string[] = [];
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0) parts.push(`${minutes}m`);
+  if (remainingSecs > 0 || parts.length === 0) parts.push(`${remainingSecs}s`);
+  return parts.join(" ");
+}
+
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
+
+/** Floating time-estimator badge shown during processing. */
+export function TimeEstimator({
+  estimatedRemainingMs,
+  avgTimeMs,
+  remaining,
+}: {
+  estimatedRemainingMs?: number;
+  avgTimeMs?: number;
+  remaining: number;
+}) {
+  // Only render once we have at least one data point
+  if (estimatedRemainingMs == null || remaining <= 0) return null;
+
+  return (
+    <div className="fixed bottom-4 left-4 z-50 min-w-[260px] px-3 py-2 bg-zinc-900/90 backdrop-blur-sm text-zinc-100 rounded-lg shadow-lg border border-zinc-700/50 text-xs space-y-0.5">
+      <div className="flex items-center gap-1.5">
+        <svg
+          className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+          viewBox="0 0 24 24"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M12 6v6l4 2"
+          />
+        </svg>
+        <span className="text-zinc-300">Est. remaining:</span>
+        <span className="font-semibold">{formatDuration(estimatedRemainingMs)}</span>
+      </div>
+      {avgTimeMs != null && (
+        <div className="flex items-center gap-1.5 pl-5">
+          <span className="text-zinc-500">~{formatDuration(Math.round(avgTimeMs))} per image</span>
+        </div>
+      )}
+      <div className="flex items-center gap-1.5 pl-5">
+        <span className="text-zinc-500">{remaining} image{remaining !== 1 ? "s" : ""} left</span>
+      </div>
+    </div>
+  );
+}
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
@@ -1245,6 +1306,15 @@ export default function CaptionStudio() {
           )}
         </div>
       </section>
+
+      {/* Floating time estimator — bottom left */}
+      {isProcessing && (
+        <TimeEstimator
+          estimatedRemainingMs={progress.estimatedRemainingMs}
+          avgTimeMs={progress.avgTimeMs}
+          remaining={progress.queued}
+        />
+      )}
 
       {/* Image preview modal */}
       {previewImage && (
