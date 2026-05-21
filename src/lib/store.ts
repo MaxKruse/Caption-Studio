@@ -19,6 +19,9 @@ export interface CaptionJob {
   systemPrompt: string;
   promptPrefix: string;
   userPrompt: string;
+  captionName: string;
+  includeNameInPrompt: boolean;
+  parallelRequests: number;
   createdAt: number;
 }
 
@@ -37,7 +40,10 @@ export function createJob(
   model: string,
   systemPrompt: string,
   promptPrefix: string,
-  userPrompt: string
+  userPrompt: string,
+  captionName: string,
+  includeNameInPrompt: boolean,
+  parallelRequests: number
 ): string {
   const id = generateId();
   const imageMap = new Map<string, ImageEntry>();
@@ -58,6 +64,9 @@ export function createJob(
     systemPrompt,
     promptPrefix,
     userPrompt,
+    captionName,
+    includeNameInPrompt,
+    parallelRequests,
     createdAt: Date.now(),
   });
 

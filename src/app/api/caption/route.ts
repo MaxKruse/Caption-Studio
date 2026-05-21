@@ -21,7 +21,7 @@ import { ensureOpenaiCompatible } from "@/lib/image-utils";
 export async function POST(request: NextRequest) {
   const body = await request.json();
 
-  const { images, serverUrl, model, systemPrompt, promptPrefix, userPrompt } = body;
+  const { images, serverUrl, model, systemPrompt, promptPrefix, userPrompt, captionName, includeNameInPrompt, parallelRequests } = body;
 
   if (!images || !Array.isArray(images) || images.length === 0) {
     return Response.json({ error: "No images provided" }, { status: 400 });
@@ -45,7 +45,10 @@ export async function POST(request: NextRequest) {
     model,
     systemPrompt || "",
     promptPrefix || "",
-    userPrompt || ""
+    userPrompt || "",
+    captionName || "",
+    !!includeNameInPrompt,
+    Math.min(Math.max(Number(parallelRequests) || 4, 1), 8)
   );
 
   // Start async processing (fire and forget)
@@ -140,8 +143,8 @@ async function processJob(jobId: string): Promise<void> {
   const normalizedUrl = job.serverUrl.replace(/\/+$/, "").replace(/\/v1$/, "");
   const entries = Array.from(job.images.entries()); // [filename, entry][]
 
-  // Process with concurrency limit of 4
-  const concurrency = 4;
+  // Process with concurrency limit from job settings
+  const concurrency = job.parallelRequests;
   const queue = [...entries];
 
   async function processOne(): Promise<void> {
@@ -202,7 +205,9 @@ async function captionImage(
         {
           type: "text",
           text: [
-            job.promptPrefix.trim(),
+            job.promptPrefix.trim() && job.captionName.trim() && job.includeNameInPrompt
+              ? `${job.promptPrefix.trim()} ${job.captionName.trim()}.`
+              : job.promptPrefix.trim(),
             job.userPrompt.trim(),
           ]
             .filter(Boolean)
@@ -210,6 +215,17 @@ async function captionImage(
         },
       ],
     });
+
+    // Log the prompt being sent
+    const systemMsg = messages.find((m: Record<string, unknown>) => m.role === "system");
+    const userMsg = messages.find((m: Record<string, unknown>) => m.role === "user");
+    const userText = Array.isArray(userMsg?.content)
+      ? (userMsg.content as Array<Record<string, unknown>>).find((c) => c.type === "text")?.text as string | undefined
+      : undefined;
+
+    console.log(`[Caption] ${filename}`);
+    if (systemMsg?.content) console.log(`  System: ${systemMsg.content}`);
+    if (userText) console.log(`  User:   ${userText}`);
 
     const requestBody = {
       model: job.model,
