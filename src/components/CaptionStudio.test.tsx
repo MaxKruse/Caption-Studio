@@ -143,7 +143,7 @@ describe("API Configuration", () => {
   it("renders default system prompt", () => {
     render(<CaptionStudio />);
     expect(
-      screen.getByText(/You are a helpful assistant used in image captioning/)
+      screen.getByText(/highly precise image captioning assistant/)
     ).toBeDefined();
   });
 });
@@ -273,7 +273,7 @@ describe("Default prompt text", () => {
   it("system prompt mentions watermarks and signatures", () => {
     render(<CaptionStudio />);
     expect(
-      screen.getByText(/Do not infer or assume names from watermarks/)
+      screen.getByText(/watermarks, signatures/)
     ).toBeDefined();
   });
 

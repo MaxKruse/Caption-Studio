@@ -3,7 +3,6 @@ import type { ImageFile, ProgressState } from "./CaptionStudioTypes";
 export function ProcessSection({
   images,
   selectedModel,
-  serverUrl,
   jobId,
   isProcessing,
   isDownloading,
@@ -16,7 +15,6 @@ export function ProcessSection({
 }: {
   images: ImageFile[]; // just need the length
   selectedModel: string;
-  serverUrl: string;
   jobId: string | null;
   isProcessing: boolean;
   isDownloading: boolean;

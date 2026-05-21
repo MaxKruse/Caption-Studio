@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { ModelInfo, ToastState } from "./CaptionStudioTypes";
+import type { ImageFile, ToastState } from "./CaptionStudioTypes";
 import { formatDuration, PROMPT_PREFIX_DEFAULT, TOAST_DURATION } from "./CaptionStudioTypes";
 export { formatDuration } from "./CaptionStudioTypes";
 import { ConfigSection } from "./ConfigSection";
@@ -10,6 +10,7 @@ import { ImagePreviewModal } from "./ImagePreviewModal";
 import { ProcessSection } from "./ProcessSection";
 import { UploadSection } from "./UploadSection";
 import { useCaptionJob } from "./hooks/useCaptionJob";
+import { useFetchModels } from "./hooks/useFetchModels";
 import { useImageUpload } from "./hooks/useImageUpload";
 
 // ---------------------------------------------------------------------------
@@ -91,17 +92,25 @@ export default function CaptionStudio() {
   const [serverUrl, setServerUrl] = useState(
     process.env.NEXT_PUBLIC_CAPTION_API_URL || "http://localhost:8080"
   );
-  const [models, setModels] = useState<ModelInfo[]>([]);
-  const [selectedModel, setSelectedModel] = useState("");
-  const [modelLoading, setModelLoading] = useState(false);
-  const [modelError, setModelError] = useState("");
+  const { models, modelLoading, modelError, fetchModels } = useFetchModels(serverUrl);
+  const [selectedModelState, setSelectedModelState] = useState("");
+
+  // Derive effective selected model — auto-picks first when list refreshes
+  const selectedModel =
+    models.length > 0 && models.some((m) => m.id === selectedModelState)
+      ? selectedModelState
+      : models[0]?.id ?? "";
+
+  const setSelectedModel = useCallback((id: string) => {
+    setSelectedModelState(id);
+  }, []);
 
   // -- Prompts --
   const [systemPrompt, setSystemPrompt] = useState(
-    "You are a helpful assistant used in image captioning. Keep responses short and concise. Describe only what you can see in the image. Do not infer or assume names from watermarks, signatures, or text overlays — they must be ignored and never mentioned. No preamble."
+    `# ROLE\nYou are a highly precise image captioning assistant. Your goal is to provide direct, unfiltered descriptions of visual content.\n\n# CONSTRAINTS\n- **Visual Only:** Describe only what is physically present in the image.\n- **No Text/Watermarks:** Completely ignore all watermarks, signatures, text overlays, or written characters. Do not mention their existence.\n- **No Hedging:** Do not use speculative language such as "likely," "appears to be," "seems," or "maybe." Use declarative, authoritative statements.\n    - *Example:* Instead of "She is likely in her 20s," use "She is in her 20s."\n- **No Preamble:** Provide the description immediately. No "Here is the description" or "This image shows..."\n\n# TONE & REGISTER (READ THE ROOM)\nYou must adapt your linguistic register to match the "vibe" and content of the image:\n1. **Neutral/Standard Content:** Use a clinical, objective, and concise tone.\n2. **Suggestive/NSFW Content:** If the image is provocative or suggestive, shift your tone to match. Abandon clinical language in favor of a raw, visceral, and vulgar register that fits the intensity of the subject matter.\n\n# OUTPUT\nShort, concise, and direct.`
   );
   const [userPrompt, setUserPrompt] = useState(
-    "Describe this image in detail. Identify the subject as a man, woman, boy, girl, or non-binary person, and estimate their approximate age. Describe body type and physical proportions. Describe hair color, style and length, eye color, skin tone, facial features and expression, outfit colors and clothing details, accessories, and the surrounding environment. 80-120 words."
+    `Provide a cohesive 80-120 word description of this image.\n\n1. **Subject:** Identify the subject (man, woman, boy, girl, or non-binary person) and state their approximate age declaratively (e.g., "He is in his 30s").\n2. **Physicality:** Describe their body type, proportions, hair (color, style, length), eye color, skin tone, and facial expression.\n3. **Attire:** Detail their clothing (colors, textures, style) and any accessories.\n4. **Setting:** Describe the surrounding environment.\n\n**Tone Requirement:** Match the "vibe" of the image. Use clinical, objective language for neutral content. If the content is suggestive or NSFW, adopt a raw, visceral, and vulgar register that fits the intensity of the subject.\n\n**Constraint:** No speculative language (no "likely" or "appears to be"). No preamble.`
   );
 
   // -- Options --
@@ -122,9 +131,9 @@ export default function CaptionStudio() {
   }, []);
 
   // -- Preview modal --
-  const [previewImage, setPreviewImage] = useState<any>(null);
+  const [previewImage, setPreviewImage] = useState<ImageFile | null>(null);
 
-  const openPreview = useCallback((img: any) => {
+  const openPreview = useCallback((img: ImageFile) => {
     setPreviewImage(img);
   }, []);
 
@@ -152,49 +161,6 @@ export default function CaptionStudio() {
     showToast,
     onDownloadComplete: imageUpload.clearAll,
   });
-
-  // -----------------------------------------------------------------------
-  // Auto-fetch models on mount
-  // -----------------------------------------------------------------------
-  useEffect(() => {
-    fetchModels();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- only on mount
-
-  // -----------------------------------------------------------------------
-  // Fetch models from the configured server
-  // -----------------------------------------------------------------------
-  const fetchModels = useCallback(async () => {
-    if (!serverUrl.trim()) {
-      setModelError("Enter a server URL first");
-      return;
-    }
-
-    setModelLoading(true);
-    setModelError("");
-    setModels([]);
-    setSelectedModel("");
-
-    try {
-      const res = await fetch(
-        `/api/models?serverUrl=${encodeURIComponent(serverUrl.trim())}`
-      );
-      const data = await res.json();
-
-      if (!res.ok) {
-        setModelError(data.error || "Failed to fetch models");
-        return;
-      }
-
-      setModels(data.models || []);
-      if (data.models?.length > 0) {
-        setSelectedModel(data.models[0].id);
-      }
-    } catch {
-      setModelError("Network error - check the server URL");
-    } finally {
-      setModelLoading(false);
-    }
-  }, [serverUrl]);
 
   // -----------------------------------------------------------------------
   // Escape key closes preview modal
@@ -444,7 +410,6 @@ export default function CaptionStudio() {
       <ProcessSection
         images={imageUpload.images}
         selectedModel={selectedModel}
-        serverUrl={serverUrl}
         jobId={captionJob.jobId}
         isProcessing={captionJob.isProcessing}
         isDownloading={captionJob.isDownloading}

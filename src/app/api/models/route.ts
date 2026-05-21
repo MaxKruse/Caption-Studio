@@ -5,6 +5,8 @@
 
 import { NextRequest } from "next/server";
 
+import type { ModelInfo } from "@/components/CaptionStudioTypes";
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const serverUrl = searchParams.get("serverUrl");
@@ -51,7 +53,7 @@ export async function GET(request: NextRequest) {
 
     // Filter to vision models only (input_modalities must contain both "text" and "image")
     const visionModels = data.data.filter(
-      (m: any) =>
+      (m: ModelInfo) =>
         m?.architecture?.input_modalities?.includes("image") &&
         m?.architecture?.input_modalities?.includes("text")
     );

@@ -183,6 +183,7 @@ export function useCaptionJob(options: UseCaptionJobOptions) {
     userPrompt,
     includeNameInPrompt,
     parallelRequests,
+    captionName,
     showToast,
   ]);
 

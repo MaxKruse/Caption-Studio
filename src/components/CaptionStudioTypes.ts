@@ -5,7 +5,9 @@
 export interface ModelInfo {
   id: string;
   owned_by?: string;
-  architecture?: string;
+  architecture?: {
+    input_modalities?: string[];
+  };
   input_modalities?: string[];
 }
 

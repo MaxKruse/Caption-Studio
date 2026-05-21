@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { formatDuration, TimeEstimator } from "./CaptionStudio";
+import { formatDuration } from "./CaptionStudio";
 
 // ---------------------------------------------------------------------------
 // formatDuration helper
