@@ -201,7 +201,7 @@ async function captionImage(
     // Build user text content
     const userTextParts = [
       job.promptPrefix.trim() && job.captionName.trim() && job.includeNameInPrompt
-        ? `${job.promptPrefix.trim()} ${job.captionName.trim()}.`
+        ? `${job.promptPrefix.trim()} '${job.captionName.trim()}'.`
         : job.promptPrefix.trim(),
       job.userPrompt.trim(),
     ].filter(Boolean);

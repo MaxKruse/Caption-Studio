@@ -56,6 +56,7 @@ describe("TimeEstimator component", () => {
         estimatedRemainingMs={60000}
         avgTimeMs={12000}
         remaining={5}
+        isDone={false}
       />
     );
     expect(screen.getByText("Est. remaining:")).toBeDefined();
@@ -71,33 +72,42 @@ describe("TimeEstimator component", () => {
         estimatedRemainingMs={12000}
         avgTimeMs={12000}
         remaining={1}
+        isDone={false}
       />
     );
     expect(screen.getByText("1 image left")).toBeDefined();
   });
 
-  it("does not render when estimatedRemainingMs is undefined", async () => {
+  it("shows Waiting... when estimatedRemainingMs is undefined", async () => {
     const { TimeEstimator } = await import("./CaptionStudio");
     render(
       <TimeEstimator
         estimatedRemainingMs={undefined}
         avgTimeMs={12000}
         remaining={5}
+        isDone={false}
       />
     );
-    expect(screen.queryByText("Est. remaining:")).toBeNull();
+    expect(screen.getByText("Est. remaining:")).toBeDefined();
+    expect(screen.getByText("Waiting...")).toBeDefined();
+    expect(screen.getByText("~12s per image")).toBeDefined();
+    expect(screen.getByText("5 images left")).toBeDefined();
   });
 
-  it("does not render when remaining is 0", async () => {
+  it("shows estimate without image count when remaining is 0", async () => {
     const { TimeEstimator } = await import("./CaptionStudio");
     render(
       <TimeEstimator
         estimatedRemainingMs={0}
         avgTimeMs={12000}
         remaining={0}
+        isDone={false}
       />
     );
-    expect(screen.queryByText("Est. remaining:")).toBeNull();
+    expect(screen.getByText("Est. remaining:")).toBeDefined();
+    expect(screen.getByText("<1s")).toBeDefined();
+    expect(screen.getByText("~12s per image")).toBeDefined();
+    expect(screen.queryByText(/images left/)).toBeNull();
   });
 
   it("does not render when remaining is negative", async () => {
@@ -107,6 +117,7 @@ describe("TimeEstimator component", () => {
         estimatedRemainingMs={0}
         avgTimeMs={12000}
         remaining={-1}
+        isDone={false}
       />
     );
     expect(screen.queryByText("Est. remaining:")).toBeNull();
@@ -119,6 +130,7 @@ describe("TimeEstimator component", () => {
         estimatedRemainingMs={60000}
         avgTimeMs={12500}
         remaining={5}
+        isDone={false}
       />
     );
     expect(screen.getByText("~12s per image")).toBeDefined();
@@ -131,8 +143,24 @@ describe("TimeEstimator component", () => {
         estimatedRemainingMs={60000}
         avgTimeMs={undefined}
         remaining={5}
+        isDone={false}
       />
     );
     expect(screen.queryByText(/per image/)).toBeNull();
+  });
+
+  it("shows Done! when isDone is true", async () => {
+    const { TimeEstimator } = await import("./CaptionStudio");
+    render(
+      <TimeEstimator
+        estimatedRemainingMs={0}
+        avgTimeMs={12000}
+        remaining={0}
+        isDone={true}
+      />
+    );
+    expect(screen.getByText("Done!")).toBeDefined();
+    expect(screen.queryByText("Est. remaining:")).toBeNull();
+    expect(screen.queryByText(/images left/)).toBeNull();
   });
 });
