@@ -38,6 +38,8 @@ interface ImageStatus {
   status: "queued" | "processing" | "completed" | "failed";
   caption?: string;
   error?: string;
+  prompt?: string;
+  reasoningContent?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -79,19 +81,28 @@ function ImageCard({
   status,
   onRemove,
   disabled,
+  onPreview,
 }: {
   img: ImageFile;
   status?: ImageStatus;
   onRemove: (name: string) => void;
   disabled: boolean;
+  onPreview: (img: ImageFile) => void;
 }) {
   return (
     <div className="relative group border border-zinc-200 rounded overflow-hidden bg-white">
-      <img
-        src={img.preview}
-        alt={img.name}
-        className="w-full h-28 object-cover"
-      />
+      {/* Clickable image area */}
+      <button
+        onClick={() => onPreview(img)}
+        className="w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 cursor-pointer hover:opacity-90 transition-opacity"
+        title="Click to view details"
+      >
+        <img
+          src={img.preview}
+          alt={img.name}
+          className="w-full h-28 object-cover"
+        />
+      </button>
 
       {/* Filename + status bar */}
       <div className="absolute bottom-0 inset-x-0 bg-zinc-900/70 px-2 py-1 flex items-center justify-between gap-1">
@@ -104,12 +115,22 @@ function ImageCard({
       {/* Remove button */}
       {!disabled && (
         <button
-          onClick={() => onRemove(img.name)}
-          className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center bg-zinc-900/60 text-zinc-200 rounded text-xs leading-none opacity-0 group-hover:opacity-100 transition-opacity hover:bg-zinc-900/80"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove(img.name);
+          }}
+          className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center bg-zinc-900/60 text-zinc-200 rounded text-xs leading-none opacity-0 group-hover:opacity-100 transition-opacity hover:bg-zinc-900/80 z-10"
           aria-label={`Remove ${img.name}`}
         >
           &times;
         </button>
+      )}
+
+      {/* Prompt indicator badge */}
+      {status?.prompt && (
+        <div className="absolute top-1 left-1 px-1.5 py-0.5 bg-zinc-900/70 rounded text-[9px] text-zinc-300 font-medium">
+          &#9998; prompt
+        </div>
       )}
 
       {/* Caption preview */}
@@ -133,6 +154,91 @@ function ImageCard({
   );
 }
 
+/** Modal overlay showing full-size image and generated prompt. */
+function ImagePreviewModal({
+  img,
+  status,
+  onClose,
+}: {
+  img: ImageFile;
+  status: ImageStatus;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Prompt for ${img.name}`}
+    >
+      <div
+        className="relative max-w-4xl w-full max-h-[90vh] bg-white rounded-xl shadow-2xl overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Close button */}
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 z-10 w-8 h-8 flex items-center justify-center bg-zinc-900/70 text-zinc-200 rounded-full text-lg hover:bg-zinc-900 transition-colors"
+          aria-label="Close"
+        >
+          &times;
+        </button>
+
+        {/* Image */}
+        <div className="flex-shrink-0 bg-zinc-100 flex items-center justify-center">
+          <img
+            src={img.preview}
+            alt={img.name}
+            className="max-h-80 w-full object-contain"
+          />
+        </div>
+
+        {/* Prompt section */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-zinc-900">{img.name}</h3>
+            <StatusBadge status={status.status} />
+          </div>
+
+          {status.prompt && (
+            <div className="space-y-1.5">
+              <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-widest">
+                Prompt
+              </h4>
+              <div className="p-3 bg-zinc-50 border border-zinc-200 rounded text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed">
+                {status.prompt}
+              </div>
+            </div>
+          )}
+
+          {status.reasoningContent && (
+            <div className="space-y-1.5">
+              <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-widest">
+                Reasoning
+              </h4>
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded text-sm text-amber-900 whitespace-pre-wrap leading-relaxed">
+                {status.reasoningContent}
+              </div>
+            </div>
+          )}
+
+          {status.caption && (
+            <div className="space-y-1.5">
+              <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-widest">
+                Generated Caption
+              </h4>
+              <div className="p-3 bg-zinc-50 border border-zinc-200 rounded text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed">
+                {status.caption}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 
 // ---------------------------------------------------------------------------
@@ -149,10 +255,10 @@ export default function CaptionStudio() {
 
   // -- Prompts --
   const [systemPrompt, setSystemPrompt] = useState(
-    "You are a helpful assistant used in image captioning. Keep responses short and consise. Describe the things you see in natural language. No preamble."
+    "You are a helpful assistant used in image captioning. Keep responses short and concise. Describe only what you can see in the image. Do not infer or assume names from watermarks, signatures, or text overlays — they must be ignored and never mentioned. No preamble."
   );
   const [userPrompt, setUserPrompt] = useState(
-    "Describe this image in detail. Always include her appearance, name, clothes, expression, outfit, hair and hairstyle and surrounding. 80-120 words."
+    "Describe this image in detail. Identify the subject as a man, woman, boy, girl, or non-binary person, and estimate their approximate age. Describe body type and physical proportions. Describe hair color, style and length, eye color, skin tone, facial features and expression, outfit colors and clothing details, accessories, and the surrounding environment. 80-120 words."
   );
 
   // -- Caption Name (used in download filename) --
@@ -187,6 +293,7 @@ export default function CaptionStudio() {
   const [showErrorLog, setShowErrorLog] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(true);
   const [clearAllConfirm, setClearAllConfirm] = useState(false);
+  const [previewImage, setPreviewImage] = useState<ImageFile | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = useCallback((message: string) => {
@@ -341,6 +448,17 @@ export default function CaptionStudio() {
   }, []);
 
   // -----------------------------------------------------------------------
+  // Open image preview modal
+  // -----------------------------------------------------------------------
+  const openPreview = useCallback((img: ImageFile) => {
+    setPreviewImage(img);
+  }, []);
+
+  const closePreview = useCallback(() => {
+    setPreviewImage(null);
+  }, []);
+
+  // -----------------------------------------------------------------------
   // Clear all images
   // -----------------------------------------------------------------------
   const clearAll = useCallback(() => {
@@ -397,6 +515,9 @@ export default function CaptionStudio() {
         }),
       });
 
+      // Note: includeNameInPrompt is captured in state, not used here directly —
+      // promptPrefix is already computed above based on it.
+
       const data = await res.json();
 
       if (!res.ok) {
@@ -451,7 +572,7 @@ export default function CaptionStudio() {
       );
       setIsProcessing(false);
     }
-  }, [images, selectedModel, serverUrl, systemPrompt, userPrompt, parallelRequests, showToast]);
+  }, [images, selectedModel, serverUrl, systemPrompt, userPrompt, includeNameInPrompt, parallelRequests, showToast]);
 
   // -----------------------------------------------------------------------
   // Polling fallback for status updates
@@ -527,6 +648,18 @@ export default function CaptionStudio() {
       setIsDownloading(false);
     }
   }, [jobId, captionName, showToast]);
+
+  // -----------------------------------------------------------------------
+  // Escape key closes preview modal
+  // -----------------------------------------------------------------------
+  useEffect(() => {
+    if (!previewImage) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closePreview();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [previewImage, closePreview]);
 
   // -----------------------------------------------------------------------
   // Cleanup on unmount
@@ -974,6 +1107,7 @@ export default function CaptionStudio() {
                       status={imageStatuses[img.name]}
                       onRemove={removeImage}
                       disabled={isProcessing}
+                      onPreview={openPreview}
                     />
                   ))}
                 </div>
@@ -1111,6 +1245,15 @@ export default function CaptionStudio() {
           )}
         </div>
       </section>
+
+      {/* Image preview modal */}
+      {previewImage && (
+        <ImagePreviewModal
+          img={previewImage}
+          status={imageStatuses[previewImage.name] ?? { status: "queued" }}
+          onClose={closePreview}
+        />
+      )}
     </div>
   );
 }

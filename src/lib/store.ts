@@ -9,6 +9,8 @@ export interface ImageEntry {
   status: "queued" | "processing" | "completed" | "failed";
   caption?: string;
   error?: string;
+  prompt?: string; // the prompt text sent to the API for this image
+  reasoningContent?: string; // reasoning_content from the API (some models)
 }
 
 export interface CaptionJob {
@@ -89,7 +91,9 @@ export function updateImageStatus(
   filename: string,
   status: ImageEntry["status"],
   caption?: string,
-  error?: string
+  error?: string,
+  prompt?: string,
+  reasoningContent?: string
 ): void {
   const job = jobs.get(jobId);
   if (!job) return;
@@ -99,6 +103,8 @@ export function updateImageStatus(
   entry.status = status;
   if (caption !== undefined) entry.caption = caption;
   if (error !== undefined) entry.error = error;
+  if (prompt !== undefined) entry.prompt = prompt;
+  if (reasoningContent !== undefined) entry.reasoningContent = reasoningContent;
 }
 
 /** Check if all images in a job are done (completed or failed). */

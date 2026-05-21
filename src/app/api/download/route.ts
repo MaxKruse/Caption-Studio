@@ -60,10 +60,13 @@ export async function POST(request: Request) {
 
   const buffer = Buffer.concat(chunks);
 
+  const safeName = job.captionName.trim() || "Untitled";
+  const filename = `Captions${safeName}.zip`;
+
   return new Response(buffer, {
     headers: {
       "Content-Type": "application/zip",
-      "Content-Disposition": 'attachment; filename="captions.zip"',
+      "Content-Disposition": `attachment; filename="${filename}"`,
     },
   });
 }

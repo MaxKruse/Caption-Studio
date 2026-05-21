@@ -99,13 +99,15 @@ export async function GET(request: NextRequest) {
     const jobRef = getJob(jobId);
 
     // Build per-image status map
-    const statuses: Record<string, { status: string; caption?: string; error?: string }> = {};
+    const statuses: Record<string, { status: string; caption?: string; error?: string; prompt?: string; reasoningContent?: string }> = {};
     if (jobRef) {
       for (const [filename, entry] of jobRef.images.entries()) {
         statuses[filename] = {
           status: entry.status,
           caption: entry.caption,
           error: entry.error,
+          prompt: entry.prompt,
+          reasoningContent: entry.reasoningContent,
         };
       }
     }
@@ -163,6 +165,10 @@ async function processJob(jobId: string): Promise<void> {
 }
 
 /** Caption a single image by calling the OpenAI-compatible API. */
+
+/** Max time allowed per image API call (5 minutes). */
+const API_TIMEOUT_MS = 5 * 60 * 1000;
+
 async function captionImage(
   jobId: string,
   filename: string,
@@ -192,6 +198,16 @@ async function captionImage(
       });
     }
 
+    // Build user text content
+    const userTextParts = [
+      job.promptPrefix.trim() && job.captionName.trim() && job.includeNameInPrompt
+        ? `${job.promptPrefix.trim()} ${job.captionName.trim()}.`
+        : job.promptPrefix.trim(),
+      job.userPrompt.trim(),
+    ].filter(Boolean);
+
+    const userText = userTextParts.join(" ");
+
     // Add user message with image
     messages.push({
       role: "user",
@@ -204,27 +220,20 @@ async function captionImage(
         },
         {
           type: "text",
-          text: [
-            job.promptPrefix.trim() && job.captionName.trim() && job.includeNameInPrompt
-              ? `${job.promptPrefix.trim()} ${job.captionName.trim()}.`
-              : job.promptPrefix.trim(),
-            job.userPrompt.trim(),
-          ]
-            .filter(Boolean)
-            .join(" "),
+          text: userText,
         },
       ],
     });
 
-    // Log the prompt being sent
-    const systemMsg = messages.find((m: Record<string, unknown>) => m.role === "system");
-    const userMsg = messages.find((m: Record<string, unknown>) => m.role === "user");
-    const userText = Array.isArray(userMsg?.content)
-      ? (userMsg.content as Array<Record<string, unknown>>).find((c) => c.type === "text")?.text as string | undefined
-      : undefined;
+    // Build the full prompt text for display (system + user, no image data)
+    const promptText = [
+      job.systemPrompt.trim() ? `System: ${job.systemPrompt.trim()}` : null,
+      userText ? `User: ${userText}` : null,
+    ].filter(Boolean).join("\n");
 
+    // Log the prompt being sent
     console.log(`[Caption] ${filename}`);
-    if (systemMsg?.content) console.log(`  System: ${systemMsg.content}`);
+    if (job.systemPrompt.trim()) console.log(`  System: ${job.systemPrompt.trim()}`);
     if (userText) console.log(`  User:   ${userText}`);
 
     const requestBody = {
@@ -232,25 +241,42 @@ async function captionImage(
       messages,
     };
 
-    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(requestBody),
-      cache: "no-store",
-    });
+    // Create abort controller with 5-minute timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API ${response.status}: ${errorText}`);
+    try {
+      const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+        cache: "no-store",
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API ${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
+      const caption =
+        data?.choices?.[0]?.message?.content ?? "(empty response)";
+      const reasoningContent =
+        data?.choices?.[0]?.message?.reasoning_content;
+
+      updateImageStatus(jobId, filename, "completed", caption, undefined, promptText, reasoningContent);
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (err instanceof Error && err.name === "AbortError") {
+        throw new Error(`API request timed out after ${API_TIMEOUT_MS / 1000 / 60} minute(s)`);
+      }
+      throw err;
     }
-
-    const data = await response.json();
-    const caption =
-      data?.choices?.[0]?.message?.content ?? "(empty response)";
-
-    updateImageStatus(jobId, filename, "completed", caption);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     updateImageStatus(jobId, filename, "failed", undefined, message);

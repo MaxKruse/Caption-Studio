@@ -49,8 +49,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Return just the model list
-    return Response.json({ models: data.data });
+    // Filter to vision models only (input_modalities must contain both "text" and "image")
+    const visionModels = data.data.filter(
+      (m: any) =>
+        m?.architecture?.input_modalities?.includes("image") &&
+        m?.architecture?.input_modalities?.includes("text")
+    );
+
+    return Response.json({ models: visionModels });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return Response.json(
