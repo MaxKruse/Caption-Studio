@@ -1,4 +1,4 @@
-import { ProgressState } from "./CaptionStudioTypes";
+import type { ImageFile, ProgressState } from "./CaptionStudioTypes";
 
 export function ProcessSection({
   images,
@@ -14,7 +14,7 @@ export function ProcessSection({
   onStartCaptioning,
   onDownloadZip,
 }: {
-  images: string[]; // just need the length
+  images: ImageFile[]; // just need the length
   selectedModel: string;
   serverUrl: string;
   jobId: string | null;

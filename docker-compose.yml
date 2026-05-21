@@ -1,0 +1,13 @@
+services:
+  caption-studio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_CAPTION_API_URL: "http://host.docker.internal:8080"
+    container_name: caption-studio
+    restart: unless-stopped
+    ports:
+      - "8800:3000"
+    environment:
+      NODE_ENV: production

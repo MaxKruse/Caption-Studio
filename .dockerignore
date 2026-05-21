@@ -1,0 +1,24 @@
+# deps
+node_modules
+
+# next
+.next
+out
+
+# misc
+.git
+.gitignore
+.serena
+README.md
+AGENTS.md
+CLAUDE.md
+
+# env
+.env*
+
+# os
+.DS_Store
+*.tsbuildinfo
+
+# tests
+coverage

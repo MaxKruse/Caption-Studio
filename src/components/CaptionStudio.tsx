@@ -88,7 +88,9 @@ export function TimeEstimator({
 
 export default function CaptionStudio() {
   // -- API Configuration --
-  const [serverUrl, setServerUrl] = useState("http://localhost:8080");
+  const [serverUrl, setServerUrl] = useState(
+    process.env.NEXT_PUBLIC_CAPTION_API_URL || "http://localhost:8080"
+  );
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [selectedModel, setSelectedModel] = useState("");
   const [modelLoading, setModelLoading] = useState(false);
@@ -216,6 +218,21 @@ export default function CaptionStudio() {
   }, []);
 
   // -----------------------------------------------------------------------
+  // Warn before leaving while a job is processing
+  // -----------------------------------------------------------------------
+  useEffect(() => {
+    if (!captionJob.isProcessing) return;
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [captionJob.isProcessing]);
+
+  // -----------------------------------------------------------------------
   // Derived values
   // -----------------------------------------------------------------------
   const progressPercent =
@@ -233,7 +250,7 @@ export default function CaptionStudio() {
     !!selectedModel &&
     !!serverUrl.trim();
 
-  const jobDone = captionJob.jobId && !captionJob.isProcessing;
+  const jobDone = !!captionJob.jobId && !captionJob.isProcessing;
 
   const failedImages = imageUpload.images
     .map((img) => ({ img, status: captionJob.imageStatuses[img.name] }))
