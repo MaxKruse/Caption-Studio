@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { ToastState } from "../CaptionStudioTypes";
+import type {
+  ContentMode,
+  ToastState,
+} from "../CaptionStudioTypes";
 import { PROMPT_PREFIX_DEFAULT, TOAST_DURATION } from "../CaptionStudioTypes";
 
 // ---------------------------------------------------------------------------
@@ -92,8 +95,6 @@ const USER_PROMPT_SFW = `Generate a detailed, safe-for-work description of this 
 // ---------------------------------------------------------------------------
 // useAppConfig — manages all configuration state for the caption studio
 // ---------------------------------------------------------------------------
-
-export type ContentMode = "sfw" | "nsfw";
 
 export interface UseAppConfigResult {
   // Server & model
