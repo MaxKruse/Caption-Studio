@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 
 import { ImageFile, ImageStatus } from "./CaptionStudioTypes";
 
@@ -44,6 +44,13 @@ export function ImagePreviewModal({
 }) {
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex < allImages.length - 1;
+
+  // Use the original file for full-quality preview in the modal
+  const fullQualitySrc = useMemo(() => URL.createObjectURL(img.file), [img.file]);
+
+  useEffect(() => {
+    return () => URL.revokeObjectURL(fullQualitySrc);
+  }, [fullQualitySrc]);
 
   // Keyboard navigation: arrow keys + escape
   useEffect(() => {
@@ -100,7 +107,7 @@ export function ImagePreviewModal({
           )}
 
           <img
-            src={img.preview}
+            src={fullQualitySrc}
             alt={img.name}
             className="max-h-[80vh] w-full object-contain"
           />
