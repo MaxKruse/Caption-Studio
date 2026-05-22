@@ -13,10 +13,134 @@ import {
   getProgress,
   isJobDone,
   updateImageStatus,
+  type CaptionJob,
   type ImageEntry,
 } from "@/lib/store";
 import { prepareForApi } from "@/lib/image-utils";
 import { normalizeServerUrl } from "@/lib/url-utils";
+
+// ---------------------------------------------------------------------------
+// Job config shape — parsed from either FormData or JSON
+// ---------------------------------------------------------------------------
+
+interface JobConfig {
+  serverUrl: string;
+  model: string;
+  systemPrompt: string;
+  promptPrefix: string;
+  userPrompt: string;
+  captionName: string;
+  includeNameInPrompt: boolean;
+  parallelRequests: number;
+  imageNames: string[];
+}
+
+function parseJobConfigFromFormData(formData: FormData): JobConfig | null {
+  const configRaw = formData.get("config");
+  if (!configRaw || typeof configRaw !== "string") return null;
+
+  let config: {
+    serverUrl: string;
+    model: string;
+    systemPrompt?: string;
+    promptPrefix?: string;
+    userPrompt?: string;
+    captionName?: string;
+    includeNameInPrompt?: boolean;
+    parallelRequests?: number;
+    imageNames: string[];
+  };
+
+  try {
+    config = JSON.parse(configRaw);
+  } catch {
+    return null;
+  }
+
+  return {
+    serverUrl: config.serverUrl,
+    model: config.model,
+    systemPrompt: config.systemPrompt ?? "",
+    promptPrefix: config.promptPrefix ?? "",
+    userPrompt: config.userPrompt ?? "",
+    captionName: config.captionName ?? "",
+    includeNameInPrompt: !!config.includeNameInPrompt,
+    parallelRequests: config.parallelRequests ?? 4,
+    imageNames: config.imageNames,
+  };
+}
+
+function parseJobConfigFromBody(rest: Record<string, unknown>): JobConfig {
+  return {
+    serverUrl: (rest.serverUrl as string) ?? "",
+    model: (rest.model as string) ?? "",
+    systemPrompt: (rest.systemPrompt as string) ?? "",
+    promptPrefix: (rest.promptPrefix as string) ?? "",
+    userPrompt: (rest.userPrompt as string) ?? "",
+    captionName: (rest.captionName as string) ?? "",
+    includeNameInPrompt: !!(rest.includeNameInPrompt as boolean),
+    parallelRequests: (rest.parallelRequests as number) ?? 4,
+    imageNames: [],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Prompt building helpers — pure, testable functions
+// ---------------------------------------------------------------------------
+
+function buildPromptText(job: CaptionJob): string {
+  const parts = [
+    job.promptPrefix.trim() && job.captionName.trim() && job.includeNameInPrompt
+      ? `${job.promptPrefix.trim()} '${job.captionName.trim()}'.`
+      : job.promptPrefix.trim(),
+    job.userPrompt.trim(),
+  ].filter(Boolean);
+
+  return parts.join(" ");
+}
+
+function buildApiMessages(
+  job: CaptionJob,
+  imageBase64: string,
+  mimeType: string,
+  userText: string
+): Array<Record<string, unknown>> {
+  const messages: Array<Record<string, unknown>> = [];
+
+  if (job.systemPrompt.trim()) {
+    messages.push({
+      role: "system",
+      content: job.systemPrompt.trim(),
+    });
+  }
+
+  messages.push({
+    role: "user",
+    content: [
+      {
+        type: "image_url",
+        image_url: {
+          url: `data:${mimeType};base64,${imageBase64}`,
+        },
+      },
+      {
+        type: "text",
+        text: userText,
+      },
+    ],
+  });
+
+  return messages;
+}
+
+function buildDisplayPromptText(job: CaptionJob, userText: string): string {
+  const parts = [
+    job.systemPrompt.trim() ? `System: ${job.systemPrompt.trim()}` : null,
+    userText ? `User: ${userText}` : null,
+  ].filter(Boolean);
+
+  return parts.join("\n");
+}
 
 // ---------------------------------------------------------------------------
 // POST - Start a new batch captioning job
@@ -24,50 +148,16 @@ import { normalizeServerUrl } from "@/lib/url-utils";
 // ---------------------------------------------------------------------------
 export async function POST(request: NextRequest) {
   const contentType = request.headers.get("content-type") || "";
+
+  let config: JobConfig | null;
   let decodedImages: { name: string; data: Buffer }[];
-  let serverUrl = "";
-  let model = "";
-  let systemPrompt = "";
-  let promptPrefix = "";
-  let userPrompt = "";
-  let captionName = "";
-  let includeNameInPrompt = false;
-  let parallelRequests = 4;
 
   if (contentType.includes("multipart/form-data")) {
-    // FormData — real client uploads (original files)
     const formData = await request.formData();
-    const configRaw = formData.get("config");
-    if (!configRaw || typeof configRaw !== "string") {
+    config = parseJobConfigFromFormData(formData);
+    if (!config) {
       return Response.json({ error: "Missing config" }, { status: 400 });
     }
-
-    let config: {
-      serverUrl: string;
-      model: string;
-      systemPrompt?: string;
-      promptPrefix?: string;
-      userPrompt?: string;
-      captionName?: string;
-      includeNameInPrompt?: boolean;
-      parallelRequests?: number;
-      imageNames: string[];
-    };
-
-    try {
-      config = JSON.parse(configRaw);
-    } catch {
-      return Response.json({ error: "Invalid config" }, { status: 400 });
-    }
-
-    serverUrl = config.serverUrl;
-    model = config.model;
-    systemPrompt = config.systemPrompt ?? "";
-    promptPrefix = config.promptPrefix ?? "";
-    userPrompt = config.userPrompt ?? "";
-    captionName = config.captionName ?? "";
-    includeNameInPrompt = !!config.includeNameInPrompt;
-    parallelRequests = config.parallelRequests ?? 4;
 
     const imageFiles = formData.getAll("images") as File[];
     if (imageFiles.length === 0) {
@@ -76,35 +166,32 @@ export async function POST(request: NextRequest) {
 
     decodedImages = await Promise.all(
       imageFiles.map(async (file, i) => ({
-        name: config.imageNames[i] ?? file.name,
+        name: config!.imageNames[i] ?? file.name,
         data: Buffer.from(await file.arrayBuffer()),
       }))
     );
   } else {
-    // JSON — tests and legacy clients
     const body = await request.json();
-    const { images, ...rest } = body;
 
+    const images = (body as Record<string, unknown>).images;
     if (!images || !Array.isArray(images) || images.length === 0) {
       return Response.json({ error: "No images provided" }, { status: 400 });
     }
 
-    serverUrl = rest.serverUrl ?? "";
-    model = rest.model ?? "";
-    systemPrompt = rest.systemPrompt ?? "";
-    promptPrefix = rest.promptPrefix ?? "";
-    userPrompt = rest.userPrompt ?? "";
-    captionName = rest.captionName ?? "";
-    includeNameInPrompt = !!rest.includeNameInPrompt;
-    parallelRequests = rest.parallelRequests ?? 4;
+    const rest = Object.fromEntries(
+      Object.entries(body as Record<string, unknown>).filter(([k]) => k !== "images")
+    );
+    config = parseJobConfigFromBody(rest as Record<string, unknown>);
 
-    decodedImages = images.map((img: { name: string; data: string }) => ({
-      name: img.name,
-      data: Buffer.from(img.data, "base64"),
-    }));
+    decodedImages = (images as Array<{ name: string; data: string }>).map(
+      (img) => ({
+        name: img.name,
+        data: Buffer.from(img.data, "base64"),
+      })
+    );
   }
 
-  if (!serverUrl || !model) {
+  if (!config.serverUrl || !config.model) {
     return Response.json(
       { error: "serverUrl and model are required" },
       { status: 400 }
@@ -113,14 +200,14 @@ export async function POST(request: NextRequest) {
 
   const jobId = createJob(
     decodedImages,
-    serverUrl,
-    model,
-    systemPrompt || "",
-    promptPrefix || "",
-    userPrompt || "",
-    captionName || "",
-    !!includeNameInPrompt,
-    Math.min(Math.max(Number(parallelRequests) || 4, 1), 8)
+    config.serverUrl,
+    config.model,
+    config.systemPrompt || "",
+    config.promptPrefix || "",
+    config.userPrompt || "",
+    config.captionName || "",
+    !!config.includeNameInPrompt,
+    Math.min(Math.max(Number(config.parallelRequests) || 4, 1), 8)
   );
 
   // Start async processing (fire and forget)
@@ -246,7 +333,9 @@ async function processJob(jobId: string): Promise<void> {
   );
 }
 
-/** Caption a single image by calling the OpenAI-compatible API. */
+// ---------------------------------------------------------------------------
+// Single-image captioning
+// ---------------------------------------------------------------------------
 
 /** Max time allowed per image API call (5 minutes). */
 const API_TIMEOUT_MS = 5 * 60 * 1000;
@@ -266,6 +355,7 @@ async function fetchWithTimeout(
   }
 }
 
+/** Caption a single image by calling the OpenAI-compatible API. */
 async function captionImage(
   jobId: string,
   filename: string,
@@ -278,72 +368,27 @@ async function captionImage(
   updateImageStatus(jobId, filename, "processing");
 
   try {
-    // Resize if needed (max 3072px) and ensure OpenAI-compatible format
-    const { buffer, mimeType } = await prepareForApi(
-      filename,
-      entry.data
-    );
+    // Prepare image for API (format conversion if needed)
+    const { buffer, mimeType } = await prepareForApi(filename, entry.data);
     const base64 = buffer.toString("base64");
 
-    const messages: Array<Record<string, unknown>> = [];
-
-    // Add system prompt if provided
-    if (job.systemPrompt.trim()) {
-      messages.push({
-        role: "system",
-        content: job.systemPrompt.trim(),
-      });
-    }
-
-    // Build user text content
-    const userTextParts = [
-      job.promptPrefix.trim() && job.captionName.trim() && job.includeNameInPrompt
-        ? `${job.promptPrefix.trim()} '${job.captionName.trim()}'.`
-        : job.promptPrefix.trim(),
-      job.userPrompt.trim(),
-    ].filter(Boolean);
-
-    const userText = userTextParts.join(" ");
-
-    // Add user message with image
-    messages.push({
-      role: "user",
-      content: [
-        {
-          type: "image_url",
-          image_url: {
-            url: `data:${mimeType};base64,${base64}`,
-          },
-        },
-        {
-          type: "text",
-          text: userText,
-        },
-      ],
-    });
-
-    // Build the full prompt text for display (system + user, no image data)
-    const promptText = [
-      job.systemPrompt.trim() ? `System: ${job.systemPrompt.trim()}` : null,
-      userText ? `User: ${userText}` : null,
-    ].filter(Boolean).join("\n");
+    // Build prompt and messages
+    const userText = buildPromptText(job);
+    const messages = buildApiMessages(job, base64, mimeType, userText);
+    const promptText = buildDisplayPromptText(job, userText);
 
     // Log the prompt being sent
     console.log(`[Caption] ${filename}`);
     if (job.systemPrompt.trim()) console.log(`  System: ${job.systemPrompt.trim()}`);
     if (userText) console.log(`  User:   ${userText}`);
 
-    const requestBody = {
-      model: job.model,
-      messages,
-    };
-
+    // Call the API
     const response = await fetchWithTimeout(
       `${baseUrl}/v1/chat/completions`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({ model: job.model, messages }),
         cache: "no-store",
       },
       API_TIMEOUT_MS
@@ -354,21 +399,34 @@ async function captionImage(
       throw new Error(`API ${response.status}: ${errorText}`);
     }
 
+    // Parse response
     const data = await response.json();
     const caption =
       (data?.choices?.[0]?.message?.content ?? "(empty response)").trim();
     const reasoningContent =
       data?.choices?.[0]?.message?.reasoning_content;
 
-    updateImageStatus(jobId, filename, "completed", caption, undefined, promptText, reasoningContent);
+    updateImageStatus(
+      jobId,
+      filename,
+      "completed",
+      caption,
+      undefined,
+      promptText,
+      reasoningContent
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (error instanceof Error && error.name === "AbortError") {
-      updateImageStatus(jobId, filename, "failed", undefined, `API request timed out after ${API_TIMEOUT_MS / 1000 / 60} minute(s)`);
+      updateImageStatus(
+        jobId,
+        filename,
+        "failed",
+        undefined,
+        `API request timed out after ${API_TIMEOUT_MS / 1000 / 60} minute(s)`
+      );
     } else {
       updateImageStatus(jobId, filename, "failed", undefined, message);
     }
   }
 }
-
-

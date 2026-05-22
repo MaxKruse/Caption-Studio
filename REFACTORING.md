@@ -13,7 +13,7 @@
 |---|-----------|----------|--------|--------|
 | 1 | [refactor-remove-dead-code.md](refactor-remove-dead-code.md) | Dead Code | Low | 5 min | **[DONE]** |
 | 2 | [refactor-consolidate-duplicates.md](refactor-consolidate-duplicates.md) | Duplicate Code | High | 30 min | **[DONE]** |
-| 3 | [refactor-extract-caption-route.md](refactor-extract-caption-route.md) | Structure | High | 45 min |
+| 3 | [refactor-extract-caption-route.md](refactor-extract-caption-route.md) | Structure | High | 45 min | **[DONE]** |
 | 4 | [refactor-split-usecaptionjob.md](refactor-split-usecaptionjob.md) | Structure | Medium | 45 min |
 | 5 | [refactor-fix-naming.md](refactor-fix-naming.md) | Naming | Low | 15 min | **[DONE]** |
 | 6 | [refactor-organize-types-file.md](refactor-organize-types-file.md) | Data Org | Low | 20 min | **[DONE]** |
