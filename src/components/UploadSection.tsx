@@ -28,7 +28,7 @@ function ImageCard({
         <img
           src={img.preview}
           alt={img.name}
-          className="w-full h-28 object-cover"
+          className="w-full aspect-square object-cover"
         />
       </button>
 
@@ -225,7 +225,7 @@ export function UploadSection({
             </div>
 
             {galleryOpen && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                 {images.map((img) => (
                   <ImageCard
                     key={img.name}

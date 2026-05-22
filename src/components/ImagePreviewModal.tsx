@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+
 import { ImageFile, ImageStatus } from "./CaptionStudioTypes";
 
 // ---------------------------------------------------------------------------
@@ -29,11 +31,35 @@ export function ImagePreviewModal({
   img,
   status,
   onClose,
+  allImages,
+  currentIndex,
+  onNavigate,
 }: {
   img: ImageFile;
   status: ImageStatus;
   onClose: () => void;
+  allImages: ImageFile[];
+  currentIndex: number;
+  onNavigate: (index: number) => void;
 }) {
+  const hasPrev = currentIndex > 0;
+  const hasNext = currentIndex < allImages.length - 1;
+
+  // Keyboard navigation: arrow keys + escape
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft" && hasPrev) {
+        e.preventDefault();
+        onNavigate(currentIndex - 1);
+      } else if (e.key === "ArrowRight" && hasNext) {
+        e.preventDefault();
+        onNavigate(currentIndex + 1);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [currentIndex, hasPrev, hasNext, onNavigate]);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
@@ -55,13 +81,45 @@ export function ImagePreviewModal({
           &times;
         </button>
 
-        {/* Image */}
-        <div className="flex-shrink-0 bg-zinc-100 flex items-center justify-center">
+        {/* Image with nav arrows */}
+        <div className="flex-shrink-0 bg-zinc-100 flex items-center justify-center relative">
+          {/* Previous button */}
+          {hasPrev && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onNavigate(currentIndex - 1);
+              }}
+              className="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-9 h-9 flex items-center justify-center bg-zinc-900/60 text-zinc-200 rounded-full hover:bg-zinc-900/80 transition-colors"
+              aria-label="Previous image"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+          )}
+
           <img
             src={img.preview}
             alt={img.name}
             className="max-h-80 w-full object-contain"
           />
+
+          {/* Next button */}
+          {hasNext && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onNavigate(currentIndex + 1);
+              }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-9 h-9 flex items-center justify-center bg-zinc-900/60 text-zinc-200 rounded-full hover:bg-zinc-900/80 transition-colors"
+              aria-label="Next image"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          )}
         </div>
 
         {/* Details section */}
@@ -69,6 +127,11 @@ export function ImagePreviewModal({
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-semibold text-zinc-900">{img.name}</h3>
             <StatusBadge status={status.status} />
+            {allImages.length > 1 && (
+              <span className="text-xs text-zinc-400 ml-auto">
+                {currentIndex + 1} / {allImages.length}
+              </span>
+            )}
           </div>
 
           {status.prompt && (

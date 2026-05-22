@@ -27,6 +27,7 @@ export interface CaptionJob {
   includeNameInPrompt: boolean;
   parallelRequests: number;
   createdAt: number;
+  abortSignal: AbortController; // used to cancel processing workers
 }
 
 /** Global map of active jobs. Keyed by job ID. */
@@ -60,6 +61,8 @@ export function createJob(
     });
   }
 
+  const abortController = new AbortController();
+
   jobs.set(id, {
     id,
     images: imageMap,
@@ -72,6 +75,7 @@ export function createJob(
     includeNameInPrompt,
     parallelRequests,
     createdAt: Date.now(),
+    abortSignal: abortController,
   });
 
   return id;
@@ -129,6 +133,25 @@ export function isJobDone(jobId: string): boolean {
       return false;
     }
   }
+  return true;
+}
+
+/** Abort a job — marks all queued images as failed and signals workers to stop. */
+export function abortJob(jobId: string): boolean {
+  const job = jobs.get(jobId);
+  if (!job) return false;
+
+  // Mark all queued images as failed
+  for (const [_filename, entry] of job.images.entries()) {
+    if (entry.status === "queued") {
+      entry.status = "failed";
+      entry.error = "Aborted by user";
+    }
+  }
+
+  // Signal workers to stop
+  job.abortSignal.abort();
+
   return true;
 }
 

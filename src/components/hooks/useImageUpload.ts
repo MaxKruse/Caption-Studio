@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { ALLOWED_EXTENSIONS, getFileExtension, ImageFile } from "../CaptionStudioTypes";
+import { resizeImage } from "@/lib/image-client-utils";
 
 export interface UseImageUploadOptions {
   isProcessing: boolean;
@@ -32,14 +33,16 @@ export function useImageUpload({ isProcessing }: UseImageUploadOptions) {
         continue;
       }
 
+      // Create a small preview for the UI (max 1440px biggest dimension)
       const reader = new FileReader();
-      reader.onload = (e) => {
+      reader.onload = async (e) => {
         const result = e.target?.result as string;
-        const base64 = result.split(",")[1] ?? result;
+        const previewUrl = await resizeImage(result).catch(() => result);
+
         newImages.push({
           name: file.name,
-          data: base64,
-          preview: result,
+          file: file,
+          preview: previewUrl,
         });
         loaded++;
 

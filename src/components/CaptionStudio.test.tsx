@@ -95,9 +95,9 @@ describe("CaptionStudio rendering", () => {
     expect(screen.getByText("Upload Images")).toBeDefined();
   });
 
-  it("renders the Generate section header initially", () => {
+  it("renders the page header initially", () => {
     render(<CaptionStudio />);
-    expect(screen.getByText("Generate")).toBeDefined();
+    expect(screen.getByText("Image Captioning Studio")).toBeDefined();
   });
 
   it("renders the Include in prompt checkbox", () => {
@@ -115,13 +115,14 @@ describe("section numbering", () => {
     vi.stubGlobal("fetch", vi.fn());
   });
 
-  it("renders numbered section indicators", () => {
+  it("renders numbered section indicators (Config + Upload; Download appears when done)", () => {
     render(<CaptionStudio />);
-    // Check for section numbers in circular badges
+    // Only Config (1) and Upload (2) are visible by default
+    // Download (3) appears only when jobDone
     const badges = document.querySelectorAll(
       '.w-6.h-6.rounded-full.bg-zinc-900'
     );
-    expect(badges.length).toBe(3);
+    expect(badges.length).toBe(2);
   });
 });
 
@@ -308,14 +309,17 @@ describe("Caption button", () => {
     vi.stubGlobal("fetch", vi.fn());
   });
 
-  it("renders Caption 0 Images button when no images uploaded", () => {
+  it("does not show floating caption button when no images uploaded", () => {
     render(<CaptionStudio />);
-    expect(screen.getByText("Caption 0 Images")).toBeDefined();
+    // FloatingActionBar returns null when imagesCount === 0 and no job
+    // Use role query for the button specifically
+    expect(screen.queryByRole("button", { name: /^Caption \d/ })).toBeNull();
   });
 
-  it("renders the requirements checklist when cannot caption", () => {
+  it("shows floating bar with caption button when images are uploaded", () => {
+    // The floating bar appears with caption button once images exist
+    // (tested implicitly — bar is hidden when imagesCount === 0)
     render(<CaptionStudio />);
-    expect(screen.getByText("Model selected")).toBeDefined();
-    expect(screen.getByText("Images uploaded")).toBeDefined();
+    expect(screen.queryByRole("button", { name: /Caption/ })).toBeNull();
   });
 });

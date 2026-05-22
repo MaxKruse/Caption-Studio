@@ -103,6 +103,10 @@ export function useCaptionJob(options: UseCaptionJobOptions) {
       setJobError("Enter a server URL");
       return;
     }
+    if (includeNameInPrompt && !captionName.trim()) {
+      setJobError("Enter a Caption Name");
+      return;
+    }
 
     eventSourceRef.current?.close();
     setJobError("");
@@ -110,20 +114,26 @@ export function useCaptionJob(options: UseCaptionJobOptions) {
     setImageStatuses({});
 
     try {
+      // Use FormData to send original files (avoids base64 string size limits)
+      const formData = new FormData();
+      formData.append("config", JSON.stringify({
+        serverUrl: serverUrl.trim(),
+        model: selectedModel,
+        systemPrompt,
+        promptPrefix: includeNameInPrompt ? PROMPT_PREFIX_DEFAULT : "",
+        userPrompt,
+        captionName,
+        includeNameInPrompt,
+        parallelRequests,
+        imageNames: images.map((img) => img.name),
+      }));
+      for (const img of images) {
+        formData.append("images", img.file);
+      }
+
       const res = await fetch("/api/caption", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          images: images.map((img) => ({ name: img.name, data: img.data })),
-          serverUrl: serverUrl.trim(),
-          model: selectedModel,
-          systemPrompt,
-          promptPrefix: includeNameInPrompt ? PROMPT_PREFIX_DEFAULT : "",
-          userPrompt,
-          captionName,
-          includeNameInPrompt,
-          parallelRequests,
-        }),
+        body: formData,
       });
 
       const data = await res.json();
@@ -259,6 +269,39 @@ export function useCaptionJob(options: UseCaptionJobOptions) {
   }, []);
 
   // -----------------------------------------------------------------------
+  // Abort job — stops processing, keeps UI state
+  // -----------------------------------------------------------------------
+  const abortJob = useCallback(async () => {
+    if (!jobId) return;
+
+    // Close SSE connection
+    eventSourceRef.current?.close();
+    eventSourceRef.current = null;
+
+    // Tell server to abort queued images
+    try {
+      await fetch(`/api/caption?jobId=${jobId}`, {
+        method: "DELETE",
+      });
+    } catch {
+      // ignore network errors on abort
+    }
+
+    // Mark remaining queued images as failed on the client side immediately
+    setImageStatuses((prev) => {
+      const updated = { ...prev };
+      for (const [name, status] of Object.entries(updated)) {
+        if (status.status === "queued") {
+          updated[name] = { ...status, status: "failed", error: "Aborted by user" };
+        }
+      }
+      return updated;
+    });
+
+    setIsProcessing(false);
+  }, [jobId]);
+
+  // -----------------------------------------------------------------------
   // Clear error message
   // -----------------------------------------------------------------------
   const clearJobError = useCallback(() => {
@@ -276,6 +319,7 @@ export function useCaptionJob(options: UseCaptionJobOptions) {
     jobError,
     clearJobError,
     startCaptioning,
+    abortJob,
     downloadZip,
     reset,
   };

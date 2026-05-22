@@ -6,6 +6,7 @@ import type { ImageFile, ToastState } from "./CaptionStudioTypes";
 import { formatDuration, PROMPT_PREFIX_DEFAULT, TOAST_DURATION } from "./CaptionStudioTypes";
 export { formatDuration } from "./CaptionStudioTypes";
 import { ConfigSection } from "./ConfigSection";
+import { FloatingActionBar } from "./FloatingActionBar";
 import { ImagePreviewModal } from "./ImagePreviewModal";
 import { ProcessSection } from "./ProcessSection";
 import { UploadSection } from "./UploadSection";
@@ -31,7 +32,7 @@ export function TimeEstimator({
   if (remaining < 0) return null;
 
   return (
-    <div className="fixed bottom-4 left-4 z-50 min-w-[260px] px-3 py-2 bg-zinc-900/90 backdrop-blur-sm text-zinc-100 rounded-lg shadow-lg border border-zinc-700/50 text-xs space-y-0.5">
+    <div className="fixed bottom-[56px] left-4 z-50 min-w-[260px] px-3 py-2 bg-zinc-900/90 backdrop-blur-sm text-zinc-100 rounded-lg shadow-lg border border-zinc-700/50 text-xs space-y-0.5">
       {isDone ? (
         <div className="flex items-center gap-1.5">
           <svg
@@ -159,20 +160,44 @@ export default function CaptionStudio() {
     parallelRequests,
     captionName,
     showToast,
-    onDownloadComplete: imageUpload.clearAll,
+    onDownloadComplete: () => {
+      imageUpload.clearAll();
+      setCaptionName("");
+    },
   });
 
   // -----------------------------------------------------------------------
-  // Escape key closes preview modal
+  // Preview navigation
+  // -----------------------------------------------------------------------
+  const navigatePreview = useCallback((index: number) => {
+    setPreviewImage(imageUpload.images[index] ?? null);
+  }, [imageUpload.images]);
+
+  // -----------------------------------------------------------------------
+  // Keyboard shortcuts: Escape closes modal, arrows navigate gallery
   // -----------------------------------------------------------------------
   useEffect(() => {
     if (!previewImage) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closePreview();
+      if (e.key === "Escape") {
+        closePreview();
+      } else if (e.key === "ArrowLeft") {
+        const idx = imageUpload.images.findIndex((img) => img.name === previewImage.name);
+        if (idx > 0) {
+          e.preventDefault();
+          navigatePreview(idx - 1);
+        }
+      } else if (e.key === "ArrowRight") {
+        const idx = imageUpload.images.findIndex((img) => img.name === previewImage.name);
+        if (idx < imageUpload.images.length - 1) {
+          e.preventDefault();
+          navigatePreview(idx + 1);
+        }
+      }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [previewImage, closePreview]);
+  }, [previewImage, closePreview, imageUpload.images, navigatePreview]);
 
   // -----------------------------------------------------------------------
   // Cleanup toast timer on unmount
@@ -214,7 +239,8 @@ export default function CaptionStudio() {
     !captionJob.isProcessing &&
     imageUpload.images.length > 0 &&
     !!selectedModel &&
-    !!serverUrl.trim();
+    !!serverUrl.trim() &&
+    (!includeNameInPrompt || !!captionName.trim());
 
   const jobDone = !!captionJob.jobId && !captionJob.isProcessing;
 
@@ -251,7 +277,7 @@ export default function CaptionStudio() {
   // Render
   // -----------------------------------------------------------------------
   return (
-    <div className="max-w-7xl mx-auto px-6 py-10 space-y-8">
+    <div className="max-w-7xl mx-auto px-6 py-10 space-y-8 pb-20">
       {/* Header */}
       <header className="border-b border-zinc-200 pb-6">
         <h1 className="text-2xl font-semibold text-zinc-900 tracking-tight">
@@ -385,6 +411,7 @@ export default function CaptionStudio() {
         onParallelRequestsChange={setParallelRequests}
         isProcessing={captionJob.isProcessing}
         promptPrefixReadOnly={includeNameInPrompt ? PROMPT_PREFIX_DEFAULT : ""}
+        captionNameRequired={includeNameInPrompt}
       />
 
       {/* Step 2 — Upload */}
@@ -406,19 +433,25 @@ export default function CaptionStudio() {
         fileInputRef={imageUpload.fileInputRef}
       />
 
-      {/* Step 3 — Process / Download */}
-      <ProcessSection
-        images={imageUpload.images}
-        selectedModel={selectedModel}
-        jobId={captionJob.jobId}
+      {/* Step 3 — Download (caption button moved to floating bar) */}
+      {jobDone && (
+        <ProcessSection
+          isDownloading={captionJob.isDownloading}
+          onDownloadZip={captionJob.downloadZip}
+        />
+      )}
+
+      {/* Floating bottom action bar */}
+      <FloatingActionBar
+        imagesCount={imageUpload.images.length}
+        canCaption={canCaption}
         isProcessing={captionJob.isProcessing}
-        isDownloading={captionJob.isDownloading}
+        jobId={captionJob.jobId}
         progress={captionJob.progress}
         progressPercent={progressPercent}
-        canCaption={canCaption}
-        jobDone={jobDone}
+        selectedModel={selectedModel}
         onStartCaptioning={captionJob.startCaptioning}
-        onDownloadZip={captionJob.downloadZip}
+        onAbort={captionJob.abortJob}
       />
 
       {/* Floating time estimator */}
@@ -437,6 +470,9 @@ export default function CaptionStudio() {
           img={previewImage}
           status={captionJob.imageStatuses[previewImage.name] ?? { status: "queued" }}
           onClose={closePreview}
+          allImages={imageUpload.images}
+          currentIndex={imageUpload.images.findIndex((img) => img.name === previewImage.name)}
+          onNavigate={navigatePreview}
         />
       )}
     </div>

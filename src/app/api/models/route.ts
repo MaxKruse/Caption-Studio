@@ -52,13 +52,15 @@ export async function GET(request: NextRequest) {
     }
 
     // Filter to vision models only (input_modalities must contain both "text" and "image")
+    // This metadata is provided by llama.cpp servers. If no models match (e.g. vllm, other
+    // OpenAI-compatible servers), return all models and trust the user to pick correctly.
     const visionModels = data.data.filter(
       (m: ModelInfo) =>
         m?.architecture?.input_modalities?.includes("image") &&
         m?.architecture?.input_modalities?.includes("text")
     );
 
-    return Response.json({ models: visionModels });
+    return Response.json({ models: visionModels.length > 0 ? visionModels : data.data });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return Response.json(

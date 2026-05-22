@@ -82,7 +82,7 @@ describe("GET /api/models", () => {
     vi.unstubAllGlobals();
   });
 
-  it("filters out text-only models", async () => {
+  it("returns all models when none have vision metadata (fallback for non-llama.cpp servers)", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -93,30 +93,6 @@ describe("GET /api/models", () => {
               input_modalities: ["text"],
             },
           },
-        ],
-      }),
-    });
-
-    vi.stubGlobal("fetch", mockFetch);
-
-    const { GET } = await import("./route");
-
-    const req = new Request(
-      "http://localhost/api/models?serverUrl=http://localhost:8080"
-    );
-    const res = await GET(req as any);
-    const data = await res.json();
-
-    expect(data.models.length).toBe(0);
-
-    vi.unstubAllGlobals();
-  });
-
-  it("filters out image-only models", async () => {
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        data: [
           {
             id: "clip-vit",
             architecture: {
@@ -137,7 +113,43 @@ describe("GET /api/models", () => {
     const res = await GET(req as any);
     const data = await res.json();
 
-    expect(data.models.length).toBe(0);
+    // No vision models matched, so fallback returns all models
+    expect(data.models.length).toBe(2);
+    expect(data.models[0].id).toBe("llama3:70b");
+    expect(data.models[1].id).toBe("clip-vit");
+
+    vi.unstubAllGlobals();
+  });
+
+  it("returns all models when none have architecture field (fallback for servers without metadata)", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [
+          {
+            id: "my-vision-model",
+            // no architecture field - typical of vllm / other servers
+          },
+          {
+            id: "another-model",
+          },
+        ],
+      }),
+    });
+
+    vi.stubGlobal("fetch", mockFetch);
+
+    const { GET } = await import("./route");
+
+    const req = new Request(
+      "http://localhost/api/models?serverUrl=http://localhost:8080"
+    );
+    const res = await GET(req as any);
+    const data = await res.json();
+
+    expect(data.models.length).toBe(2);
+    expect(data.models[0].id).toBe("my-vision-model");
+    expect(data.models[1].id).toBe("another-model");
 
     vi.unstubAllGlobals();
   });

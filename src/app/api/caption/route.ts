@@ -6,6 +6,7 @@
 
 import { NextRequest } from "next/server";
 import {
+  abortJob,
   createJob,
   getJob,
   getProgress,
@@ -13,31 +14,100 @@ import {
   updateImageStatus,
   type ImageEntry,
 } from "@/lib/store";
-import { ensureOpenaiCompatible } from "@/lib/image-utils";
+import { prepareForApi } from "@/lib/image-utils";
 
 // ---------------------------------------------------------------------------
 // POST - Start a new batch captioning job
+// Accepts FormData (real uploads) or JSON (tests/legacy)
 // ---------------------------------------------------------------------------
 export async function POST(request: NextRequest) {
-  const body = await request.json();
+  const contentType = request.headers.get("content-type") || "";
+  let decodedImages: { name: string; data: Buffer }[];
+  let serverUrl = "";
+  let model = "";
+  let systemPrompt = "";
+  let promptPrefix = "";
+  let userPrompt = "";
+  let captionName = "";
+  let includeNameInPrompt = false;
+  let parallelRequests = 4;
 
-  const { images, serverUrl, model, systemPrompt, promptPrefix, userPrompt, captionName, includeNameInPrompt, parallelRequests } = body;
+  if (contentType.includes("multipart/form-data")) {
+    // FormData — real client uploads (original files)
+    const formData = await request.formData();
+    const configRaw = formData.get("config");
+    if (!configRaw || typeof configRaw !== "string") {
+      return Response.json({ error: "Missing config" }, { status: 400 });
+    }
 
-  if (!images || !Array.isArray(images) || images.length === 0) {
-    return Response.json({ error: "No images provided" }, { status: 400 });
+    let config: {
+      serverUrl: string;
+      model: string;
+      systemPrompt?: string;
+      promptPrefix?: string;
+      userPrompt?: string;
+      captionName?: string;
+      includeNameInPrompt?: boolean;
+      parallelRequests?: number;
+      imageNames: string[];
+    };
+
+    try {
+      config = JSON.parse(configRaw);
+    } catch {
+      return Response.json({ error: "Invalid config" }, { status: 400 });
+    }
+
+    serverUrl = config.serverUrl;
+    model = config.model;
+    systemPrompt = config.systemPrompt ?? "";
+    promptPrefix = config.promptPrefix ?? "";
+    userPrompt = config.userPrompt ?? "";
+    captionName = config.captionName ?? "";
+    includeNameInPrompt = !!config.includeNameInPrompt;
+    parallelRequests = config.parallelRequests ?? 4;
+
+    const imageFiles = formData.getAll("images") as File[];
+    if (imageFiles.length === 0) {
+      return Response.json({ error: "No images provided" }, { status: 400 });
+    }
+
+    decodedImages = await Promise.all(
+      imageFiles.map(async (file, i) => ({
+        name: config.imageNames[i] ?? file.name,
+        data: Buffer.from(await file.arrayBuffer()),
+      }))
+    );
+  } else {
+    // JSON — tests and legacy clients
+    const body = await request.json();
+    const { images, ...rest } = body;
+
+    if (!images || !Array.isArray(images) || images.length === 0) {
+      return Response.json({ error: "No images provided" }, { status: 400 });
+    }
+
+    serverUrl = rest.serverUrl ?? "";
+    model = rest.model ?? "";
+    systemPrompt = rest.systemPrompt ?? "";
+    promptPrefix = rest.promptPrefix ?? "";
+    userPrompt = rest.userPrompt ?? "";
+    captionName = rest.captionName ?? "";
+    includeNameInPrompt = !!rest.includeNameInPrompt;
+    parallelRequests = rest.parallelRequests ?? 4;
+
+    decodedImages = images.map((img: { name: string; data: string }) => ({
+      name: img.name,
+      data: Buffer.from(img.data, "base64"),
+    }));
   }
+
   if (!serverUrl || !model) {
     return Response.json(
       { error: "serverUrl and model are required" },
       { status: 400 }
     );
   }
-
-  // Decode base64 image data from the client
-  const decodedImages = images.map((img: { name: string; data: string }) => ({
-    name: img.name,
-    data: Buffer.from(img.data, "base64"),
-  }));
 
   const jobId = createJob(
     decodedImages,
@@ -55,6 +125,25 @@ export async function POST(request: NextRequest) {
   void processJob(jobId);
 
   return Response.json({ jobId });
+}
+
+// ---------------------------------------------------------------------------
+// DELETE - Abort a running job
+// ---------------------------------------------------------------------------
+export async function DELETE(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const jobId = searchParams.get("jobId");
+
+  if (!jobId) {
+    return Response.json({ error: "Missing jobId" }, { status: 400 });
+  }
+
+  const success = abortJob(jobId);
+  if (!success) {
+    return Response.json({ error: "Job not found" }, { status: 404 });
+  }
+
+  return Response.json({ ok: true });
 }
 
 // ---------------------------------------------------------------------------
@@ -151,7 +240,9 @@ async function processJob(jobId: string): Promise<void> {
 
   async function processOne(): Promise<void> {
     while (queue.length > 0) {
+      if (!job || job.abortSignal.signal.aborted) break;
       const [filename, entry] = queue.shift()!;
+      if (!job || job.abortSignal.signal.aborted) break;
       await captionImage(jobId, filename, entry, normalizedUrl, job);
     }
   }
@@ -181,8 +272,8 @@ async function captionImage(
   updateImageStatus(jobId, filename, "processing");
 
   try {
-    // Ensure image is PNG or JPEG (OpenAI only accepts these formats)
-    const { buffer, mimeType } = await ensureOpenaiCompatible(
+    // Resize if needed (max 3072px) and ensure OpenAI-compatible format
+    const { buffer, mimeType } = await prepareForApi(
       filename,
       entry.data
     );
@@ -265,7 +356,7 @@ async function captionImage(
 
       const data = await response.json();
       const caption =
-        data?.choices?.[0]?.message?.content ?? "(empty response)";
+        (data?.choices?.[0]?.message?.content ?? "(empty response)").trim();
       const reasoningContent =
         data?.choices?.[0]?.message?.reasoning_content;
 

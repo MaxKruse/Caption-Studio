@@ -21,6 +21,7 @@ export function ConfigSection({
   onParallelRequestsChange,
   isProcessing,
   promptPrefixReadOnly,
+  captionNameRequired,
 }: {
   serverUrl: string;
   onServerUrlChange: (value: string) => void;
@@ -42,6 +43,7 @@ export function ConfigSection({
   onParallelRequestsChange: (value: number) => void;
   isProcessing: boolean;
   promptPrefixReadOnly: string;
+  captionNameRequired: boolean;
 }) {
   return (
     <section className="rounded-xl border border-zinc-200 overflow-hidden">
@@ -83,7 +85,7 @@ export function ConfigSection({
             </button>
           </div>
           <p className="text-[11px] text-zinc-400 -mt-1">
-            llama.cpp server URL (default: http://localhost:8080)
+OpenAI-compatible server URL (default: http://localhost:8080)
           </p>
 
           {modelError && <p className="text-xs text-zinc-400">{modelError}</p>}
@@ -164,13 +166,20 @@ export function ConfigSection({
                 <span className="normal-case font-normal ml-1">
                   (download filename)
                 </span>
+                {captionNameRequired && (
+                  <span className="normal-case font-normal ml-1 text-zinc-500">— required</span>
+                )}
               </label>
               <input
                 type="text"
                 value={captionName}
                 onChange={(e) => onCaptionNameChange(e.target.value)}
                 placeholder="e.g. CharacterSet01"
-                className="w-full px-3 py-2 text-sm border border-zinc-300 rounded bg-white text-zinc-900 placeholder-zinc-400 focus:outline-none focus:border-zinc-500"
+                className={`w-full px-3 py-2 text-sm border rounded bg-white text-zinc-900 placeholder-zinc-400 focus:outline-none focus:border-zinc-500 transition-colors ${
+                  captionNameRequired && !captionName.trim()
+                    ? "border-zinc-500 ring-1 ring-zinc-400"
+                    : "border-zinc-300"
+                }`}
               />
               <label className="flex items-center gap-2 mt-2 cursor-pointer">
                 <input

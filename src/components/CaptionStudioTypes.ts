@@ -13,8 +13,8 @@ export interface ModelInfo {
 
 export interface ImageFile {
   name: string;
-  data: string; // raw base64
-  preview: string; // data URL
+  file: File; // original file (sent to server via FormData)
+  preview: string; // resized data URL for UI display
 }
 
 export interface ProgressState {
