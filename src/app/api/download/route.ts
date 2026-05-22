@@ -57,29 +57,33 @@ export async function POST(request: Request) {
 
   // Add each image and its caption to the zip
   for (const [filename, entry] of job.images.entries()) {
-    // Add the original image
-    archive.append(entry.data, { name: filename });
-
-    // Add caption text file (same name, .txt extension)
     const base = filename.replace(/\.[^.]+$/, "");
+    const ext = filename.replace(/.*\./, "");
     const count = basenameCounts.get(base) ?? 1;
     const idx = basenameIndex.get(base) ?? 0;
     basenameIndex.set(base, idx + 1);
 
+    // When multiple images share the same base name (e.g. "1.png" + "1.jpg"),
+    // suffix both the image and its caption so they stay paired.
+    // First occurrence keeps the original name; subsequent ones get (1), (2), etc.
+    let imageFile = filename;
     let captionFile = `${base}.txt`;
     if (count > 1 && idx > 0) {
+      imageFile = `${base} (${idx}).${ext}`;
       captionFile = `${base} (${idx}).txt`;
     }
 
-    // Safety: if this caption name somehow collides (e.g. another file already
-    // owns it), keep bumping the suffix.
+    // Safety: if this name somehow collides with an entry that already
+    // owns it, keep bumping the suffix.
     let safetyIdx = idx + 1;
     while (usedCaptionNames.has(captionFile)) {
+      imageFile = `${base} (${safetyIdx}).${ext}`;
       captionFile = `${base} (${safetyIdx}).txt`;
       safetyIdx++;
     }
     usedCaptionNames.add(captionFile);
 
+    archive.append(entry.data, { name: imageFile });
     const captionContent = entry.caption ?? "(caption failed)";
     archive.append(captionContent, { name: captionFile });
   }
