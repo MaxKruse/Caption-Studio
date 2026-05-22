@@ -36,7 +36,7 @@ describe("ModeToggle", () => {
   it("calls onModeChange when clicked", () => {
     const onChange = vi.fn();
     render(<ModeToggle mode="sfw" onModeChange={onChange} />);
-    const toggle = document.querySelector('[role="switch"]');
+    const toggle = document.querySelector<HTMLElement>('[role="switch"]');
     toggle?.click();
     expect(onChange).toHaveBeenCalledWith("nsfw");
   });
@@ -46,7 +46,7 @@ describe("ModeToggle", () => {
     render(
       <ModeToggle mode="sfw" onModeChange={onChange} disabled />
     );
-    const toggle = document.querySelector('[role="switch"]');
+    const toggle = document.querySelector<HTMLElement>('[role="switch"]');
     toggle?.click();
     expect(onChange).not.toHaveBeenCalled();
   });
@@ -54,7 +54,7 @@ describe("ModeToggle", () => {
   it("toggles from nsfw to sfw", () => {
     const onChange = vi.fn();
     render(<ModeToggle mode="nsfw" onModeChange={onChange} />);
-    const toggle = document.querySelector('[role="switch"]');
+    const toggle = document.querySelector<HTMLElement>('[role="switch"]');
     toggle?.click();
     expect(onChange).toHaveBeenCalledWith("sfw");
   });
