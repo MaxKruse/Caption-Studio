@@ -260,6 +260,21 @@ async function processJob(jobId: string): Promise<void> {
 /** Max time allowed per image API call (5 minutes). */
 const API_TIMEOUT_MS = 5 * 60 * 1000;
 
+/** Fetch with an abort timeout — cleans up the timeout in all cases. */
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function captionImage(
   jobId: string,
   filename: string,
@@ -332,45 +347,36 @@ async function captionImage(
       messages,
     };
 
-    // Create abort controller with 5-minute timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-
-    try {
-      const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+    const response = await fetchWithTimeout(
+      `${baseUrl}/v1/chat/completions`,
+      {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody),
         cache: "no-store",
-        signal: controller.signal,
-      });
+      },
+      API_TIMEOUT_MS
+    );
 
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API ${response.status}: ${errorText}`);
-      }
-
-      const data = await response.json();
-      const caption =
-        (data?.choices?.[0]?.message?.content ?? "(empty response)").trim();
-      const reasoningContent =
-        data?.choices?.[0]?.message?.reasoning_content;
-
-      updateImageStatus(jobId, filename, "completed", caption, undefined, promptText, reasoningContent);
-    } catch (err) {
-      clearTimeout(timeoutId);
-      if (err instanceof Error && err.name === "AbortError") {
-        throw new Error(`API request timed out after ${API_TIMEOUT_MS / 1000 / 60} minute(s)`);
-      }
-      throw err;
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`API ${response.status}: ${errorText}`);
     }
+
+    const data = await response.json();
+    const caption =
+      (data?.choices?.[0]?.message?.content ?? "(empty response)").trim();
+    const reasoningContent =
+      data?.choices?.[0]?.message?.reasoning_content;
+
+    updateImageStatus(jobId, filename, "completed", caption, undefined, promptText, reasoningContent);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    updateImageStatus(jobId, filename, "failed", undefined, message);
+    if (error instanceof Error && error.name === "AbortError") {
+      updateImageStatus(jobId, filename, "failed", undefined, `API request timed out after ${API_TIMEOUT_MS / 1000 / 60} minute(s)`);
+    } else {
+      updateImageStatus(jobId, filename, "failed", undefined, message);
+    }
   }
 }
 
