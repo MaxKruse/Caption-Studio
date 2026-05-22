@@ -79,26 +79,6 @@ export async function resizeIfNeeded(
 }
 
 /**
- * Ensures the image data is in an OpenAI-compatible format.
- * If the file is already PNG or JPEG, returns the original buffer and MIME type.
- * Otherwise, converts to JPEG.
- *
- * @deprecated Use `prepareForApi` which also resizes oversized images.
- */
-export async function ensureOpenaiCompatible(
-  filename: string,
-  imageBuffer: Buffer
-): Promise<{ buffer: Buffer; mimeType: string }> {
-  if (!needsConversion(filename)) {
-    const ext = getExtension(filename);
-    const mimeType = ext === "png" ? "image/png" : "image/jpeg";
-    return { buffer: imageBuffer, mimeType };
-  }
-
-  return convertToJpeg(imageBuffer);
-}
-
-/**
  * Ensures the image data is in an OpenAI-compatible format
  * AND resizes it if the biggest dimension exceeds the API limit.
  * If the file is already PNG or JPEG and within size limits, returns as-is.
