@@ -106,6 +106,7 @@ export function ImagePreviewModal({
             </button>
           )}
 
+          {/* eslint-disable-next-line @next/next/no-img-element -- user-uploaded file via ObjectURL, not static asset */}
           <img
             src={fullQualitySrc}
             alt={img.name}

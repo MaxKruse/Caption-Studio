@@ -75,11 +75,6 @@ export function useImageUpload({ isProcessing }: UseImageUploadOptions) {
       );
 
       setIsUploading(false);
-
-      if (rejected.length > 0) {
-        // Rejected files notification handled by parent if needed
-        void rejected;
-      }
     },
     [resizeOne]
   );

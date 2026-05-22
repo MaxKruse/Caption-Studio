@@ -25,6 +25,7 @@ function ImageCard({
         className="w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 cursor-pointer hover:opacity-90 transition-opacity"
         title="Click to view details"
       >
+        {/* eslint-disable-next-line @next/next/no-img-element -- user-uploaded data URLs, not static assets */}
         <img
           src={img.preview}
           alt={img.name}

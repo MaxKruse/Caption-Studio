@@ -241,7 +241,7 @@ describe("GET /api/caption", () => {
     );
 
     // Simulate what the SSE interval builds
-    const statuses: Record<string, { status: string; caption?: string; prompt?: string; reasoningContent?: string }> = {};
+    const statuses: Record<string, { status: string; caption?: string; error?: string; prompt?: string; reasoningContent?: string }> = {};
     const jobRef = store.getJob(jobId);
     if (jobRef) {
       for (const [filename, entry] of jobRef.images.entries()) {
@@ -287,7 +287,7 @@ describe("GET /api/caption", () => {
     );
 
     // Simulate what the SSE interval builds
-    const statuses: Record<string, { status: string; caption?: string; prompt?: string; reasoningContent?: string }> = {};
+    const statuses: Record<string, { status: string; caption?: string; error?: string; prompt?: string; reasoningContent?: string }> = {};
     const jobRef = store.getJob(jobId);
     if (jobRef) {
       for (const [filename, entry] of jobRef.images.entries()) {
@@ -324,7 +324,7 @@ describe("GET /api/caption", () => {
 
     store.updateImageStatus(jobId, "test.png", "completed", "a cat");
 
-    const statuses: Record<string, { status: string; caption?: string; prompt?: string; reasoningContent?: string }> = {};
+    const statuses: Record<string, { status: string; caption?: string; error?: string; prompt?: string; reasoningContent?: string }> = {};
     const jobRef = store.getJob(jobId);
     if (jobRef) {
       for (const [filename, entry] of jobRef.images.entries()) {

@@ -1,8 +1,11 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // captionImage behavior (captured from inline tests)
 // ---------------------------------------------------------------------------
+
+type MockApiResponse = { choices?: { message: Record<string, any> }[] } | null | undefined;
 
 describe("captionImage behavior", () => {
   beforeEach(() => {
@@ -40,7 +43,7 @@ describe("captionImage behavior", () => {
     );
 
     // Simulate what captionImage does — extracting content and reasoning_content
-    const mockResponse = {
+    const mockResponse: MockApiResponse = {
       choices: [{
         message: {
           reasoning_content: "I think this is a cat because...",
@@ -63,7 +66,7 @@ describe("captionImage behavior", () => {
   });
 
   it("handles responses without reasoning_content", async () => {
-    const mockResponse = {
+    const mockResponse: MockApiResponse = {
       choices: [{
         message: {
           content: "A dog running in a field",
@@ -81,7 +84,7 @@ describe("captionImage behavior", () => {
   });
 
   it("uses fallback text for empty response", async () => {
-    const mockResponse = {
+    const mockResponse: MockApiResponse = {
       choices: [{ message: {} }],
     };
 
@@ -92,7 +95,7 @@ describe("captionImage behavior", () => {
   });
 
   it("uses fallback text for missing choices", async () => {
-    const mockResponse = {};
+    const mockResponse: MockApiResponse = {};
 
     const caption =
       mockResponse?.choices?.[0]?.message?.content ?? "(empty response)";
@@ -101,7 +104,7 @@ describe("captionImage behavior", () => {
   });
 
   it("uses fallback text for null response", async () => {
-    const mockResponse = null;
+    const mockResponse = null as MockApiResponse;
 
     const caption =
       mockResponse?.choices?.[0]?.message?.content ?? "(empty response)";

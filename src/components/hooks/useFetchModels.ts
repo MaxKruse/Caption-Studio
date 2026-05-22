@@ -42,8 +42,10 @@ export function useFetchModels(serverUrl: string) {
     }
   }, [serverUrl]);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch-on-mount; setState only fires after await
+  // Fetch models on mount and whenever serverUrl changes
+  // doFetch is memoized via useCallback, so its identity is stable across renders
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch; setState fires after await
     void doFetch();
   }, [doFetch]);
 

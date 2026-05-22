@@ -142,7 +142,7 @@ export function abortJob(jobId: string): boolean {
   if (!job) return false;
 
   // Mark all queued images as failed
-  for (const [_filename, entry] of job.images.entries()) {
+  for (const entry of job.images.values()) {
     if (entry.status === "queued") {
       entry.status = "failed";
       entry.error = "Aborted by user";
