@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { formatDuration } from "./CaptionStudio";
+import { formatDuration } from "./CaptionStudioTypes";
+import { TimeEstimator } from "./TimeEstimator";
 
 // ---------------------------------------------------------------------------
 // formatDuration helper
@@ -49,8 +50,7 @@ describe("TimeEstimator component", () => {
     vi.stubGlobal("fetch", vi.fn());
   });
 
-  it("renders when estimatedRemainingMs and remaining are provided", async () => {
-    const { TimeEstimator } = await import("./CaptionStudio");
+  it("renders when estimatedRemainingMs and remaining are provided", () => {
     render(
       <TimeEstimator
         estimatedRemainingMs={60000}
@@ -65,8 +65,7 @@ describe("TimeEstimator component", () => {
     expect(screen.getByText("5 images left")).toBeDefined();
   });
 
-  it("shows singular 'image left' when remaining is 1", async () => {
-    const { TimeEstimator } = await import("./CaptionStudio");
+  it("shows singular 'image left' when remaining is 1", () => {
     render(
       <TimeEstimator
         estimatedRemainingMs={12000}
@@ -78,8 +77,7 @@ describe("TimeEstimator component", () => {
     expect(screen.getByText("1 image left")).toBeDefined();
   });
 
-  it("shows Waiting... when estimatedRemainingMs is undefined", async () => {
-    const { TimeEstimator } = await import("./CaptionStudio");
+  it("shows Waiting... when estimatedRemainingMs is undefined", () => {
     render(
       <TimeEstimator
         estimatedRemainingMs={undefined}
@@ -94,8 +92,7 @@ describe("TimeEstimator component", () => {
     expect(screen.getByText("5 images left")).toBeDefined();
   });
 
-  it("shows estimate without image count when remaining is 0", async () => {
-    const { TimeEstimator } = await import("./CaptionStudio");
+  it("shows estimate without image count when remaining is 0", () => {
     render(
       <TimeEstimator
         estimatedRemainingMs={0}
@@ -110,8 +107,7 @@ describe("TimeEstimator component", () => {
     expect(screen.queryByText(/images left/)).toBeNull();
   });
 
-  it("does not render when remaining is negative", async () => {
-    const { TimeEstimator } = await import("./CaptionStudio");
+  it("does not render when remaining is negative", () => {
     render(
       <TimeEstimator
         estimatedRemainingMs={0}
@@ -123,8 +119,7 @@ describe("TimeEstimator component", () => {
     expect(screen.queryByText("Est. remaining:")).toBeNull();
   });
 
-  it("shows per-image time when avgTimeMs is provided", async () => {
-    const { TimeEstimator } = await import("./CaptionStudio");
+  it("shows per-image time when avgTimeMs is provided", () => {
     render(
       <TimeEstimator
         estimatedRemainingMs={60000}
@@ -136,8 +131,7 @@ describe("TimeEstimator component", () => {
     expect(screen.getByText("~12s per image")).toBeDefined();
   });
 
-  it("omits per-image time when avgTimeMs is undefined", async () => {
-    const { TimeEstimator } = await import("./CaptionStudio");
+  it("omits per-image time when avgTimeMs is undefined", () => {
     render(
       <TimeEstimator
         estimatedRemainingMs={60000}
@@ -149,8 +143,7 @@ describe("TimeEstimator component", () => {
     expect(screen.queryByText(/per image/)).toBeNull();
   });
 
-  it("shows Done! when isDone is true", async () => {
-    const { TimeEstimator } = await import("./CaptionStudio");
+  it("shows Done! when isDone is true", () => {
     render(
       <TimeEstimator
         estimatedRemainingMs={0}
