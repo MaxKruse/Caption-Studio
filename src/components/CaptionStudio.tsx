@@ -8,7 +8,6 @@ export { formatDuration } from "./CaptionStudioTypes";
 import { ConfigSection } from "./ConfigSection";
 import { FloatingActionBar } from "./FloatingActionBar";
 import { ImagePreviewModal } from "./ImagePreviewModal";
-import { ProcessSection } from "./ProcessSection";
 import { UploadSection } from "./UploadSection";
 import { useCaptionJob } from "./hooks/useCaptionJob";
 import { useFetchModels } from "./hooks/useFetchModels";
@@ -434,14 +433,6 @@ export default function CaptionStudio() {
         fileInputRef={imageUpload.fileInputRef}
       />
 
-      {/* Step 3 — Download (caption button moved to floating bar) */}
-      {jobDone && (
-        <ProcessSection
-          isDownloading={captionJob.isDownloading}
-          onDownloadZip={captionJob.downloadZip}
-        />
-      )}
-
       {/* Floating bottom action bar */}
       <FloatingActionBar
         imagesCount={imageUpload.images.length}
@@ -450,18 +441,21 @@ export default function CaptionStudio() {
         jobId={captionJob.jobId}
         progress={captionJob.progress}
         progressPercent={progressPercent}
-        selectedModel={selectedModel}
         onStartCaptioning={captionJob.startCaptioning}
         onAbort={captionJob.abortJob}
+        onAddMore={() => imageUpload.fileInputRef.current?.click()}
+        onClearAll={handleClearAllToggle}
+        onDownloadZip={captionJob.downloadZip}
+        jobDone={jobDone}
       />
 
-      {/* Floating time estimator */}
-      {(captionJob.isProcessing || jobDone) && (
+      {/* Floating time estimator (hidden when done — info is in the action bar) */}
+      {captionJob.isProcessing && (
         <TimeEstimator
           estimatedRemainingMs={captionJob.progress.estimatedRemainingMs}
           avgTimeMs={captionJob.progress.avgTimeMs}
           remaining={captionJob.progress.queued + captionJob.progress.processing}
-          isDone={jobDone}
+          isDone={false}
         />
       )}
 
