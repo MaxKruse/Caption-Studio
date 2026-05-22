@@ -33,8 +33,8 @@ export default function CaptionStudio() {
 
   // Derive effective selected model — auto-picks first when list refreshes
   const selectedModel =
-    models.length > 0 && models.some((m) => m.id === config.selectedModelState)
-      ? config.selectedModelState
+    models.length > 0 && models.some((m) => m.id === config.selectedModel)
+      ? config.selectedModel
       : models[0]?.id ?? "";
 
   // -- Image upload --

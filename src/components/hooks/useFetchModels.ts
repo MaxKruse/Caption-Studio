@@ -13,7 +13,7 @@ export function useFetchModels(serverUrl: string) {
   const [modelLoading, setModelLoading] = useState(false);
   const [modelError, setModelError] = useState("");
 
-  const doFetch = useCallback(async () => {
+  const fetchModels = useCallback(async () => {
     if (!serverUrl.trim()) {
       setModelError("Enter a server URL first");
       return;
@@ -46,8 +46,8 @@ export function useFetchModels(serverUrl: string) {
   // doFetch is memoized via useCallback, so its identity is stable across renders
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch; setState fires after await
-    void doFetch();
-  }, [doFetch]);
+    void fetchModels();
+  }, [fetchModels]);
 
-  return { models, modelLoading, modelError, fetchModels: doFetch };
+  return { models, modelLoading, modelError, fetchModels };
 }

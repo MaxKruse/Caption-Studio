@@ -99,7 +99,7 @@ export interface UseAppConfigResult {
   // Server & model
   serverUrl: string;
   setServerUrl: (url: string) => void;
-  selectedModelState: string;
+  selectedModel: string;
   setSelectedModel: (id: string) => void;
 
   // Content mode
@@ -134,7 +134,7 @@ export function useAppConfig(): UseAppConfigResult {
   const [serverUrl, setServerUrl] = useState(
     process.env.NEXT_PUBLIC_CAPTION_API_URL || "http://localhost:8080"
   );
-  const [selectedModelState, setSelectedModelState] = useState("");
+  const [selectedModel, setSelectedModel] = useState("");
 
   const [contentMode, setContentMode] = useState<ContentMode>("nsfw");
 
@@ -186,8 +186,8 @@ export function useAppConfig(): UseAppConfigResult {
   return {
     serverUrl,
     setServerUrl,
-    selectedModelState,
-    setSelectedModel: useCallback((id: string) => setSelectedModelState(id), []),
+    selectedModel,
+    setSelectedModel: useCallback((id: string) => setSelectedModel(id), []),
     contentMode,
     setContentMode: handleContentModeChange,
     systemPrompt,
