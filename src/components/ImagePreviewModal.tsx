@@ -52,21 +52,6 @@ export function ImagePreviewModal({
     return () => URL.revokeObjectURL(fullQualitySrc);
   }, [fullQualitySrc]);
 
-  // Keyboard navigation: arrow keys + escape
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "ArrowLeft" && hasPrev) {
-        e.preventDefault();
-        onNavigate(currentIndex - 1);
-      } else if (e.key === "ArrowRight" && hasNext) {
-        e.preventDefault();
-        onNavigate(currentIndex + 1);
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [currentIndex, hasPrev, hasNext, onNavigate]);
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"

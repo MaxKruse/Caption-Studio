@@ -17,7 +17,7 @@
 | 4 | [refactor-split-usecaptionjob.md](refactor-split-usecaptionjob.md) | Structure | Medium | 45 min |
 | 5 | [refactor-fix-naming.md](refactor-fix-naming.md) | Naming | Low | 15 min | **[DONE]** |
 | 6 | [refactor-organize-types-file.md](refactor-organize-types-file.md) | Data Org | Low | 20 min |
-| 7 | [refactor-remove-duplicate-keyboard-nav.md](refactor-remove-duplicate-keyboard-nav.md) | Duplicate Code | Medium | 20 min |
+| 7 | [refactor-remove-duplicate-keyboard-nav.md](refactor-remove-duplicate-keyboard-nav.md) | Duplicate Code | Medium | 20 min | **[DONE]** |
 | 8 | [refactor-simplify-error-handling.md](refactor-simplify-error-handling.md) | Error Handling | Medium | 30 min |
 
 ## Completion Checklist
