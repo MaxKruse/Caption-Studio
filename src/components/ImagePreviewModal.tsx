@@ -102,7 +102,7 @@ export function ImagePreviewModal({
           <img
             src={img.preview}
             alt={img.name}
-            className="max-h-[50vh] w-full object-contain"
+            className="max-h-[80vh] w-full object-contain"
           />
 
           {/* Next button */}
