@@ -3,7 +3,7 @@
  */
 
 import { NextRequest } from "next/server";
-import { getJob } from "@/lib/store";
+import { buildStatusMap, getJob } from "@/lib/store";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -18,17 +18,7 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: "Job not found" }, { status: 404 });
   }
 
-  const statuses: Record<string, { status: string; caption?: string; error?: string; prompt?: string; reasoningContent?: string }> = {};
-
-  for (const [filename, entry] of job.images.entries()) {
-    statuses[filename] = {
-      status: entry.status,
-      caption: entry.caption,
-      error: entry.error,
-      prompt: entry.prompt,
-      reasoningContent: entry.reasoningContent,
-    };
-  }
+  const statuses = buildStatusMap(job);
 
   return Response.json({ statuses });
 }

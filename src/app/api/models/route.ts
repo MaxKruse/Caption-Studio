@@ -6,6 +6,7 @@
 import { NextRequest } from "next/server";
 
 import type { ModelInfo } from "@/components/CaptionStudioTypes";
+import { normalizeServerUrl } from "@/lib/url-utils";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -19,7 +20,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Normalize URL - strip trailing slash and /v1 suffix
-  const normalizedUrl = serverUrl.replace(/\/+$/, "").replace(/\/v1$/, "");
+  const normalizedUrl = normalizeServerUrl(serverUrl);
 
   try {
     const response = await fetch(`${normalizedUrl}/v1/models`, {

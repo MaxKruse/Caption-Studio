@@ -7,6 +7,7 @@
 import { NextRequest } from "next/server";
 import {
   abortJob,
+  buildStatusMap,
   createJob,
   getJob,
   getProgress,
@@ -15,6 +16,7 @@ import {
   type ImageEntry,
 } from "@/lib/store";
 import { prepareForApi } from "@/lib/image-utils";
+import { normalizeServerUrl } from "@/lib/url-utils";
 
 // ---------------------------------------------------------------------------
 // POST - Start a new batch captioning job
@@ -188,18 +190,7 @@ export async function GET(request: NextRequest) {
     const jobRef = getJob(jobId);
 
     // Build per-image status map
-    const statuses: Record<string, { status: string; caption?: string; error?: string; prompt?: string; reasoningContent?: string }> = {};
-    if (jobRef) {
-      for (const [filename, entry] of jobRef.images.entries()) {
-        statuses[filename] = {
-          status: entry.status,
-          caption: entry.caption,
-          error: entry.error,
-          prompt: entry.prompt,
-          reasoningContent: entry.reasoningContent,
-        };
-      }
-    }
+    const statuses = jobRef ? buildStatusMap(jobRef) : {};
 
     sendEvent({ ...progress, statuses, avgTimeMs: progress.avgTimeMs, estimatedRemainingMs: progress.estimatedRemainingMs });
 
@@ -231,7 +222,7 @@ async function processJob(jobId: string): Promise<void> {
   const job = getJob(jobId);
   if (!job) return;
 
-  const normalizedUrl = job.serverUrl.replace(/\/+$/, "").replace(/\/v1$/, "");
+  const normalizedUrl = normalizeServerUrl(job.serverUrl);
   const entries = Array.from(job.images.entries()); // [filename, entry][]
 
   // Process with concurrency limit from job settings

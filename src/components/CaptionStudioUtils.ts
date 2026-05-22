@@ -2,10 +2,13 @@
 // Utilities
 // ---------------------------------------------------------------------------
 
-export function getFileExtension(name: string): string {
-  const parts = name.split(".");
-  return parts.length > 1 ? parts.pop()!.toLowerCase() : "";
-}
+import { getExtension } from "@/lib/string-utils";
+
+/**
+ * Returns the file extension (lowercase, no dot) from a filename.
+ * Re-exported from the shared string utilities for backward compatibility.
+ */
+export { getExtension as getFileExtension };
 
 /** Format milliseconds to a compact human-readable duration string. */
 export function formatDuration(ms: number): string {

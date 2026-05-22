@@ -5,16 +5,12 @@
 
 import sharp from "sharp";
 
+import { getExtension } from "./string-utils";
+
+export { getExtension };
+
 // Extensions that OpenAI accepts without conversion
 const OPENAI_ACCEPTED = new Set(["png", "jpg", "jpeg"]);
-
-/**
- * Returns the file extension (lowercase, no dot) from a filename.
- */
-export function getExtension(filename: string): string {
-  const parts = filename.split(".");
-  return parts.length > 1 ? parts.pop()!.toLowerCase() : "";
-}
 
 /**
  * Checks if an image needs to be converted to JPEG for OpenAI compatibility.

@@ -201,3 +201,40 @@ export function getProgress(jobId: string): {
 
   return result;
 }
+
+/** Build a per-image status map for API responses. */
+export function buildStatusMap(
+  job: CaptionJob
+): Record<
+  string,
+  {
+    status: string;
+    caption?: string;
+    error?: string;
+    prompt?: string;
+    reasoningContent?: string;
+  }
+> {
+  const statuses: Record<
+    string,
+    {
+      status: string;
+      caption?: string;
+      error?: string;
+      prompt?: string;
+      reasoningContent?: string;
+    }
+  > = {};
+
+  for (const [filename, entry] of job.images.entries()) {
+    statuses[filename] = {
+      status: entry.status,
+      caption: entry.caption,
+      error: entry.error,
+      prompt: entry.prompt,
+      reasoningContent: entry.reasoningContent,
+    };
+  }
+
+  return statuses;
+}
