@@ -144,7 +144,7 @@ describe("API Configuration", () => {
   it("renders default system prompt", () => {
     render(<CaptionStudio />);
     expect(
-      screen.getByText(/highly precise image captioning assistant/)
+      screen.getByText(/explicit, unfiltered image captioning assistant/)
     ).toBeDefined();
   });
 });
