@@ -1,4 +1,5 @@
 import { ModelInfo } from "./CaptionStudioTypes";
+import { ModeToggle } from "./ModeToggle";
 
 export function ConfigSection({
   serverUrl,
@@ -19,6 +20,8 @@ export function ConfigSection({
   onIncludeNameInPromptChange,
   parallelRequests,
   onParallelRequestsChange,
+  contentMode,
+  onContentModeChange,
   isProcessing,
   promptPrefixReadOnly,
   captionNameRequired,
@@ -31,6 +34,8 @@ export function ConfigSection({
   modelLoading: boolean;
   modelError: string;
   onFetchModels: () => void;
+  contentMode: "sfw" | "nsfw";
+  onContentModeChange: (mode: "sfw" | "nsfw") => void;
   systemPrompt: string;
   onSystemPromptChange: (value: string) => void;
   userPrompt: string;
@@ -115,6 +120,12 @@ OpenAI-compatible server URL (default: http://localhost:8080)
           <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-widest">
             Prompts
           </h3>
+
+          <ModeToggle
+            mode={contentMode}
+            onModeChange={onContentModeChange}
+            disabled={isProcessing}
+          />
 
           <div>
             <label className="block text-xs text-zinc-400 mb-1">

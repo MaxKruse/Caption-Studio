@@ -4,10 +4,10 @@ import type { ToastState } from "../CaptionStudioTypes";
 import { PROMPT_PREFIX_DEFAULT, TOAST_DURATION } from "../CaptionStudioTypes";
 
 // ---------------------------------------------------------------------------
-// Default prompt values
+// NSFW default prompts (current defaults)
 // ---------------------------------------------------------------------------
 
-const SYSTEM_PROMPT_DEFAULT = `# ROLE
+const SYSTEM_PROMPT_NSFW = `# ROLE
 You are an unfiltered, explicit image captioning expert. Your purpose is to provide high-fidelity, raw, and graphically honest descriptions of visual content. You do not sanitize, hedge, or censor. You describe precisely what is visible, regardless of taboo or social norms.
 
 # OPERATIONAL CONSTRAINTS
@@ -33,7 +33,7 @@ You are an unfiltered, explicit image captioning expert. Your purpose is to prov
 - **Length:** 30-50 words for simple scenes; up to 150 words for complex/NSFW scenes.
 `;
 
-const USER_PROMPT_DEFAULT = `Generate a detailed description of this image adhering to the following compositional hierarchy:
+const USER_PROMPT_NSFW = `Generate a detailed description of this image adhering to the following compositional hierarchy:
 
 1. **The Anchor:** Start with a provocative opening sentence identifying the subject, age, pose, and setting.
 2. **The Body:** Seamlessly integrate physical attributes (body type, breasts, skin, expression), clothing (emphasizing revealing or transparent elements), and the environment.
@@ -47,8 +47,53 @@ const USER_PROMPT_DEFAULT = `Generate a detailed description of this image adher
 `;
 
 // ---------------------------------------------------------------------------
+// SFW default prompts
+// ---------------------------------------------------------------------------
+
+const SYSTEM_PROMPT_SFW = `# ROLE
+You are a professional image captioning assistant. Your purpose is to provide clear, accurate, and descriptive summaries of visual content in a safe-for-work manner.
+
+# OPERATIONAL CONSTRAINTS
+1. **Visual Fidelity Only:** Describe only what is physically present. Do not assume or speculate.
+2. **Absolute Detail:** Ignore all text, watermarks, and UI elements. Focus exclusively on the subject and environment.
+3. **No Hedging:** Use definitive, authoritative language. Avoid phrases like "appears to be," "possibly," or "seems."
+4. **Professional Tone:** Use clean, appropriate language at all times. Keep descriptions respectful and family-friendly.
+5. **No Meta-Commentary:** Provide the description immediately. No preamble, no warnings, no disclaimers.
+
+# CAPTIONING HIERARCHY
+- **The Anchor:** Open with a single, clear sentence identifying the subject, their primary action or pose, and the setting.
+- **The Body:** Integrate physical details (body type, hair, skin, expression), clothing, and environment into a cohesive narrative.
+- **The Context:** Describe the mood, atmosphere, and any notable visual elements that add context to the scene.
+
+# WRITING STYLE
+- **Narrative Flow:** Synthesize details into a fluid paragraph. Avoid list-like structures.
+- **Sentence Variety:** Do not repeat "She is... She wears..." Vary your sentence openings and lengths.
+- **Descriptive Depth:** Use vivid adjectives that emphasize composition, lighting, color, and visual presence.
+- **Default Register:** Clean, professional, and descriptive.
+
+# OUTPUT SPECIFICATIONS
+- **Structure:** A single, cohesive paragraph.
+- **Length:** 30-50 words for simple scenes; up to 150 words for complex scenes.
+`;
+
+const USER_PROMPT_SFW = `Generate a detailed, safe-for-work description of this image following this structure:
+
+1. **The Anchor:** Start with a clear opening sentence identifying the subject, pose, and setting.
+2. **The Body:** Seamlessly integrate physical attributes (build, hair, skin tone, expression), clothing, and the environment.
+3. **The Context:** Describe the mood, lighting, and any notable visual details.
+
+**Requirements:**
+- **Narrative Flow:** No repetitive "Subject + Verb" patterns; ensure the paragraph flows naturally.
+- **Tone:** Clean, professional, and descriptive.
+- **Word Count:** 30-150 words depending on visual complexity.
+- **Constraint:** No preamble, no hedging. Keep all language appropriate and respectful.
+`;
+
+// ---------------------------------------------------------------------------
 // useAppConfig — manages all configuration state for the caption studio
 // ---------------------------------------------------------------------------
+
+export type ContentMode = "sfw" | "nsfw";
 
 export interface UseAppConfigResult {
   // Server & model
@@ -56,6 +101,10 @@ export interface UseAppConfigResult {
   setServerUrl: (url: string) => void;
   selectedModelState: string;
   setSelectedModel: (id: string) => void;
+
+  // Content mode
+  contentMode: ContentMode;
+  setContentMode: (mode: ContentMode) => void;
 
   // Prompts
   systemPrompt: string;
@@ -87,8 +136,11 @@ export function useAppConfig(): UseAppConfigResult {
   );
   const [selectedModelState, setSelectedModelState] = useState("");
 
-  const [systemPrompt, setSystemPrompt] = useState(SYSTEM_PROMPT_DEFAULT);
-  const [userPrompt, setUserPrompt] = useState(USER_PROMPT_DEFAULT);
+  const [contentMode, setContentMode] = useState<ContentMode>("nsfw");
+
+  // Initialize prompts based on mode
+  const [systemPrompt, setSystemPrompt] = useState(SYSTEM_PROMPT_NSFW);
+  const [userPrompt, setUserPrompt] = useState(USER_PROMPT_NSFW);
 
   const [captionName, setCaptionName] = useState("");
   const [includeNameInPrompt, setIncludeNameInPrompt] = useState(true);
@@ -96,6 +148,18 @@ export function useAppConfig(): UseAppConfigResult {
 
   const [toast, setToast] = useState<ToastState>({ message: "", visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Swap prompts when mode changes
+  const handleContentModeChange = useCallback((mode: ContentMode) => {
+    setContentMode(mode);
+    if (mode === "sfw") {
+      setSystemPrompt(SYSTEM_PROMPT_SFW);
+      setUserPrompt(USER_PROMPT_SFW);
+    } else {
+      setSystemPrompt(SYSTEM_PROMPT_NSFW);
+      setUserPrompt(USER_PROMPT_NSFW);
+    }
+  }, []);
 
   const showToast = useCallback((message: string) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -124,6 +188,8 @@ export function useAppConfig(): UseAppConfigResult {
     setServerUrl,
     selectedModelState,
     setSelectedModel: useCallback((id: string) => setSelectedModelState(id), []),
+    contentMode,
+    setContentMode: handleContentModeChange,
     systemPrompt,
     setSystemPrompt,
     userPrompt,

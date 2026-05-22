@@ -144,7 +144,7 @@ describe("API Configuration", () => {
   it("renders default system prompt", () => {
     render(<CaptionStudio />);
     expect(
-      screen.getByText(/explicit, unfiltered image captioning assistant/)
+      screen.getByText(/unfiltered, explicit image captioning expert/)
     ).toBeDefined();
   });
 });
@@ -271,32 +271,33 @@ describe("Default prompt text", () => {
     vi.stubGlobal("fetch", vi.fn());
   });
 
-  it("system prompt mentions watermarks and signatures", () => {
+  it("system prompt mentions watermarks", () => {
     render(<CaptionStudio />);
     expect(
-      screen.getByText(/watermarks, signatures/)
+      screen.getByText(/watermarks/)
     ).toBeDefined();
   });
 
-  it("system prompt mentions ignoring text overlays", () => {
+  it("system prompt mentions ignoring text", () => {
     render(<CaptionStudio />);
     expect(
-      screen.getByText(/text overlays/)
+      screen.getByText(/Ignore all text/)
     ).toBeDefined();
   });
 
-  it("user prompt mentions man, woman, boy, girl", () => {
+  it("user prompt mentions compositional hierarchy", () => {
     render(<CaptionStudio />);
     expect(
-      screen.getByText(/man, woman, boy, girl/)
+      screen.getByText(/compositional hierarchy/)
     ).toBeDefined();
   });
 
-  it("user prompt mentions approximate age", () => {
+  it("user prompt mentions Narrative Flow", () => {
     render(<CaptionStudio />);
-    expect(
-      screen.getByText(/approximate age/)
-    ).toBeDefined();
+    // Check the user prompt textarea value directly
+    const textareas = document.querySelectorAll("textarea");
+    const userPromptValue = textareas[1]?.value;
+    expect(userPromptValue).toContain("Narrative Flow");
   });
 });
 

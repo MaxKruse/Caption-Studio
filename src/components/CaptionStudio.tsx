@@ -173,6 +173,8 @@ export default function CaptionStudio() {
         modelLoading={modelLoading}
         modelError={modelError}
         onFetchModels={fetchModels}
+        contentMode={config.contentMode}
+        onContentModeChange={config.setContentMode}
         systemPrompt={config.systemPrompt}
         onSystemPromptChange={config.setSystemPrompt}
         userPrompt={config.userPrompt}
