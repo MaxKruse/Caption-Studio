@@ -267,6 +267,93 @@ describe("POST /api/download", () => {
     expect(store.getJob(jobId)).toBeUndefined();
   });
 
+  it("renames caption files when basenames collide (same name, different extension)", async () => {
+    const store = await import("@/lib/store");
+
+    const jobId = store.createJob(
+      [
+        { name: "1.png", data: Buffer.from("img-png") },
+        { name: "1.jpg", data: Buffer.from("img-jpg") },
+      ],
+      "http://localhost:8080",
+      "llama3",
+      "",
+      "",
+      "describe",
+      "",
+      false,
+      1
+    );
+
+    store.updateImageStatus(jobId, "1.png", "completed", "caption for png");
+    store.updateImageStatus(jobId, "1.jpg", "completed", "caption for jpg");
+
+    const { POST } = await import("./route");
+
+    const req = new Request("http://localhost/api/download", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+
+    const buffer = Buffer.from(await res.arrayBuffer());
+    const text = buffer.toString("utf-8");
+
+    // Both images present
+    expect(text).toContain("1.png");
+    expect(text).toContain("1.jpg");
+
+    // Caption files have unique names — one plain, one suffixed
+    expect(text).toContain("1.txt");
+    expect(text).toContain("1 (1).txt");
+  });
+
+  it("handles three-way basename collision", async () => {
+    const store = await import("@/lib/store");
+
+    const jobId = store.createJob(
+      [
+        { name: "photo.png", data: Buffer.from("a") },
+        { name: "photo.jpg", data: Buffer.from("b") },
+        { name: "photo.webp", data: Buffer.from("c") },
+      ],
+      "http://localhost:8080",
+      "llama3",
+      "",
+      "",
+      "describe",
+      "",
+      false,
+      1
+    );
+
+    store.updateImageStatus(jobId, "photo.png", "completed", "cap png");
+    store.updateImageStatus(jobId, "photo.jpg", "completed", "cap jpg");
+    store.updateImageStatus(jobId, "photo.webp", "completed", "cap webp");
+
+    const { POST } = await import("./route");
+
+    const req = new Request("http://localhost/api/download", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+
+    const buffer = Buffer.from(await res.arrayBuffer());
+    const text = buffer.toString("utf-8");
+
+    // All three unique caption files present
+    expect(text).toContain("photo.txt");
+    expect(text).toContain("photo (1).txt");
+    expect(text).toContain("photo (2).txt");
+  });
+
   it("handles files with multiple dots in the name", async () => {
     const store = await import("@/lib/store");
 

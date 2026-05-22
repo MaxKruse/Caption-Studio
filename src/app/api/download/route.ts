@@ -40,14 +40,46 @@ export async function POST(request: Request) {
     console.error("Archive error:", err);
   });
 
+  // Build a map of basename -> count to detect caption filename collisions.
+  // e.g. "1.png" and "1.jpg" both want "1.txt" → second becomes "1 (1).txt".
+  const basenameCounts = new Map<string, number>();
+  for (const filename of job.images.keys()) {
+    const base = filename.replace(/\.[^.]+$/, "");
+    basenameCounts.set(base, (basenameCounts.get(base) ?? 0) + 1);
+  }
+
+  // Track which caption names we've already used (in case a count-suffixed
+  // name collides with another entry's plain caption name).
+  const usedCaptionNames = new Set<string>();
+
+  // Running index per basename so we assign unique suffixes.
+  const basenameIndex = new Map<string, number>();
+
   // Add each image and its caption to the zip
   for (const [filename, entry] of job.images.entries()) {
     // Add the original image
     archive.append(entry.data, { name: filename });
 
     // Add caption text file (same name, .txt extension)
-    const nameWithoutExt = filename.replace(/\.[^.]+$/, "");
-    const captionFile = `${nameWithoutExt}.txt`;
+    const base = filename.replace(/\.[^.]+$/, "");
+    const count = basenameCounts.get(base) ?? 1;
+    const idx = basenameIndex.get(base) ?? 0;
+    basenameIndex.set(base, idx + 1);
+
+    let captionFile = `${base}.txt`;
+    if (count > 1 && idx > 0) {
+      captionFile = `${base} (${idx}).txt`;
+    }
+
+    // Safety: if this caption name somehow collides (e.g. another file already
+    // owns it), keep bumping the suffix.
+    let safetyIdx = idx + 1;
+    while (usedCaptionNames.has(captionFile)) {
+      captionFile = `${base} (${safetyIdx}).txt`;
+      safetyIdx++;
+    }
+    usedCaptionNames.add(captionFile);
+
     const captionContent = entry.caption ?? "(caption failed)";
     archive.append(captionContent, { name: captionFile });
   }
