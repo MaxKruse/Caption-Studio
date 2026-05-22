@@ -6,6 +6,10 @@ import {
   PROMPT_PREFIX_DEFAULT,
 } from "../CaptionStudioTypes";
 
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
 export interface UseCaptionJobOptions {
   images: ImageFile[];
   selectedModel: string;
@@ -19,55 +23,61 @@ export interface UseCaptionJobOptions {
   onDownloadComplete: () => void;
 }
 
-export function useCaptionJob(options: UseCaptionJobOptions) {
-  const {
-    images,
-    selectedModel,
-    serverUrl,
-    systemPrompt,
-    userPrompt,
-    includeNameInPrompt,
-    parallelRequests,
-    captionName,
-    showToast,
-    onDownloadComplete,
-  } = options;
+interface SSEHookOptions {
+  jobId: string | null;
+  eventSourceRef: React.MutableRefObject<EventSource | null>;
+  showErrorLogRef: React.MutableRefObject<boolean>;
+  onProgress: (progress: ProgressState) => void;
+  onStatuses: (statuses: Record<string, ImageStatus>) => void;
+  onDone: (failed: number) => void;
+  showToast: (message: string) => void;
+  setShowErrorLog: (value: boolean | ((prev: boolean) => boolean)) => void;
+}
 
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [progress, setProgress] = useState<ProgressState>({
-    total: 0,
-    queued: 0,
-    processing: 0,
-    completed: 0,
-    failed: 0,
-  });
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [imageStatuses, setImageStatuses] = useState<
-    Record<string, ImageStatus>
-  >({});
-  const [showErrorLog, setShowErrorLog] = useState(false);
-  const [jobError, setJobError] = useState("");
+interface ActionsHookOptions {
+  images: ImageFile[];
+  selectedModel: string;
+  serverUrl: string;
+  systemPrompt: string;
+  userPrompt: string;
+  includeNameInPrompt: boolean;
+  parallelRequests: number;
+  captionName: string;
+  jobId: string | null;
+  eventSourceRef: React.MutableRefObject<EventSource | null>;
+  showToast: (message: string) => void;
+  onDownloadComplete: () => void;
+  setIsProcessing: (value: boolean) => void;
+  setIsDownloading: (value: boolean) => void;
+  setImageStatuses: React.Dispatch<React.SetStateAction<Record<string, ImageStatus>>>;
+  setProgress: React.Dispatch<React.SetStateAction<ProgressState>>;
+  setJobId: (value: string | null) => void;
+  setJobError: (value: string) => void;
+}
 
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const showErrorLogRef = useRef(false);
+// ---------------------------------------------------------------------------
+// useCaptionSSE — EventSource lifecycle + polling fallback
+// ---------------------------------------------------------------------------
 
-  useEffect(() => {
-    showErrorLogRef.current = showErrorLog;
-  }, [showErrorLog]);
-
-  // -----------------------------------------------------------------------
+function useCaptionSSE({
+  jobId,
+  eventSourceRef,
+  showErrorLogRef,
+  onProgress,
+  onStatuses,
+  onDone,
+  showToast,
+  setShowErrorLog,
+}: SSEHookOptions) {
   // Cleanup SSE on unmount
-  // -----------------------------------------------------------------------
   useEffect(() => {
+    const es = eventSourceRef.current;
     return () => {
-      eventSourceRef.current?.close();
+      es?.close();
     };
-  }, []);
+  }, [eventSourceRef]);
 
-  // -----------------------------------------------------------------------
   // Polling fallback for status updates
-  // -----------------------------------------------------------------------
   useEffect(() => {
     if (!jobId) return;
 
@@ -77,7 +87,7 @@ export function useCaptionJob(options: UseCaptionJobOptions) {
         if (!res.ok) return;
         const data = await res.json();
         if (data.statuses) {
-          setImageStatuses(data.statuses);
+          onStatuses(data.statuses);
         }
       } catch {
         // ignore
@@ -85,12 +95,64 @@ export function useCaptionJob(options: UseCaptionJobOptions) {
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [jobId]);
+  }, [jobId, onStatuses]);
 
-  // -----------------------------------------------------------------------
+  // Return handler for startCaptioning to use
+  const handleSSEMessage = useCallback(
+    (event: MessageEvent) => {
+      const payload: ProgressState = JSON.parse(event.data);
+      onProgress(payload);
+      if (payload.statuses) {
+        onStatuses(payload.statuses);
+      }
+      if (payload.done) {
+        onDone(payload.failed ?? 0);
+        if (payload.failed > 0) {
+          showToast(`${payload.failed} image(s) failed to caption`);
+          if (!showErrorLogRef.current) {
+            setShowErrorLog(true);
+          }
+        }
+      }
+    },
+    [onProgress, onStatuses, onDone, showToast, showErrorLogRef, setShowErrorLog],
+  );
+
+  const handleSSEError = useCallback(() => {
+    // Caller will handle closing
+  }, []);
+
+  return { handleSSEMessage, handleSSEError };
+}
+
+// ---------------------------------------------------------------------------
+// useCaptionActions — start, abort, download, reset
+// ---------------------------------------------------------------------------
+
+function useCaptionActions({
+  images,
+  selectedModel,
+  serverUrl,
+  systemPrompt,
+  userPrompt,
+  includeNameInPrompt,
+  parallelRequests,
+  captionName,
+  jobId,
+  eventSourceRef,
+  showToast,
+  onDownloadComplete,
+  setIsProcessing,
+  setIsDownloading,
+  setImageStatuses,
+  setProgress,
+  setJobId,
+  setJobError,
+}: ActionsHookOptions) {
   // Start batch captioning
-  // -----------------------------------------------------------------------
-  const startCaptioning = useCallback(async () => {
+  const startCaptioning = useCallback(async (sseHandlers: {
+    handleSSEMessage: (event: MessageEvent) => void;
+  }) => {
     if (images.length === 0) {
       setJobError("Upload at least one image");
       return;
@@ -114,7 +176,6 @@ export function useCaptionJob(options: UseCaptionJobOptions) {
     setImageStatuses({});
 
     try {
-      // Use FormData to send original files (avoids base64 string size limits)
       const formData = new FormData();
       formData.append("config", JSON.stringify({
         serverUrl: serverUrl.trim(),
@@ -145,7 +206,6 @@ export function useCaptionJob(options: UseCaptionJobOptions) {
       }
 
       setJobId(data.jobId);
-      setShowErrorLog(false);
 
       const initial: Record<string, ImageStatus> = {};
       for (const img of images) {
@@ -156,24 +216,7 @@ export function useCaptionJob(options: UseCaptionJobOptions) {
       const es = new EventSource(`/api/caption?jobId=${data.jobId}`);
       eventSourceRef.current = es;
 
-      es.onmessage = (event) => {
-        const payload = JSON.parse(event.data);
-        setProgress(payload);
-        if (payload.statuses) {
-          setImageStatuses(payload.statuses);
-        }
-        if (payload.done) {
-          es.close();
-          eventSourceRef.current = null;
-          setIsProcessing(false);
-          if (payload.failed > 0) {
-            showToast(`${payload.failed} image(s) failed to caption`);
-            if (!showErrorLogRef.current) {
-              setShowErrorLog(true);
-            }
-          }
-        }
-      };
+      es.onmessage = sseHandlers.handleSSEMessage;
 
       es.onerror = () => {
         es.close();
@@ -195,11 +238,14 @@ export function useCaptionJob(options: UseCaptionJobOptions) {
     parallelRequests,
     captionName,
     showToast,
+    eventSourceRef,
+    setJobError,
+    setIsProcessing,
+    setImageStatuses,
+    setJobId,
   ]);
 
-  // -----------------------------------------------------------------------
   // Download ZIP
-  // -----------------------------------------------------------------------
   const downloadZip = useCallback(async () => {
     if (!jobId) return;
 
@@ -250,11 +296,9 @@ export function useCaptionJob(options: UseCaptionJobOptions) {
     } finally {
       setIsDownloading(false);
     }
-  }, [jobId, captionName, showToast, onDownloadComplete]);
+  }, [jobId, captionName, showToast, onDownloadComplete, setJobError, setJobId, setImageStatuses, setProgress, setIsDownloading]);
 
-  // -----------------------------------------------------------------------
   // Reset job state (called by clearAll)
-  // -----------------------------------------------------------------------
   const reset = useCallback(() => {
     setJobId(null);
     setImageStatuses({});
@@ -266,11 +310,9 @@ export function useCaptionJob(options: UseCaptionJobOptions) {
       failed: 0,
     });
     setJobError("");
-  }, []);
+  }, [setJobId, setImageStatuses, setProgress, setJobError]);
 
-  // -----------------------------------------------------------------------
   // Abort job — stops processing, keeps UI state
-  // -----------------------------------------------------------------------
   const abortJob = useCallback(async () => {
     if (!jobId) return;
 
@@ -299,28 +341,66 @@ export function useCaptionJob(options: UseCaptionJobOptions) {
     });
 
     setIsProcessing(false);
-  }, [jobId]);
+  }, [jobId, eventSourceRef, setImageStatuses, setIsProcessing]);
 
-  // -----------------------------------------------------------------------
   // Clear error message
-  // -----------------------------------------------------------------------
   const clearJobError = useCallback(() => {
     setJobError("");
-  }, []);
+  }, [setJobError]);
+
+  return { startCaptioning, downloadZip, reset, abortJob, clearJobError };
+}
+
+// ---------------------------------------------------------------------------
+// useCaptionJob — Orchestrator (public API)
+// ---------------------------------------------------------------------------
+
+const emptyProgress: ProgressState = {
+  total: 0, queued: 0, processing: 0, completed: 0, failed: 0,
+};
+
+export function useCaptionJob(options: UseCaptionJobOptions) {
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [progress, setProgress] = useState<ProgressState>(emptyProgress);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [imageStatuses, setImageStatuses] = useState<Record<string, ImageStatus>>({});
+  const [showErrorLog, setShowErrorLog] = useState(false);
+  const [jobError, setJobError] = useState("");
+
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const showErrorLogRef = useRef(false);
+
+  useEffect(() => { showErrorLogRef.current = showErrorLog; }, [showErrorLog]);
+
+  const sseHandlers = useCaptionSSE({
+    jobId, eventSourceRef, showErrorLogRef,
+    onProgress: setProgress, onStatuses: setImageStatuses,
+    onDone: () => {
+      eventSourceRef.current?.close();
+      eventSourceRef.current = null;
+      setIsProcessing(false);
+    },
+    showToast: options.showToast, setShowErrorLog,
+  });
+
+  const { startCaptioning, downloadZip, reset, abortJob, clearJobError } =
+    useCaptionActions({
+      ...options,
+      jobId, eventSourceRef,
+      setIsProcessing, setIsDownloading,
+      setImageStatuses, setProgress, setJobId, setJobError,
+    });
+
+  const startCaptioningWrapped = useCallback(async () => {
+    await startCaptioning({ handleSSEMessage: sseHandlers.handleSSEMessage });
+  }, [startCaptioning, sseHandlers]);
 
   return {
-    jobId,
-    progress,
-    isProcessing,
-    isDownloading,
-    imageStatuses,
-    showErrorLog,
-    setShowErrorLog,
-    jobError,
-    clearJobError,
-    startCaptioning,
-    abortJob,
-    downloadZip,
-    reset,
+    jobId, progress, isProcessing, isDownloading,
+    imageStatuses, showErrorLog, setShowErrorLog,
+    jobError, clearJobError,
+    startCaptioning: startCaptioningWrapped,
+    abortJob, downloadZip, reset,
   };
 }
