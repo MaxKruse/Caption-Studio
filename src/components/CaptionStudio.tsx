@@ -10,7 +10,7 @@ import { FailedImagesLog } from "./FailedImagesLog";
 import { FloatingActionBar } from "./FloatingActionBar";
 import { ImagePreviewModal } from "./ImagePreviewModal";
 import { JobErrorMessage } from "./JobErrorMessage";
-import { TimeEstimator } from "./TimeEstimator";
+
 import { ToastNotification } from "./ToastNotification";
 import { UploadSection } from "./UploadSection";
 import { useAppConfig } from "./hooks/useAppConfig";
@@ -214,6 +214,8 @@ export default function CaptionStudio() {
         jobId={captionJob.jobId}
         progress={captionJob.progress}
         progressPercent={progressPercent}
+        estimatedRemainingMs={captionJob.progress.estimatedRemainingMs}
+        avgTimeMs={captionJob.progress.avgTimeMs}
         onStartCaptioning={captionJob.startCaptioning}
         onAbort={captionJob.abortJob}
         onAddMore={() => imageUpload.fileInputRef.current?.click()}
@@ -221,15 +223,6 @@ export default function CaptionStudio() {
         onDownloadZip={captionJob.downloadZip}
         jobDone={jobDone}
       />
-
-      {captionJob.isProcessing && (
-        <TimeEstimator
-          estimatedRemainingMs={captionJob.progress.estimatedRemainingMs}
-          avgTimeMs={captionJob.progress.avgTimeMs}
-          remaining={captionJob.progress.queued + captionJob.progress.processing}
-          isDone={false}
-        />
-      )}
 
       {previewImage && (
         <ImagePreviewModal

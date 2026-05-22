@@ -14,9 +14,8 @@ describe("FloatingActionBar ready state", () => {
         canCaption={false}
         isProcessing={false}
         jobId={null}
-        progress={{ total: 0, completed: 0, failed: 0, processing: 0, queued: 0, estimatedRemainingMs: 0, avgTimeMs: 0 }}
+        progress={{ total: 0, completed: 0, failed: 0, processing: 0, queued: 0 }}
         progressPercent={0}
-        
         onStartCaptioning={() => {}}
         onAbort={() => {}}
         onAddMore={() => {}}
@@ -35,9 +34,8 @@ describe("FloatingActionBar ready state", () => {
         canCaption={true}
         isProcessing={false}
         jobId={null}
-        progress={{ total: 0, completed: 0, failed: 0, processing: 0, queued: 0, estimatedRemainingMs: 0, avgTimeMs: 0 }}
+        progress={{ total: 0, completed: 0, failed: 0, processing: 0, queued: 0 }}
         progressPercent={0}
-
         onStartCaptioning={() => {}}
         onAbort={() => {}}
         onAddMore={() => {}}
@@ -56,9 +54,8 @@ describe("FloatingActionBar ready state", () => {
         canCaption={true}
         isProcessing={false}
         jobId={null}
-        progress={{ total: 0, completed: 0, failed: 0, processing: 0, queued: 0, estimatedRemainingMs: 0, avgTimeMs: 0 }}
+        progress={{ total: 0, completed: 0, failed: 0, processing: 0, queued: 0 }}
         progressPercent={0}
-
         onStartCaptioning={() => {}}
         onAbort={() => {}}
         onAddMore={() => {}}
@@ -77,9 +74,8 @@ describe("FloatingActionBar ready state", () => {
         canCaption={false}
         isProcessing={false}
         jobId={null}
-        progress={{ total: 0, completed: 0, failed: 0, processing: 0, queued: 0, estimatedRemainingMs: 0, avgTimeMs: 0 }}
+        progress={{ total: 0, completed: 0, failed: 0, processing: 0, queued: 0 }}
         progressPercent={0}
-        
         onStartCaptioning={() => {}}
         onAbort={() => {}}
         onAddMore={() => {}}
@@ -98,9 +94,8 @@ describe("FloatingActionBar ready state", () => {
         canCaption={true}
         isProcessing={false}
         jobId={null}
-        progress={{ total: 0, completed: 0, failed: 0, processing: 0, queued: 0, estimatedRemainingMs: 0, avgTimeMs: 0 }}
+        progress={{ total: 0, completed: 0, failed: 0, processing: 0, queued: 0 }}
         progressPercent={0}
-
         onStartCaptioning={() => {}}
         onAbort={() => {}}
         onAddMore={() => {}}
@@ -119,9 +114,8 @@ describe("FloatingActionBar ready state", () => {
         canCaption={true}
         isProcessing={false}
         jobId={null}
-        progress={{ total: 0, completed: 0, failed: 0, processing: 0, queued: 0, estimatedRemainingMs: 0, avgTimeMs: 0 }}
+        progress={{ total: 0, completed: 0, failed: 0, processing: 0, queued: 0 }}
         progressPercent={0}
-
         onStartCaptioning={() => {}}
         onAbort={() => {}}
         onAddMore={() => {}}
@@ -135,7 +129,7 @@ describe("FloatingActionBar ready state", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Processing state — progress bar + abort
+// Processing state — progress bar + time estimate + abort
 // ---------------------------------------------------------------------------
 
 describe("FloatingActionBar processing state", () => {
@@ -146,9 +140,10 @@ describe("FloatingActionBar processing state", () => {
         canCaption={false}
         isProcessing={true}
         jobId="test-job-123"
-        progress={{ total: 10, completed: 3, failed: 1, processing: 2, queued: 4, estimatedRemainingMs: 30000, avgTimeMs: 5000 }}
+        progress={{ total: 10, completed: 3, failed: 1, processing: 2, queued: 4 }}
         progressPercent={40}
-
+        estimatedRemainingMs={30000}
+        avgTimeMs={5000}
         onStartCaptioning={() => {}}
         onAbort={() => {}}
         onAddMore={() => {}}
@@ -163,6 +158,72 @@ describe("FloatingActionBar processing state", () => {
     expect(screen.getByRole("button", { name: "Abort" })).toBeDefined();
   });
 
+  it("shows time estimate with remaining, per-image, and images left", () => {
+    render(
+      <FloatingActionBar
+        imagesCount={10}
+        canCaption={false}
+        isProcessing={true}
+        jobId="test-job-123"
+        progress={{ total: 10, completed: 3, failed: 0, processing: 2, queued: 5 }}
+        progressPercent={30}
+        estimatedRemainingMs={60000}
+        avgTimeMs={12000}
+        onStartCaptioning={() => {}}
+        onAbort={() => {}}
+        onAddMore={() => {}}
+        onClearAll={() => {}}
+        onDownloadZip={() => {}}
+        jobDone={false}
+      />
+    );
+    expect(screen.getByText("1m remaining")).toBeDefined();
+    expect(screen.getByText("~12s per image")).toBeDefined();
+    expect(screen.getByText("7 images left")).toBeDefined();
+  });
+
+  it("shows 'Waiting...' when estimatedRemainingMs is undefined", () => {
+    render(
+      <FloatingActionBar
+        imagesCount={10}
+        canCaption={false}
+        isProcessing={true}
+        jobId="test-job-123"
+        progress={{ total: 10, completed: 0, failed: 0, processing: 0, queued: 10 }}
+        progressPercent={0}
+        onStartCaptioning={() => {}}
+        onAbort={() => {}}
+        onAddMore={() => {}}
+        onClearAll={() => {}}
+        onDownloadZip={() => {}}
+        jobDone={false}
+      />
+    );
+    expect(screen.getByText("Waiting...")).toBeDefined();
+  });
+
+  it("shows singular 'image left' when one remains", () => {
+    render(
+      <FloatingActionBar
+        imagesCount={10}
+        canCaption={false}
+        isProcessing={true}
+        jobId="test-job-123"
+        progress={{ total: 10, completed: 9, failed: 0, processing: 0, queued: 1 }}
+        progressPercent={90}
+        estimatedRemainingMs={5000}
+        avgTimeMs={5000}
+        onStartCaptioning={() => {}}
+        onAbort={() => {}}
+        onAddMore={() => {}}
+        onClearAll={() => {}}
+        onDownloadZip={() => {}}
+        jobDone={false}
+      />
+    );
+    expect(screen.getByText("1 image left")).toBeDefined();
+  });
+
   it("omits failed count when no failures", () => {
     render(
       <FloatingActionBar
@@ -170,9 +231,10 @@ describe("FloatingActionBar processing state", () => {
         canCaption={false}
         isProcessing={true}
         jobId="test-job-123"
-        progress={{ total: 10, completed: 5, failed: 0, processing: 2, queued: 3, estimatedRemainingMs: 30000, avgTimeMs: 5000 }}
+        progress={{ total: 10, completed: 5, failed: 0, processing: 2, queued: 3 }}
         progressPercent={50}
-
+        estimatedRemainingMs={30000}
+        avgTimeMs={5000}
         onStartCaptioning={() => {}}
         onAbort={() => {}}
         onAddMore={() => {}}
@@ -191,9 +253,8 @@ describe("FloatingActionBar processing state", () => {
         canCaption={false}
         isProcessing={false}
         jobId="test-job-123"
-        progress={{ total: 10, completed: 10, failed: 0, processing: 0, queued: 0, estimatedRemainingMs: 0, avgTimeMs: 5000 }}
+        progress={{ total: 10, completed: 10, failed: 0, processing: 0, queued: 0 }}
         progressPercent={100}
-
         onStartCaptioning={() => {}}
         onAbort={() => {}}
         onAddMore={() => {}}
@@ -218,9 +279,8 @@ describe("FloatingActionBar done state", () => {
         canCaption={true}
         isProcessing={false}
         jobId="test-job-123"
-        progress={{ total: 10, completed: 8, failed: 2, processing: 0, queued: 0, estimatedRemainingMs: 0, avgTimeMs: 5000 }}
+        progress={{ total: 10, completed: 8, failed: 2, processing: 0, queued: 0 }}
         progressPercent={100}
-
         onStartCaptioning={() => {}}
         onAbort={() => {}}
         onAddMore={() => {}}
@@ -240,9 +300,8 @@ describe("FloatingActionBar done state", () => {
         canCaption={true}
         isProcessing={false}
         jobId="test-job-123"
-        progress={{ total: 10, completed: 7, failed: 3, processing: 0, queued: 0, estimatedRemainingMs: 0, avgTimeMs: 5000 }}
+        progress={{ total: 10, completed: 7, failed: 3, processing: 0, queued: 0 }}
         progressPercent={100}
-
         onStartCaptioning={() => {}}
         onAbort={() => {}}
         onAddMore={() => {}}
@@ -262,9 +321,8 @@ describe("FloatingActionBar done state", () => {
         canCaption={true}
         isProcessing={false}
         jobId="test-job-123"
-        progress={{ total: 5, completed: 5, failed: 0, processing: 0, queued: 0, estimatedRemainingMs: 0, avgTimeMs: 5000 }}
+        progress={{ total: 5, completed: 5, failed: 0, processing: 0, queued: 0 }}
         progressPercent={100}
-
         onStartCaptioning={() => {}}
         onAbort={() => {}}
         onAddMore={() => {}}
@@ -284,9 +342,8 @@ describe("FloatingActionBar done state", () => {
         canCaption={true}
         isProcessing={false}
         jobId="test-job-123"
-        progress={{ total: 5, completed: 5, failed: 0, processing: 0, queued: 0, estimatedRemainingMs: 0, avgTimeMs: 5000 }}
+        progress={{ total: 5, completed: 5, failed: 0, processing: 0, queued: 0 }}
         progressPercent={100}
-
         onStartCaptioning={() => {}}
         onAbort={() => {}}
         onAddMore={() => {}}
@@ -305,9 +362,8 @@ describe("FloatingActionBar done state", () => {
         canCaption={true}
         isProcessing={false}
         jobId="test-job-123"
-        progress={{ total: 5, completed: 5, failed: 0, processing: 0, queued: 0, estimatedRemainingMs: 0, avgTimeMs: 5000 }}
+        progress={{ total: 5, completed: 5, failed: 0, processing: 0, queued: 0 }}
         progressPercent={100}
-
         onStartCaptioning={() => {}}
         onAbort={() => {}}
         onAddMore={() => {}}
@@ -332,9 +388,10 @@ describe("FloatingActionBar state transitions", () => {
         canCaption={false}
         isProcessing={true}
         jobId="test-job-123"
-        progress={{ total: 5, completed: 1, failed: 0, processing: 1, queued: 3, estimatedRemainingMs: 20000, avgTimeMs: 5000 }}
+        progress={{ total: 5, completed: 1, failed: 0, processing: 1, queued: 3 }}
         progressPercent={20}
-
+        estimatedRemainingMs={20000}
+        avgTimeMs={5000}
         onStartCaptioning={() => {}}
         onAbort={() => {}}
         onAddMore={() => {}}
