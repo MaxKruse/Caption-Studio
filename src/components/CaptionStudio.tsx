@@ -424,6 +424,7 @@ export default function CaptionStudio() {
         clearAllConfirm={imageUpload.clearAllConfirm}
         onClearAllToggle={handleClearAllToggle}
         isProcessing={captionJob.isProcessing}
+        isUploading={imageUpload.isUploading}
         onDragOver={imageUpload.handleDragOver}
         onDragLeave={imageUpload.handleDragLeave}
         onDrop={imageUpload.handleDrop}

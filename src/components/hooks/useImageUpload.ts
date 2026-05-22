@@ -1,68 +1,88 @@
 import { useCallback, useRef, useState } from "react";
 import { ALLOWED_EXTENSIONS, getFileExtension, ImageFile } from "../CaptionStudioTypes";
-import { resizeImage } from "@/lib/image-client-utils";
+import { createThumbnail } from "@/lib/image-client-utils";
 
 export interface UseImageUploadOptions {
   isProcessing: boolean;
 }
+
+/** Max concurrent image resize operations to keep the UI responsive. */
+const RESIZE_CONCURRENCY = 3;
 
 export function useImageUpload({ isProcessing }: UseImageUploadOptions) {
   const [images, setImages] = useState<ImageFile[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(true);
   const [clearAllConfirm, setClearAllConfirm] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // -----------------------------------------------------------------------
-  // Process files (shared by file input and drag-drop)
+  // Resize a single file into an ImageFile (non-blocking)
   // -----------------------------------------------------------------------
-  const processFiles = useCallback((fileList: FileList | File[]) => {
-    if (fileList.length === 0) return;
+  const resizeOne = useCallback(async (file: File): Promise<ImageFile> => {
+    // Create a small thumbnail for gallery display (max 480px, low quality)
+    const preview = await createThumbnail(file).catch(() => URL.createObjectURL(file));
+    // Yield between items so React can repaint
+    await new Promise((r) => setTimeout(r, 0));
+    return { name: file.name, file, preview };
+  }, []);
 
-    const newImages: ImageFile[] = [];
-    const rejected: string[] = [];
-    let loaded = 0;
-    const total = fileList.length;
+  // -----------------------------------------------------------------------
+  // Process files with a concurrency queue
+  // -----------------------------------------------------------------------
+  const processFiles = useCallback(
+    async (fileList: FileList | File[]) => {
+      const files = Array.from(fileList);
+      if (files.length === 0) return;
 
-    for (const file of Array.from(fileList)) {
-      const ext = getFileExtension(file.name);
-      if (!ALLOWED_EXTENSIONS.has(ext)) {
-        rejected.push(file.name);
-        loaded++;
-        continue;
+      const rejected: string[] = [];
+      const validFiles: File[] = [];
+
+      for (const file of files) {
+        const ext = getFileExtension(file.name);
+        if (!ALLOWED_EXTENSIONS.has(ext)) {
+          rejected.push(file.name);
+        } else {
+          validFiles.push(file);
+        }
       }
 
-      // Create a small preview for the UI (max 1440px biggest dimension)
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const result = e.target?.result as string;
-        const previewUrl = await resizeImage(result).catch(() => result);
+      if (validFiles.length === 0) return;
 
-        newImages.push({
-          name: file.name,
-          file: file,
-          preview: previewUrl,
-        });
-        loaded++;
+      setIsUploading(true);
 
-        if (loaded === total) {
-          setImages((prev) => [...prev, ...newImages]);
-          if (rejected.length > 0) {
-            // Error message is handled by the parent component
-          }
+      // Process with concurrency limit
+      const queue = [...validFiles];
+      const results: ImageFile[] = [];
+
+      async function worker() {
+        while (queue.length > 0) {
+          const file = queue.shift()!;
+          const img = await resizeOne(file);
+          results.push(img);
+          // Add each image immediately so the gallery updates incrementally
+          setImages((prev) => [...prev, img]);
         }
-      };
-      reader.onerror = () => {
-        rejected.push(file.name);
-        loaded++;
-        if (loaded === total) {
-          setImages((prev) => [...prev, ...newImages]);
-        }
-      };
-      reader.readAsDataURL(file);
-    }
-  }, []);
+      }
+
+      // Launch N workers
+      await Promise.all(
+        Array.from({ length: Math.min(RESIZE_CONCURRENCY, validFiles.length) }, () =>
+          worker()
+        )
+      );
+
+      setIsUploading(false);
+
+      if (rejected.length > 0) {
+        // Rejected files notification handled by parent if needed
+        void rejected;
+      }
+    },
+    [resizeOne]
+  );
 
   // -----------------------------------------------------------------------
   // Drag and drop handlers
@@ -112,6 +132,7 @@ export function useImageUpload({ isProcessing }: UseImageUploadOptions) {
     setGalleryOpen,
     clearAllConfirm,
     setClearAllConfirm,
+    isUploading,
     processFiles,
     removeImage,
     clearAll,

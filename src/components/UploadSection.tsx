@@ -90,6 +90,7 @@ export function UploadSection({
   clearAllConfirm,
   onClearAllToggle,
   isProcessing,
+  isUploading,
   onDragOver,
   onDragLeave,
   onDrop,
@@ -106,6 +107,7 @@ export function UploadSection({
   clearAllConfirm: boolean;
   onClearAllToggle: () => void;
   isProcessing: boolean;
+  isUploading: boolean;
   onDragOver: (e: React.DragEvent) => void;
   onDragLeave: (e: React.DragEvent) => void;
   onDrop: (e: React.DragEvent) => void;
@@ -142,25 +144,46 @@ export function UploadSection({
           } ${isProcessing ? "pointer-events-none opacity-50" : ""}`}
         >
           <div className="flex flex-col items-center justify-center gap-2">
-            <svg
-              className="w-8 h-8 text-zinc-400"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.5}
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.338-2.32A3 3 0 0121 12v7.5a3 3 0 01-3 3H6.75z"
-              />
-            </svg>
-            <span className="text-sm text-zinc-500">
-              Click to upload or drag &amp; drop
-            </span>
-            <span className="text-xs text-zinc-400">
-              PNG, JPG, JPEG, WebP, GIF
-            </span>
+            {isUploading ? (
+              <>
+                <svg
+                  className="w-8 h-8 text-zinc-400 animate-spin"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"
+                  />
+                </svg>
+                <span className="text-sm text-zinc-500">Processing images...</span>
+              </>
+            ) : (
+              <>
+                <svg
+                  className="w-8 h-8 text-zinc-400"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.338-2.32A3 3 0 0121 12v7.5a3 3 0 01-3 3H6.75z"
+                  />
+                </svg>
+                <span className="text-sm text-zinc-500">
+                  Click to upload or drag &amp; drop
+                </span>
+                <span className="text-xs text-zinc-400">
+                  PNG, JPG, JPEG, WebP, GIF
+                </span>
+              </>
+            )}
           </div>
           <input
             ref={fileInputRef}
