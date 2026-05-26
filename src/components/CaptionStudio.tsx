@@ -24,6 +24,8 @@ import { usePreviewKeyboardNav } from "./hooks/usePreviewKeyboardNav";
 
 // ---------------------------------------------------------------------------
 // Main component — step-based workflow
+//
+// Workflow: Configure → Upload → Detect → Crop → Caption → Done
 // ---------------------------------------------------------------------------
 
 export default function CaptionStudio() {
@@ -166,6 +168,7 @@ export default function CaptionStudio() {
 
           // Move to crop step
           setWorkflowStep("crop");
+          setIsDetecting(false);
         }
       };
 
@@ -173,6 +176,7 @@ export default function CaptionStudio() {
         es.close();
         sseHandlers.onError();
         setDetectionError("Detection connection lost");
+        setIsDetecting(false);
         setWorkflowStep("upload");
       };
     } catch (err) {
@@ -182,8 +186,15 @@ export default function CaptionStudio() {
       setWorkflowStep("upload");
       setIsDetecting(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cropRuleset, imageUpload.images, selectedModel, config.serverUrl, config.showToast, cropDetection]);
+
+  // -- Abort detection handler --
+  const handleAbortDetection = useCallback(() => {
+    // Close SSE if connected (best effort)
+    setIsDetecting(false);
+    setWorkflowStep("upload");
+  }, []);
 
   // -- Crop auto-assign handler --
   const handleAutoAssign = useCallback(() => {
@@ -198,7 +209,11 @@ export default function CaptionStudio() {
   // -- Proceed from crop to caption --
   const handleProceedFromCrop = useCallback(() => {
     setWorkflowStep("caption");
-  }, []);
+    // Auto-start captioning when proceeding from crop
+    setTimeout(() => {
+      captionJob.startCaptioning();
+    }, 100);
+  }, [captionJob]);
 
   // -- Back from crop to upload --
   const handleBackFromCrop = useCallback(() => {
@@ -254,20 +269,15 @@ export default function CaptionStudio() {
         )
       : 0;
 
-  const canCaption =
-    !captionJob.isProcessing &&
-    imageUpload.images.length > 0 &&
-    !!selectedModel &&
-    !!config.serverUrl.trim() &&
-    !config.triggerRequired &&
-    !config.nameRequired;
-
   const canDetect =
     !isDetecting &&
     imageUpload.images.length > 0 &&
     !!selectedModel &&
     !!cropRuleset &&
     !!config.serverUrl.trim();
+
+  const canProceedToCaption =
+    cropDetection.hasCrops && !isDetecting && !captionJob.isProcessing;
 
   const jobDone = !!captionJob.jobId && !captionJob.isProcessing;
 
@@ -300,14 +310,31 @@ export default function CaptionStudio() {
   );
 
   // -- Derived display step — auto-transitions based on state --
-  const showUploadSection = workflowStep !== "crop" && workflowStep !== "caption" && workflowStep !== "done";
-  const showCropEditor = workflowStep === "crop";
-  const showGallery = workflowStep === "caption" || workflowStep === "done";
+  // After caption job completes, auto-transition to "done"
+  const displayStep: WorkflowStep = jobDone ? "done" : workflowStep;
 
-  // -- Render --
+  const showUploadSection = displayStep === "upload" || displayStep === "configure";
+  const showCropEditor = displayStep === "crop";
+  const showGallery = displayStep === "caption" || displayStep === "done";
+
+  // -- Determine action bar step --
+  const actionBarStep = displayStep === "done"
+    ? "done"
+    : displayStep === "caption"
+      ? "caption"
+      : displayStep === "crop"
+        ? "crop"
+        : displayStep === "detect"
+          ? "detect"
+          : imageUpload.images.length > 0
+            ? "upload"
+            : "upload"; // fallback — bar won't show with 0 images
+
+  // -- Crops & detections for render --
   const crops = cropDetection.getFinalCrops();
   const detections = cropDetection.state.detections;
 
+  // -- Render --
   return (
     <div className="max-w-7xl mx-auto px-6 py-10 space-y-8 pb-20">
       <AppHeader />
@@ -379,12 +406,14 @@ export default function CaptionStudio() {
           onRemoveImage={imageUpload.removeImage}
           onPreview={openPreview}
           fileInputRef={imageUpload.fileInputRef}
-          isDetecting={isDetecting}
-          onDetect={canDetect ? handleDetect : undefined}
-          detectionError={detectionError}
-          detectionProgress={cropDetection.detectionProgress}
-          detectionTotal={imageUpload.images.length}
         />
+      )}
+
+      {/* Detection error (shown during/after detect step) */}
+      {(displayStep === "detect" || displayStep === "crop") && detectionError && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          {detectionError}
+        </div>
       )}
 
       {/* Step 2.5: Crop Editor */}
@@ -401,8 +430,6 @@ export default function CaptionStudio() {
           onDetect={handleDetect}
           onAutoAssign={handleAutoAssign}
           onUpdateCrop={handleUpdateCrop}
-          onBack={handleBackFromCrop}
-          onProceed={handleProceedFromCrop}
           disabled={captionJob.isProcessing}
         />
       )}
@@ -429,25 +456,24 @@ export default function CaptionStudio() {
         />
       )}
 
+      {/* Floating Action Bar — step-aware */}
       <FloatingActionBar
+        step={actionBarStep}
         imagesCount={imageUpload.images.length}
-        canCaption={canCaption}
-        isProcessing={captionJob.isProcessing}
-        jobId={captionJob.jobId}
-        progress={captionJob.progress}
-        progressPercent={progressPercent}
+        detectionProgress={cropDetection.detectionProgress}
+        captionProgress={captionJob.progress}
+        captionProgressPercent={progressPercent}
         estimatedRemainingMs={captionJob.progress.estimatedRemainingMs}
         avgTimeMs={captionJob.progress.avgTimeMs}
-        onStartCaptioning={captionJob.startCaptioning}
-        onAbort={captionJob.abortJob}
-        onAddMore={() => {
-          if (showUploadSection) {
-            imageUpload.fileInputRef.current?.click();
-          }
-        }}
-        onClearAll={handleClearAllToggle}
+        onDetect={canDetect ? handleDetect : undefined}
+        onAbortDetection={handleAbortDetection}
+        onProceedToCaption={canProceedToCaption ? handleProceedFromCrop : undefined}
+        onBackToUpload={handleBackFromCrop}
+        onAbortCaption={captionJob.abortJob}
         onDownloadZip={captionJob.downloadZip}
-        jobDone={jobDone}
+        onClearAll={handleClearAllToggle}
+        canDetect={canDetect}
+        canProceedToCaption={canProceedToCaption}
       />
 
       {previewImage && (

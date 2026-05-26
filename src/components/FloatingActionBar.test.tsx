@@ -3,125 +3,99 @@ import { render, screen } from "@testing-library/react";
 import { FloatingActionBar } from "./FloatingActionBar";
 
 // ---------------------------------------------------------------------------
-// Ready state — caption button + quick actions
+// Helpers
 // ---------------------------------------------------------------------------
 
-describe("FloatingActionBar ready state", () => {
-  it("does not render when no images and no job", () => {
+const mockProgress = {
+  total: 10,
+  queued: 4,
+  processing: 2,
+  completed: 3,
+  failed: 1,
+};
+
+const mockDetectionProgress = {
+  total: 5,
+  queued: 1,
+  processing: 1,
+  completed: 2,
+  failed: 1,
+};
+
+// ---------------------------------------------------------------------------
+// Hidden when no images
+// ---------------------------------------------------------------------------
+
+describe("FloatingActionBar visibility", () => {
+  it("does not render when no images", () => {
     render(
       <FloatingActionBar
+        step="upload"
         imagesCount={0}
-        canCaption={false}
-        isProcessing={false}
-        jobId={null}
-        progress={{ total: 0, completed: 0, failed: 0, processing: 0, queued: 0 }}
-        progressPercent={0}
-        onStartCaptioning={() => {}}
-        onAbort={() => {}}
-        onAddMore={() => {}}
         onClearAll={() => {}}
-        onDownloadZip={() => {}}
-        jobDone={false}
       />
     );
     expect(screen.queryByRole("button")).toBeNull();
   });
+});
 
-  it("shows caption button when images uploaded but no job", () => {
+// ---------------------------------------------------------------------------
+// Upload step — detect button + clear all
+// ---------------------------------------------------------------------------
+
+describe("FloatingActionBar upload step", () => {
+  it("shows detect button when images uploaded", () => {
     render(
       <FloatingActionBar
+        step="upload"
         imagesCount={5}
-        canCaption={true}
-        isProcessing={false}
-        jobId={null}
-        progress={{ total: 0, completed: 0, failed: 0, processing: 0, queued: 0 }}
-        progressPercent={0}
-        onStartCaptioning={() => {}}
-        onAbort={() => {}}
-        onAddMore={() => {}}
+        canDetect={true}
+        onDetect={() => {}}
         onClearAll={() => {}}
-        onDownloadZip={() => {}}
-        jobDone={false}
       />
     );
-    expect(screen.getByRole("button", { name: "Caption 5 Images" })).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: /Detect Faces & Bodies/ })
+    ).toBeDefined();
+    expect(screen.getByText(/5 images/)).toBeDefined();
   });
 
   it("shows singular image count", () => {
     render(
       <FloatingActionBar
+        step="upload"
         imagesCount={1}
-        canCaption={true}
-        isProcessing={false}
-        jobId={null}
-        progress={{ total: 0, completed: 0, failed: 0, processing: 0, queued: 0 }}
-        progressPercent={0}
-        onStartCaptioning={() => {}}
-        onAbort={() => {}}
-        onAddMore={() => {}}
+        canDetect={true}
+        onDetect={() => {}}
         onClearAll={() => {}}
-        onDownloadZip={() => {}}
-        jobDone={false}
       />
     );
-    expect(screen.getByRole("button", { name: "Caption 1 Image" })).toBeDefined();
+    expect(screen.getByText(/1 image/)).toBeDefined();
   });
 
-  it("disables caption button when canCaption is false", () => {
+  it("disables detect button when canDetect is false", () => {
     render(
       <FloatingActionBar
+        step="upload"
         imagesCount={3}
-        canCaption={false}
-        isProcessing={false}
-        jobId={null}
-        progress={{ total: 0, completed: 0, failed: 0, processing: 0, queued: 0 }}
-        progressPercent={0}
-        onStartCaptioning={() => {}}
-        onAbort={() => {}}
-        onAddMore={() => {}}
+        canDetect={false}
+        onDetect={() => {}}
         onClearAll={() => {}}
-        onDownloadZip={() => {}}
-        jobDone={false}
       />
     );
-    expect(screen.getByRole("button", { name: "Caption 3 Images" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /Detect Faces & Bodies/ })
+    ).toBeDisabled();
   });
 
-  it("shows Add more button in ready state", () => {
+  it("shows Clear all button in upload step", () => {
     render(
       <FloatingActionBar
+        step="upload"
         imagesCount={3}
-        canCaption={true}
-        isProcessing={false}
-        jobId={null}
-        progress={{ total: 0, completed: 0, failed: 0, processing: 0, queued: 0 }}
-        progressPercent={0}
-        onStartCaptioning={() => {}}
-        onAbort={() => {}}
-        onAddMore={() => {}}
+        canDetect={true}
+        onDetect={() => {}}
         onClearAll={() => {}}
-        onDownloadZip={() => {}}
-        jobDone={false}
-      />
-    );
-    expect(screen.getByRole("button", { name: "Add more images" })).toBeDefined();
-  });
-
-  it("shows Clear all button in ready state", () => {
-    render(
-      <FloatingActionBar
-        imagesCount={3}
-        canCaption={true}
-        isProcessing={false}
-        jobId={null}
-        progress={{ total: 0, completed: 0, failed: 0, processing: 0, queued: 0 }}
-        progressPercent={0}
-        onStartCaptioning={() => {}}
-        onAbort={() => {}}
-        onAddMore={() => {}}
-        onClearAll={() => {}}
-        onDownloadZip={() => {}}
-        jobDone={false}
       />
     );
     expect(screen.getByRole("button", { name: "Clear all" })).toBeDefined();
@@ -129,74 +103,140 @@ describe("FloatingActionBar ready state", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Processing state — progress bar + time estimate + abort
+// Detect step — progress bar + abort
 // ---------------------------------------------------------------------------
 
-describe("FloatingActionBar processing state", () => {
-  it("shows progress bar and abort button during processing", () => {
+describe("FloatingActionBar detect step", () => {
+  it("shows progress bar and abort button during detection", () => {
     render(
       <FloatingActionBar
-        imagesCount={10}
-        canCaption={false}
-        isProcessing={true}
-        jobId="test-job-123"
-        progress={{ total: 10, completed: 3, failed: 1, processing: 2, queued: 4 }}
-        progressPercent={40}
-        estimatedRemainingMs={30000}
-        avgTimeMs={5000}
-        onStartCaptioning={() => {}}
-        onAbort={() => {}}
-        onAddMore={() => {}}
-        onClearAll={() => {}}
-        onDownloadZip={() => {}}
-        jobDone={false}
+        step="detect"
+        imagesCount={5}
+        detectionProgress={mockDetectionProgress}
+        onAbortDetection={() => {}}
       />
     );
-    expect(screen.getByText("3 done")).toBeDefined();
+    expect(screen.getByText("2 detected")).toBeDefined();
+    expect(screen.getByText(/1 failed/)).toBeDefined();
+    expect(screen.getByRole("button", { name: "Abort detection" })).toBeDefined();
+  });
+
+  it("shows progress percentage", () => {
+    render(
+      <FloatingActionBar
+        step="detect"
+        imagesCount={5}
+        detectionProgress={{
+          total: 5,
+          queued: 0,
+          processing: 0,
+          completed: 3,
+          failed: 1,
+        }}
+        onAbortDetection={() => {}}
+      />
+    );
+    expect(screen.getByText("80%")).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Crop step — proceed + back
+// ---------------------------------------------------------------------------
+
+describe("FloatingActionBar crop step", () => {
+  it("shows proceed and back buttons in crop step", () => {
+    render(
+      <FloatingActionBar
+        step="crop"
+        imagesCount={5}
+        canProceedToCaption={true}
+        onProceedToCaption={() => {}}
+        onBackToUpload={() => {}}
+      />
+    );
+    expect(
+      screen.getByRole("button", { name: "Proceed to Caption" })
+    ).toBeDefined();
+    expect(screen.getByRole("button", { name: "Back" })).toBeDefined();
+  });
+
+  it("disables proceed button when canProceedToCaption is false", () => {
+    render(
+      <FloatingActionBar
+        step="crop"
+        imagesCount={5}
+        canProceedToCaption={false}
+        onProceedToCaption={() => {}}
+        onBackToUpload={() => {}}
+      />
+    );
+    expect(
+      screen.getByRole("button", { name: "Proceed to Caption" })
+    ).toBeDisabled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Caption step — progress bar + time estimate + abort
+// ---------------------------------------------------------------------------
+
+describe("FloatingActionBar caption step", () => {
+  it("shows progress bar and abort button during captioning", () => {
+    render(
+      <FloatingActionBar
+        step="caption"
+        imagesCount={10}
+        captionProgress={mockProgress}
+        captionProgressPercent={40}
+        estimatedRemainingMs={30000}
+        avgTimeMs={5000}
+        onAbortCaption={() => {}}
+      />
+    );
+    expect(screen.getByText("3 captioned")).toBeDefined();
     expect(screen.getByText(/1 failed/)).toBeDefined();
     expect(screen.getByText("40%")).toBeDefined();
-    expect(screen.getByRole("button", { name: "Abort" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Abort captioning" })).toBeDefined();
   });
 
   it("shows time estimate with remaining, per-image, and images left", () => {
     render(
       <FloatingActionBar
+        step="caption"
         imagesCount={10}
-        canCaption={false}
-        isProcessing={true}
-        jobId="test-job-123"
-        progress={{ total: 10, completed: 3, failed: 0, processing: 2, queued: 5 }}
-        progressPercent={30}
+        captionProgress={{
+          total: 10,
+          queued: 5,
+          processing: 2,
+          completed: 3,
+          failed: 0,
+        }}
+        captionProgressPercent={30}
         estimatedRemainingMs={60000}
         avgTimeMs={12000}
-        onStartCaptioning={() => {}}
-        onAbort={() => {}}
-        onAddMore={() => {}}
-        onClearAll={() => {}}
-        onDownloadZip={() => {}}
-        jobDone={false}
+        onAbortCaption={() => {}}
       />
     );
     expect(screen.getByText("1m remaining")).toBeDefined();
     expect(screen.getByText("~12s per image")).toBeDefined();
-    expect(screen.getByText("7 images left")).toBeDefined();
+    expect(screen.getByText("5 images left")).toBeDefined();
   });
 
   it("shows 'Waiting...' when estimatedRemainingMs is undefined", () => {
     render(
       <FloatingActionBar
+        step="caption"
         imagesCount={10}
-        canCaption={false}
-        isProcessing={true}
-        jobId="test-job-123"
-        progress={{ total: 10, completed: 0, failed: 0, processing: 0, queued: 10 }}
-        progressPercent={0}
-        onStartCaptioning={() => {}}
-        onAbort={() => {}}
-        onAddMore={() => {}}
-        onClearAll={() => {}}
-        onDownloadZip={() => {}}
-        jobDone={false}
+        captionProgress={{
+          total: 10,
+          queued: 10,
+          processing: 0,
+          completed: 0,
+          failed: 0,
+        }}
+        captionProgressPercent={0}
+        onAbortCaption={() => {}}
       />
     );
     expect(screen.getByText("Waiting...")).toBeDefined();
@@ -205,20 +245,19 @@ describe("FloatingActionBar processing state", () => {
   it("shows singular 'image left' when one remains", () => {
     render(
       <FloatingActionBar
+        step="caption"
         imagesCount={10}
-        canCaption={false}
-        isProcessing={true}
-        jobId="test-job-123"
-        progress={{ total: 10, completed: 9, failed: 0, processing: 0, queued: 1 }}
-        progressPercent={90}
+        captionProgress={{
+          total: 10,
+          queued: 1,
+          processing: 0,
+          completed: 9,
+          failed: 0,
+        }}
+        captionProgressPercent={90}
         estimatedRemainingMs={5000}
         avgTimeMs={5000}
-        onStartCaptioning={() => {}}
-        onAbort={() => {}}
-        onAddMore={() => {}}
-        onClearAll={() => {}}
-        onDownloadZip={() => {}}
-        jobDone={false}
+        onAbortCaption={() => {}}
       />
     );
     expect(screen.getByText("1 image left")).toBeDefined();
@@ -227,66 +266,45 @@ describe("FloatingActionBar processing state", () => {
   it("omits failed count when no failures", () => {
     render(
       <FloatingActionBar
+        step="caption"
         imagesCount={10}
-        canCaption={false}
-        isProcessing={true}
-        jobId="test-job-123"
-        progress={{ total: 10, completed: 5, failed: 0, processing: 2, queued: 3 }}
-        progressPercent={50}
+        captionProgress={{
+          total: 10,
+          queued: 3,
+          processing: 2,
+          completed: 5,
+          failed: 0,
+        }}
+        captionProgressPercent={50}
         estimatedRemainingMs={30000}
         avgTimeMs={5000}
-        onStartCaptioning={() => {}}
-        onAbort={() => {}}
-        onAddMore={() => {}}
-        onClearAll={() => {}}
-        onDownloadZip={() => {}}
-        jobDone={false}
+        onAbortCaption={() => {}}
       />
     );
     expect(screen.queryByText(/failed/)).toBeNull();
   });
-
-  it("hides abort button when not actively processing", () => {
-    render(
-      <FloatingActionBar
-        imagesCount={10}
-        canCaption={false}
-        isProcessing={false}
-        jobId="test-job-123"
-        progress={{ total: 10, completed: 10, failed: 0, processing: 0, queued: 0 }}
-        progressPercent={100}
-        onStartCaptioning={() => {}}
-        onAbort={() => {}}
-        onAddMore={() => {}}
-        onClearAll={() => {}}
-        onDownloadZip={() => {}}
-        jobDone={true}
-      />
-    );
-    expect(screen.queryByRole("button", { name: "Abort" })).toBeNull();
-  });
 });
 
 // ---------------------------------------------------------------------------
-// Done state — download + start over
+// Done step — download + start over
 // ---------------------------------------------------------------------------
 
-describe("FloatingActionBar done state", () => {
+describe("FloatingActionBar done step", () => {
   it("shows download and start over buttons when job done", () => {
     render(
       <FloatingActionBar
+        step="done"
         imagesCount={10}
-        canCaption={true}
-        isProcessing={false}
-        jobId="test-job-123"
-        progress={{ total: 10, completed: 8, failed: 2, processing: 0, queued: 0 }}
-        progressPercent={100}
-        onStartCaptioning={() => {}}
-        onAbort={() => {}}
-        onAddMore={() => {}}
-        onClearAll={() => {}}
+        captionProgress={{
+          total: 10,
+          queued: 0,
+          processing: 0,
+          completed: 8,
+          failed: 2,
+        }}
+        captionProgressPercent={100}
         onDownloadZip={() => {}}
-        jobDone={true}
+        onClearAll={() => {}}
       />
     );
     expect(screen.getByRole("button", { name: "Download ZIP" })).toBeDefined();
@@ -296,113 +314,82 @@ describe("FloatingActionBar done state", () => {
   it("shows completion summary with failures", () => {
     render(
       <FloatingActionBar
+        step="done"
         imagesCount={10}
-        canCaption={true}
-        isProcessing={false}
-        jobId="test-job-123"
-        progress={{ total: 10, completed: 7, failed: 3, processing: 0, queued: 0 }}
-        progressPercent={100}
-        onStartCaptioning={() => {}}
-        onAbort={() => {}}
-        onAddMore={() => {}}
-        onClearAll={() => {}}
+        captionProgress={{
+          total: 10,
+          queued: 0,
+          processing: 0,
+          completed: 7,
+          failed: 3,
+        }}
+        captionProgressPercent={100}
         onDownloadZip={() => {}}
-        jobDone={true}
+        onClearAll={() => {}}
       />
     );
-    expect(screen.getByText("7 completed")).toBeDefined();
+    expect(screen.getByText("7 captioned")).toBeDefined();
     expect(screen.getByText(/3 failed/)).toBeDefined();
   });
 
   it("shows completion summary without failures", () => {
     render(
       <FloatingActionBar
+        step="done"
         imagesCount={5}
-        canCaption={true}
-        isProcessing={false}
-        jobId="test-job-123"
-        progress={{ total: 5, completed: 5, failed: 0, processing: 0, queued: 0 }}
-        progressPercent={100}
-        onStartCaptioning={() => {}}
-        onAbort={() => {}}
-        onAddMore={() => {}}
-        onClearAll={() => {}}
+        captionProgress={{
+          total: 5,
+          queued: 0,
+          processing: 0,
+          completed: 5,
+          failed: 0,
+        }}
+        captionProgressPercent={100}
         onDownloadZip={() => {}}
-        jobDone={true}
+        onClearAll={() => {}}
       />
     );
-    expect(screen.getByText("5 completed")).toBeDefined();
+    expect(screen.getByText("5 captioned")).toBeDefined();
     expect(screen.queryByText(/failed/)).toBeNull();
   });
 
-  it("does not show caption button when job done", () => {
+  it("does not show detect button when done", () => {
     render(
       <FloatingActionBar
+        step="done"
         imagesCount={5}
-        canCaption={true}
-        isProcessing={false}
-        jobId="test-job-123"
-        progress={{ total: 5, completed: 5, failed: 0, processing: 0, queued: 0 }}
-        progressPercent={100}
-        onStartCaptioning={() => {}}
-        onAbort={() => {}}
-        onAddMore={() => {}}
-        onClearAll={() => {}}
+        captionProgress={{
+          total: 5,
+          queued: 0,
+          processing: 0,
+          completed: 5,
+          failed: 0,
+        }}
+        captionProgressPercent={100}
         onDownloadZip={() => {}}
-        jobDone={true}
+        onClearAll={() => {}}
       />
     );
-    expect(screen.queryByRole("button", { name: /^Caption/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Detect/ })).toBeNull();
   });
 
-  it("does not show Add more button when job done", () => {
+  it("does not show proceed button when done", () => {
     render(
       <FloatingActionBar
+        step="done"
         imagesCount={5}
-        canCaption={true}
-        isProcessing={false}
-        jobId="test-job-123"
-        progress={{ total: 5, completed: 5, failed: 0, processing: 0, queued: 0 }}
-        progressPercent={100}
-        onStartCaptioning={() => {}}
-        onAbort={() => {}}
-        onAddMore={() => {}}
-        onClearAll={() => {}}
+        captionProgress={{
+          total: 5,
+          queued: 0,
+          processing: 0,
+          completed: 5,
+          failed: 0,
+        }}
+        captionProgressPercent={100}
         onDownloadZip={() => {}}
-        jobDone={true}
+        onClearAll={() => {}}
       />
     );
-    expect(screen.queryByRole("button", { name: "Add more images" })).toBeNull();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// State transitions
-// ---------------------------------------------------------------------------
-
-describe("FloatingActionBar state transitions", () => {
-  it("shows processing state when jobId exists and isProcessing", () => {
-    render(
-      <FloatingActionBar
-        imagesCount={5}
-        canCaption={false}
-        isProcessing={true}
-        jobId="test-job-123"
-        progress={{ total: 5, completed: 1, failed: 0, processing: 1, queued: 3 }}
-        progressPercent={20}
-        estimatedRemainingMs={20000}
-        avgTimeMs={5000}
-        onStartCaptioning={() => {}}
-        onAbort={() => {}}
-        onAddMore={() => {}}
-        onClearAll={() => {}}
-        onDownloadZip={() => {}}
-        jobDone={false}
-      />
-    );
-    // Should show processing UI, not ready or done UI
-    expect(screen.queryByRole("button", { name: /^Caption/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Download ZIP" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Abort" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Proceed to Caption" })).toBeNull();
   });
 });

@@ -9,7 +9,7 @@ export function AppHeader() {
         Character Captioning Studio
       </h1>
       <p className="mt-1 text-sm text-zinc-500">
-        Generate captions for character training datasets — configure your API, pick a caption style, upload images, and download.
+        Configure API &amp; ruleset → upload images → detect faces/bodies → crop → caption → download.
       </p>
     </header>
   );

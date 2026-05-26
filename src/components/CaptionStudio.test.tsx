@@ -24,7 +24,10 @@ describe("CaptionStudio rendering", () => {
     render(<CaptionStudio />);
     // The subtitle appears in the header <p> tag
     const header = document.querySelector("header");
-    expect(header?.textContent).toContain("character training datasets");
+    expect(header?.textContent).toContain("upload images");
+    expect(header?.textContent).toContain("detect");
+    expect(header?.textContent).toContain("crop");
+    expect(header?.textContent).toContain("caption");
   });
 
   it("renders the caption type selector options", () => {

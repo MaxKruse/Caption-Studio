@@ -22,8 +22,6 @@ export function CropEditor({
   onDetect,
   onAutoAssign,
   onUpdateCrop,
-  onBack,
-  onProceed,
   disabled,
 }: {
   images: ImageFile[];
@@ -37,8 +35,6 @@ export function CropEditor({
   onDetect: () => Promise<void>;
   onAutoAssign: () => void;
   onUpdateCrop: (imageIndex: number, partial: Partial<ImageCrop>) => void;
-  onBack: () => void;
-  onProceed: () => void;
   disabled?: boolean;
 }) {
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -113,7 +109,6 @@ export function CropEditor({
   // Derived values
   const portraitCrops = crops.filter((c) => c.cropType === "portrait").length;
   const bodyCrops = crops.filter((c) => c.cropType === "body").length;
-  const canProceed = crops.length > 0 && !isDetecting;
 
   // Handlers
   const handleCropChange = useCallback(
@@ -137,7 +132,7 @@ export function CropEditor({
       {/* Header */}
       <div className="flex items-center gap-3 px-5 py-3 bg-zinc-50 border-b border-zinc-200">
         <div className="w-6 h-6 rounded-full bg-zinc-900 text-zinc-100 flex items-center justify-center text-xs font-medium">
-          2.5
+          3
         </div>
         <h2 className="text-sm font-semibold text-zinc-900">Crop Images</h2>
         {ruleset && (
@@ -334,23 +329,7 @@ export function CropEditor({
           </div>
         </div>
 
-        {/* Navigation buttons */}
-        <div className="flex items-center justify-between pt-2 border-t border-zinc-100">
-          <button
-            onClick={onBack}
-            disabled={isDetecting || !!disabled}
-            className="px-3 py-2 text-xs font-medium rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 transition-colors disabled:opacity-50"
-          >
-            Back to upload
-          </button>
-          <button
-            onClick={onProceed}
-            disabled={!canProceed || !!disabled}
-            className="px-4 py-2 text-xs font-medium rounded-lg bg-zinc-900 text-zinc-100 hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Proceed to caption
-          </button>
-        </div>
+
       </div>
     </section>
   );

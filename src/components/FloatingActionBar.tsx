@@ -1,86 +1,102 @@
+"use client";
+
 import { formatDuration } from "./CaptionStudioTypes";
 import type { ProgressState } from "./CaptionStudioTypes";
+import type { DetectionProgress } from "./CaptionStudioCropTypes";
 
 // ---------------------------------------------------------------------------
-// FloatingActionBar — fixed bottom bar with actions for all job states
+// FloatingActionBar — fixed bottom bar reflecting current workflow step
+//
+// Workflow phases:
+//   upload   → "Detect Faces & Bodies" + "Clear all"
+//   detect   → progress bar + abort
+//   crop     → "Proceed to Caption" + "Back to Upload"
+//   caption  → progress bar + abort
+//   done     → "Download ZIP" + "Start over"
 // ---------------------------------------------------------------------------
 
 export function FloatingActionBar({
+  step,
   imagesCount,
-  canCaption,
-  isProcessing,
-  jobId,
-  progress,
-  progressPercent,
+  detectionProgress,
+  captionProgress,
+  captionProgressPercent,
   estimatedRemainingMs,
   avgTimeMs,
-  onStartCaptioning,
-  onAbort,
-  onAddMore,
-  onClearAll,
+  onDetect,
+  onAbortDetection,
+  onProceedToCaption,
+  onBackToUpload,
+  onAbortCaption,
   onDownloadZip,
-  jobDone,
+  onClearAll,
+  canDetect,
+  canProceedToCaption,
 }: {
+  // Current workflow step
+  step: "upload" | "detect" | "crop" | "caption" | "done";
+
+  // Image count
   imagesCount: number;
-  canCaption: boolean;
-  isProcessing: boolean;
-  jobId: string | null;
-  progress: ProgressState;
-  progressPercent: number;
+
+  // Detection progress (step = "detect")
+  detectionProgress?: DetectionProgress;
+
+  // Caption progress (step = "caption")
+  captionProgress?: ProgressState;
+  captionProgressPercent?: number;
   estimatedRemainingMs?: number;
   avgTimeMs?: number;
-  onStartCaptioning: () => void;
-  onAbort: () => void;
-  onAddMore: () => void;
-  onClearAll: () => void;
-  onDownloadZip: () => void;
-  jobDone: boolean;
-}) {
-  // Nothing to show — no images and no job
-  if (imagesCount === 0 && !jobId) return null;
 
-  const remaining = progress.queued + progress.processing;
+  // Handlers
+  onDetect?: () => void;
+  onAbortDetection?: () => void;
+  onProceedToCaption?: () => void;
+  onBackToUpload?: () => void;
+  onAbortCaption?: () => void;
+  onDownloadZip?: () => void;
+  onClearAll?: () => void;
+
+  // Enable/disable flags
+  canDetect?: boolean;
+  canProceedToCaption?: boolean;
+}) {
+  // Nothing to show — no images
+  if (imagesCount === 0) return null;
 
   return (
     <div className="fixed bottom-0 inset-x-0 z-40 bg-white/80 backdrop-blur-md border-t border-zinc-200">
       <div className="max-w-7xl mx-auto px-6 py-3">
         {/* ----------------------------------------------------------------- */}
-        {/* READY — images uploaded, no job started yet                       */}
+        {/* UPLOAD — images ready, prompt to detect                            */}
         {/* ----------------------------------------------------------------- */}
-        {!jobId && imagesCount > 0 && (
+        {step === "upload" && (
           <div className="flex items-center gap-3">
-            {/* Primary: Caption button */}
             <button
-              onClick={onStartCaptioning}
-              disabled={!canCaption}
-              className={`flex-1 px-4 py-2.5 text-sm font-medium rounded-lg transition-colors ${
-                canCaption
+              onClick={onDetect}
+              disabled={!canDetect}
+              className={`flex-1 px-4 py-2.5 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2 ${
+                canDetect
                   ? "bg-zinc-900 text-zinc-100 hover:bg-zinc-800 shadow-sm"
                   : "bg-zinc-200 text-zinc-400 cursor-not-allowed"
               }`}
             >
-              Caption {imagesCount} Image{imagesCount !== 1 ? "s" : ""}
-            </button>
-
-            {/* Secondary: Add more images */}
-            <button
-              onClick={onAddMore}
-              className="shrink-0 px-3 py-2.5 text-xs font-medium rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 hover:text-zinc-800 transition-colors flex items-center gap-1.5"
-              aria-label="Add more images"
-            >
               <svg
-                className="w-3.5 h-3.5"
+                className="w-4 h-4"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth={2}
                 viewBox="0 0 24 24"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"
+                />
               </svg>
-              Add more
+              Detect Faces &amp; Bodies ({imagesCount} images)
             </button>
 
-            {/* Secondary: Clear all */}
             <button
               onClick={onClearAll}
               className="shrink-0 px-3 py-2.5 text-xs font-medium rounded-lg bg-zinc-100 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 transition-colors flex items-center gap-1.5"
@@ -95,41 +111,155 @@ export function FloatingActionBar({
               >
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
-              Clear
+              Clear all
             </button>
           </div>
         )}
 
         {/* ----------------------------------------------------------------- */}
-        {/* PROCESSING — job running, show progress + estimate + abort        */}
+        {/* DETECT — running detection, show progress                         */}
         {/* ----------------------------------------------------------------- */}
-        {jobId && !jobDone && (
+        {step === "detect" && detectionProgress && (
           <div className="flex items-center gap-4">
-            {/* Progress + time estimate */}
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between text-xs text-zinc-500 mb-1.5">
                 <span className="space-x-2 truncate">
-                  <span>{progress.completed} done</span>
-                  {progress.failed > 0 && (
+                  <span>{detectionProgress.completed} detected</span>
+                  {detectionProgress.failed > 0 && (
                     <span className="text-zinc-400">
-                      &middot; {progress.failed} failed
+                      &middot; {detectionProgress.failed} failed
                     </span>
                   )}
-                  {progress.processing > 0 && (
+                  {detectionProgress.processing > 0 && (
                     <span className="text-zinc-400">
-                      &middot; {progress.processing} processing
+                      &middot; {detectionProgress.processing} processing
                     </span>
                   )}
                 </span>
-                <span className="font-medium shrink-0">{progressPercent}%</span>
+                <span className="font-medium shrink-0">
+                  {detectionProgress.total > 0
+                    ? Math.round(
+                        ((detectionProgress.completed + detectionProgress.failed) /
+                          detectionProgress.total) *
+                          100
+                      )
+                    : 0}
+                  %
+                </span>
+              </div>
+              <div className="h-2 bg-zinc-200 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-zinc-700 transition-all duration-300 ease-out rounded-full"
+                  style={{
+                    width: `${
+                      detectionProgress.total > 0
+                        ? ((detectionProgress.completed + detectionProgress.failed) /
+                            detectionProgress.total) *
+                          100
+                        : 0
+                    }%`,
+                  }}
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={onAbortDetection}
+              className="shrink-0 px-3 py-1.5 text-xs font-medium rounded-md bg-zinc-200 text-zinc-600 hover:bg-zinc-300 hover:text-zinc-800 transition-colors flex items-center gap-1.5"
+              aria-label="Abort detection"
+            >
+              <svg
+                className="w-3.5 h-3.5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              Abort
+            </button>
+          </div>
+        )}
+
+        {/* ----------------------------------------------------------------- */}
+        {/* CROP — crops ready, prompt to proceed                             */}
+        {/* ----------------------------------------------------------------- */}
+        {step === "crop" && (
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onBackToUpload}
+              className="shrink-0 px-3 py-2.5 text-xs font-medium rounded-lg bg-zinc-100 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 transition-colors flex items-center gap-1.5"
+            >
+              <svg
+                className="w-3.5 h-3.5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+              Back
+            </button>
+
+            <button
+              onClick={onProceedToCaption}
+              disabled={!canProceedToCaption}
+              className={`flex-1 px-4 py-2.5 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2 ${
+                canProceedToCaption
+                  ? "bg-zinc-900 text-zinc-100 hover:bg-zinc-800 shadow-sm"
+                  : "bg-zinc-200 text-zinc-400 cursor-not-allowed"
+              }`}
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z"
+                />
+              </svg>
+              Proceed to Caption
+            </button>
+          </div>
+        )}
+
+        {/* ----------------------------------------------------------------- */}
+        {/* CAPTION — job running, show progress + estimate + abort           */}
+        {/* ----------------------------------------------------------------- */}
+        {step === "caption" && captionProgress && (
+          <div className="flex items-center gap-4">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between text-xs text-zinc-500 mb-1.5">
+                <span className="space-x-2 truncate">
+                  <span>{captionProgress.completed} captioned</span>
+                  {captionProgress.failed > 0 && (
+                    <span className="text-zinc-400">
+                      &middot; {captionProgress.failed} failed
+                    </span>
+                  )}
+                  {captionProgress.processing > 0 && (
+                    <span className="text-zinc-400">
+                      &middot; {captionProgress.processing} processing
+                    </span>
+                  )}
+                </span>
+                <span className="font-medium shrink-0">
+                  {captionProgressPercent ?? 0}%
+                </span>
               </div>
               <div className="h-2 bg-zinc-200 rounded-full overflow-hidden mb-1.5">
                 <div
                   className="h-full bg-zinc-700 transition-all duration-500 ease-out rounded-full"
-                  style={{ width: `${progressPercent}%` }}
+                  style={{ width: `${captionProgressPercent ?? 0}%` }}
                 />
               </div>
-              {/* Time estimate row */}
               <div className="flex items-center gap-3 text-[11px] text-zinc-400">
                 <span className="flex items-center gap-1">
                   <svg
@@ -149,39 +279,39 @@ export function FloatingActionBar({
                 {avgTimeMs != null && (
                   <span>~{formatDuration(Math.round(avgTimeMs))} per image</span>
                 )}
-                {remaining > 0 && (
-                  <span>{remaining} image{remaining !== 1 ? "s" : ""} left</span>
+                {(captionProgress.queued ?? 0) > 0 && (
+                  <span>
+                    {captionProgress.queued} image
+                    {captionProgress.queued !== 1 ? "s" : ""} left
+                  </span>
                 )}
               </div>
             </div>
 
-            {isProcessing && (
-              <button
-                onClick={onAbort}
-                className="shrink-0 px-3 py-1.5 text-xs font-medium rounded-md bg-zinc-200 text-zinc-600 hover:bg-zinc-300 hover:text-zinc-800 transition-colors flex items-center gap-1.5"
-                aria-label="Abort"
+            <button
+              onClick={onAbortCaption}
+              className="shrink-0 px-3 py-1.5 text-xs font-medium rounded-md bg-zinc-200 text-zinc-600 hover:bg-zinc-300 hover:text-zinc-800 transition-colors flex items-center gap-1.5"
+              aria-label="Abort captioning"
+            >
+              <svg
+                className="w-3.5 h-3.5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                viewBox="0 0 24 24"
               >
-                <svg
-                  className="w-3.5 h-3.5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-                Abort
-              </button>
-            )}
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              Abort
+            </button>
           </div>
         )}
 
         {/* ----------------------------------------------------------------- */}
         {/* DONE — job completed, show results + download + start over        */}
         {/* ----------------------------------------------------------------- */}
-        {jobDone && (
+        {step === "done" && captionProgress && (
           <div className="flex items-center gap-3">
-            {/* Completion summary */}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 text-xs text-zinc-500">
                 <svg
@@ -194,15 +324,16 @@ export function FloatingActionBar({
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
                 <span className="font-medium text-zinc-700">
-                  {progress.completed} completed
+                  {captionProgress.completed} captioned
                 </span>
-                {progress.failed > 0 && (
-                  <span className="text-zinc-400">&middot; {progress.failed} failed</span>
+                {captionProgress.failed > 0 && (
+                  <span className="text-zinc-400">
+                    &middot; {captionProgress.failed} failed
+                  </span>
                 )}
               </div>
             </div>
 
-            {/* Primary: Download ZIP */}
             <button
               onClick={onDownloadZip}
               className="shrink-0 px-4 py-2.5 text-sm font-medium rounded-lg bg-zinc-900 text-zinc-100 hover:bg-zinc-800 shadow-sm transition-colors flex items-center gap-1.5"
@@ -223,7 +354,6 @@ export function FloatingActionBar({
               Download ZIP
             </button>
 
-            {/* Secondary: Start over */}
             <button
               onClick={onClearAll}
               className="shrink-0 px-3 py-2.5 text-xs font-medium rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 hover:text-zinc-800 transition-colors flex items-center gap-1.5"
