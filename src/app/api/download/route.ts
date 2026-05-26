@@ -56,6 +56,7 @@ export async function POST(request: Request) {
   const basenameIndex = new Map<string, number>();
 
   // Add each image and its caption to the zip
+  // Images are already cropped at job creation time
   for (const [filename, entry] of job.images.entries()) {
     const base = filename.replace(/\.[^.]+$/, "");
     const ext = filename.replace(/.*\./, "");

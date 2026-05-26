@@ -35,7 +35,7 @@ describe("GET /api/status", () => {
   it("returns status for all images in a job", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.jpg", data: Buffer.from("b") },
@@ -67,7 +67,7 @@ describe("GET /api/status", () => {
   it("returns queued status for all images initially", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.jpg", data: Buffer.from("b") },
@@ -97,7 +97,7 @@ describe("GET /api/status", () => {
   it("returns updated statuses after changes", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.jpg", data: Buffer.from("b") },
@@ -139,7 +139,7 @@ describe("GET /api/status", () => {
   it("returns empty caption and error for queued images", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "a.png", data: Buffer.from("a") }],
       "http://localhost:8080",
       "llama3",
@@ -167,7 +167,7 @@ describe("GET /api/status", () => {
   it("includes reasoningContent field in status response", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost:8080",
       "llama3",
@@ -205,7 +205,7 @@ describe("GET /api/status", () => {
   it("includes prompt field in status response", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost:8080",
       "llama3",
@@ -242,7 +242,7 @@ describe("GET /api/status", () => {
   it("omits reasoningContent when not set", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost:8080",
       "llama3",
@@ -277,7 +277,7 @@ describe("GET /api/status", () => {
   it("returns all fields together (caption, prompt, reasoningContent)", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost:8080",
       "llama3",

@@ -35,7 +35,7 @@ describe("GET /api/caption", () => {
 
   it("returns SSE stream with correct headers", async () => {
     const store = await import("@/lib/store");
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost:8080",
       "llama3",
@@ -61,7 +61,7 @@ describe("GET /api/caption", () => {
 
   it("streams initial progress data", async () => {
     const store = await import("@/lib/store");
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },
@@ -96,7 +96,7 @@ describe("GET /api/caption", () => {
 
   it("streams initial progress with correct structure", async () => {
     const store = await import("@/lib/store");
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost:8080",
       "llama3",
@@ -129,7 +129,7 @@ describe("GET /api/caption", () => {
   it("isJobDone returns true when all images are completed", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.jpg", data: Buffer.from("b") },
@@ -158,7 +158,7 @@ describe("GET /api/caption", () => {
   it("isJobDone returns true with mixed completed and failed", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.jpg", data: Buffer.from("b") },
@@ -182,7 +182,7 @@ describe("GET /api/caption", () => {
 
   it("SSE interval includes statuses in payload structure", async () => {
     const store = await import("@/lib/store");
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost:8080",
       "llama3",
@@ -219,7 +219,7 @@ describe("GET /api/caption", () => {
 
   it("SSE statuses include prompt field", async () => {
     const store = await import("@/lib/store");
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost:8080",
       "llama3",
@@ -264,7 +264,7 @@ describe("GET /api/caption", () => {
 
   it("SSE statuses include reasoningContent field", async () => {
     const store = await import("@/lib/store");
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost:8080",
       "llama3",
@@ -310,7 +310,7 @@ describe("GET /api/caption", () => {
 
   it("SSE statuses omit reasoningContent when not set", async () => {
     const store = await import("@/lib/store");
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost:8080",
       "llama3",

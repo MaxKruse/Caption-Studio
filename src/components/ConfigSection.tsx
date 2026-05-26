@@ -1,6 +1,6 @@
 "use client";
 
-import { ModelInfo, CAPTION_TYPES, CaptionTypeId } from "./CaptionStudioTypes";
+import { ModelInfo, CAPTION_TYPES, CaptionTypeId, CROP_RULESETS, CropRuleset } from "./CaptionStudioTypes";
 import { ModeToggle } from "./ModeToggle";
 
 export function ConfigSection({
@@ -30,6 +30,8 @@ export function ConfigSection({
   onParallelRequestsChange,
   contentMode,
   onContentModeChange,
+  selectedRuleset,
+  onRulesetChange,
   isProcessing,
 }: {
   serverUrl: string;
@@ -58,6 +60,8 @@ export function ConfigSection({
   nameRequired: boolean;
   parallelRequests: number;
   onParallelRequestsChange: (value: number) => void;
+  selectedRuleset: CropRuleset | null;
+  onRulesetChange: (ruleset: CropRuleset) => void;
   isProcessing: boolean;
 }) {
   return (
@@ -243,6 +247,42 @@ export function ConfigSection({
               rows={3}
               className="w-full px-3 py-2 text-sm border border-zinc-300 rounded bg-white text-zinc-900 focus:outline-none focus:border-zinc-500 resize-y font-mono leading-relaxed"
             />
+          </div>
+        </div>
+
+        {/* Ruleset */}
+        <div className="space-y-3">
+          <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-widest">
+            Crop Ruleset
+          </h3>
+          <p className="text-[11px] text-zinc-400 -mt-2">
+            Portrait (face) / Body (pose) split for auto-detection
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {CROP_RULESETS.map((ruleset) => {
+              const isSelected = selectedRuleset?.id === ruleset.id;
+              const portraitPct = Math.round(ruleset.portraitRatio * 100);
+              const bodyPct = 100 - portraitPct;
+
+              return (
+                <button
+                  key={ruleset.id}
+                  onClick={() => onRulesetChange(ruleset)}
+                  disabled={isProcessing}
+                  title={ruleset.description}
+                  className={`relative px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${
+                    isSelected
+                      ? "bg-zinc-900 text-zinc-100 border-zinc-900"
+                      : "bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400 hover:text-zinc-800"
+                  } ${isProcessing ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                >
+                  <span className="font-semibold">{ruleset.label}</span>
+                  <span className="ml-1.5 text-zinc-400">
+                    ({portraitPct}% portrait / {bodyPct}% body)
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
 

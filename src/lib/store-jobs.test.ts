@@ -21,7 +21,7 @@ describe("createJob", () => {
   it("creates a job with a single image", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost:8080",
       "llama3",
@@ -50,7 +50,7 @@ describe("createJob", () => {
   it("creates a job with multiple images", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "img1.png", data: Buffer.from("a") },
         { name: "img2.jpg", data: Buffer.from("b") },
@@ -82,7 +82,7 @@ describe("createJob", () => {
   it("stores all job configuration fields correctly", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://example.com/api",
       "gpt-4o",
@@ -110,11 +110,11 @@ describe("createJob", () => {
   it("generates unique job IDs each time", async () => {
     const store = await getStore();
 
-    const id1 = store.createJob(
+    const id1 = await store.createJob(
       [{ name: "a.png", data: Buffer.from("a") }],
       "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
-    const id2 = store.createJob(
+    const id2 = await store.createJob(
       [{ name: "b.png", data: Buffer.from("b") }],
       "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
@@ -127,7 +127,7 @@ describe("createJob", () => {
   it("sets createdAt timestamp", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
@@ -152,7 +152,7 @@ describe("getJob", () => {
   it("returns the job for a valid ID", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
@@ -191,7 +191,7 @@ describe("deleteJob", () => {
   it("removes a job from the store", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );

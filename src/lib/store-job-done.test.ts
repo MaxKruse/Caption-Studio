@@ -26,7 +26,7 @@ describe("isJobDone", () => {
   it("returns false when all images are queued", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
@@ -39,7 +39,7 @@ describe("isJobDone", () => {
   it("returns false when some images are processing", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },
@@ -56,7 +56,7 @@ describe("isJobDone", () => {
   it("returns true when all images are completed", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },
@@ -75,7 +75,7 @@ describe("isJobDone", () => {
   it("returns true when all images are failed", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },
@@ -94,7 +94,7 @@ describe("isJobDone", () => {
   it("returns true with mixed completed and failed images", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },
@@ -115,7 +115,7 @@ describe("isJobDone", () => {
   it("returns false when at least one image is still queued", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },

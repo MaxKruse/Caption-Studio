@@ -30,7 +30,7 @@ describe("captionImage behavior", () => {
 
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake-png-data-here") }],
       "http://localhost:8080",
       "llama3",

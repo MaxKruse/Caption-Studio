@@ -1,11 +1,24 @@
 /**
  * In-memory store for batch captioning jobs.
  * Each job tracks uploaded images, processing status, and results.
+ * Images are cropped ONCE at job creation and stored as cropped data.
  */
+
+import sharp from "sharp";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface ImageCropData {
+  cropType: "portrait" | "body";
+  cropRect: { x: number; y: number; width: number; height: number };
+}
 
 export interface ImageEntry {
   name: string;
-  data: Buffer;
+  data: Buffer;          // cropped image data (or original if no crop)
+  originalData: Buffer;  // always the original uncropped data
   status: "queued" | "processing" | "completed" | "failed";
   caption?: string;
   error?: string;
@@ -13,6 +26,7 @@ export interface ImageEntry {
   reasoningContent?: string; // reasoning_content from the API (some models)
   processingStartedAt?: number; // timestamp when processing began
   processingDurationMs?: number; // ms taken to complete (completed or failed)
+  crop?: ImageCropData; // crop configuration (1000-normalized coords)
 }
 
 export interface CaptionJob {
@@ -28,6 +42,7 @@ export interface CaptionJob {
   parallelRequests: number;
   createdAt: number;
   abortSignal: AbortController; // used to cancel processing workers
+  cropData?: Record<string, ImageCropData>; // filename -> crop config
 }
 
 /** Global map of active jobs. Keyed by job ID. */
@@ -38,8 +53,33 @@ function generateId(): string {
   return Math.random().toString(36).substring(2, 10);
 }
 
-/** Create a new job and return its ID. */
-export function createJob(
+/**
+ * Apply a crop to an image buffer. Returns cropped buffer.
+ * cropRect is in 1000-normalized coordinates.
+ */
+async function applyCropToBuffer(
+  imageBuffer: Buffer,
+  cropRect: { x: number; y: number; width: number; height: number }
+): Promise<Buffer> {
+  const metadata = await sharp(imageBuffer).metadata();
+  const width = metadata.width ?? 0;
+  const height = metadata.height ?? 0;
+
+  const scaleX = width / 1000;
+  const scaleY = height / 1000;
+
+  const left = Math.max(0, Math.round(cropRect.x * scaleX));
+  const top = Math.max(0, Math.round(cropRect.y * scaleY));
+  const cropWidth = Math.min(width - left, Math.round(cropRect.width * scaleX));
+  const cropHeight = Math.min(height - top, Math.round(cropRect.height * scaleY));
+
+  return sharp(imageBuffer)
+    .extract({ left, top, width: cropWidth, height: cropHeight })
+    .toBuffer();
+}
+
+/** Create a new job and return its ID. Images are cropped at creation time. */
+export async function createJob(
   images: { name: string; data: Buffer }[],
   serverUrl: string,
   model: string,
@@ -48,16 +88,28 @@ export function createJob(
   captionTypeId: string,
   triggerWord: string,
   subjectName: string,
-  parallelRequests: number
-): string {
+  parallelRequests: number,
+  cropData?: Record<string, ImageCropData>
+): Promise<string> {
   const id = generateId();
   const imageMap = new Map<string, ImageEntry>();
 
   for (const img of images) {
+    const cropConfig = cropData?.[img.name];
+    let croppedData: Buffer;
+
+    if (cropConfig?.cropRect) {
+      croppedData = await applyCropToBuffer(img.data, cropConfig.cropRect);
+    } else {
+      croppedData = img.data;
+    }
+
     imageMap.set(img.name, {
       name: img.name,
-      data: img.data,
+      data: croppedData,
+      originalData: img.data,
       status: "queued",
+      crop: cropConfig,
     });
   }
 
@@ -76,6 +128,7 @@ export function createJob(
     parallelRequests,
     createdAt: Date.now(),
     abortSignal: abortController,
+    cropData,
   });
 
   return id;

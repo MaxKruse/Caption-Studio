@@ -97,3 +97,17 @@ export async function prepareForApi(
 
   return resizeIfNeeded(imageBuffer, API_MAX_DIMENSION);
 }
+
+// ---------------------------------------------------------------------------
+// Crop utilities
+// ---------------------------------------------------------------------------
+
+/**
+ * Crop rectangle in 1000-normalized coordinates (same scale as OpenAI bbox_2d).
+ */
+export interface CropRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}

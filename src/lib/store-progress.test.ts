@@ -34,7 +34,7 @@ describe("getProgress", () => {
   it("counts all images as queued initially", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },
@@ -58,7 +58,7 @@ describe("getProgress", () => {
   it("counts mixed statuses correctly", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },
@@ -91,7 +91,7 @@ describe("getProgress", () => {
   it("counts all completed correctly", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },

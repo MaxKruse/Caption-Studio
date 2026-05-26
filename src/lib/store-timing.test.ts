@@ -21,7 +21,7 @@ describe("updateImageStatus timing", () => {
   it("records processingStartedAt when status changes to processing", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
@@ -41,7 +41,7 @@ describe("updateImageStatus timing", () => {
   it("does not overwrite processingStartedAt on repeated processing calls", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
@@ -62,7 +62,7 @@ describe("updateImageStatus timing", () => {
   it("records processingDurationMs when status changes to completed", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
@@ -82,7 +82,7 @@ describe("updateImageStatus timing", () => {
   it("records processingDurationMs when status changes to failed", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
@@ -102,7 +102,7 @@ describe("updateImageStatus timing", () => {
   it("does not record duration when completed without processing", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
@@ -119,7 +119,7 @@ describe("updateImageStatus timing", () => {
   it("preserves processingDurationMs across subsequent status updates", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
@@ -152,7 +152,7 @@ describe("getProgress timing estimates", () => {
   it("does not include timing fields when no images have finished", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },
@@ -171,7 +171,7 @@ describe("getProgress timing estimates", () => {
   it("calculates avgTimeMs after one image completes", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },
@@ -195,7 +195,7 @@ describe("getProgress timing estimates", () => {
   it("calculates estimatedRemainingMs based on queued count", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },
@@ -220,7 +220,7 @@ describe("getProgress timing estimates", () => {
   it("averages duration across multiple completed images", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },
@@ -250,7 +250,7 @@ describe("getProgress timing estimates", () => {
   it("includes failed images in the average calculation", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },
@@ -272,7 +272,7 @@ describe("getProgress timing estimates", () => {
   it("estimates zero remaining when no queued images left", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },

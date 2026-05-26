@@ -16,7 +16,7 @@ import {
   type CaptionJob,
   type ImageEntry,
 } from "@/lib/store";
-import { prepareForApi } from "@/lib/image-utils";
+import { prepareForApi, type CropRect } from "@/lib/image-utils";
 import { normalizeServerUrl } from "@/lib/url-utils";
 
 // ---------------------------------------------------------------------------
@@ -33,6 +33,7 @@ interface JobConfig {
   subjectName: string;
   parallelRequests: number;
   imageNames: string[];
+  cropData?: Record<string, { cropType: string; cropRect: CropRect }>;
 }
 
 function parseJobConfigFromFormData(formData: FormData): JobConfig | null {
@@ -49,6 +50,7 @@ function parseJobConfigFromFormData(formData: FormData): JobConfig | null {
     subjectName?: string;
     parallelRequests?: number;
     imageNames: string[];
+    cropData?: Record<string, { cropType: string; cropRect: CropRect }>;
   };
 
   try {
@@ -67,6 +69,7 @@ function parseJobConfigFromFormData(formData: FormData): JobConfig | null {
     subjectName: config.subjectName ?? "",
     parallelRequests: config.parallelRequests ?? 4,
     imageNames: config.imageNames,
+    cropData: config.cropData as JobConfig["cropData"],
   };
 }
 
@@ -81,6 +84,7 @@ function parseJobConfigFromBody(rest: Record<string, unknown>): JobConfig {
     subjectName: (rest.subjectName as string) ?? "",
     parallelRequests: (rest.parallelRequests as number) ?? 4,
     imageNames: [],
+    cropData: rest.cropData as JobConfig["cropData"],
   };
 }
 
@@ -293,7 +297,17 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const jobId = createJob(
+  // Narrow crop data types
+  const cropData = config.cropData
+    ? Object.fromEntries(
+        Object.entries(config.cropData).map(([k, v]) => [
+          k,
+          { cropType: v.cropType as "portrait" | "body", cropRect: v.cropRect },
+        ])
+      )
+    : undefined;
+
+  const jobId = await createJob(
     decodedImages,
     config.serverUrl,
     config.model,
@@ -302,7 +316,8 @@ export async function POST(request: NextRequest) {
     config.captionTypeId || "generic_single",
     config.triggerWord || "",
     config.subjectName || "",
-    Math.min(Math.max(Number(config.parallelRequests) || 4, 1), 8)
+    Math.min(Math.max(Number(config.parallelRequests) || 4, 1), 8),
+    cropData
   );
 
   // Start async processing (fire and forget)
@@ -464,7 +479,9 @@ async function captionImage(
 
   try {
     // Prepare image for API (format conversion if needed)
+    // Image data is already cropped at job creation time
     const { buffer, mimeType } = await prepareForApi(filename, entry.data);
+
     const base64 = buffer.toString("base64");
 
     // Build prompt and messages

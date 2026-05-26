@@ -4,6 +4,8 @@
 
 export * from "./CaptionStudioConstants";
 export * from "./CaptionStudioUtils";
+export * from "./CaptionStudioCropConstants";
+export * from "./CaptionStudioCropTypes";
 
 // ---------------------------------------------------------------------------
 // Re-export CaptionTypeId for convenience

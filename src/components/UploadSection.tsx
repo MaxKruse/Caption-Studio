@@ -6,6 +6,7 @@ import {
   type ImageFile,
   type ImageStatus,
 } from "./CaptionStudioTypes";
+import type { DetectionProgress } from "./CaptionStudioCropTypes";
 import { StatusBadge } from "./ImagePreviewModal";
 
 // ---------------------------------------------------------------------------
@@ -106,6 +107,11 @@ export function UploadSection({
   onRemoveImage,
   onPreview,
   fileInputRef,
+  isDetecting,
+  onDetect,
+  detectionError,
+  detectionProgress,
+  detectionTotal,
 }: {
   images: ImageFile[];
   imageStatuses: Record<string, ImageStatus>;
@@ -123,6 +129,11 @@ export function UploadSection({
   onRemoveImage: (name: string) => void;
   onPreview: (img: ImageFile) => void;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
+  isDetecting?: boolean;
+  onDetect?: () => void;
+  detectionError?: string | null;
+  detectionProgress?: DetectionProgress;
+  detectionTotal?: number;
 }) {
   return (
     <section className="rounded-xl border border-zinc-200 overflow-hidden">
@@ -328,6 +339,86 @@ export function UploadSection({
                     onPreview={onPreview}
                   />
                 ))}
+              </div>
+            )}
+
+            {/* Detection error */}
+            {detectionError && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                {detectionError}
+              </div>
+            )}
+
+            {/* Detect button */}
+            {onDetect && images.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex justify-center">
+                  <button
+                    onClick={onDetect}
+                    disabled={isDetecting || isProcessing}
+                    className="px-6 py-2.5 text-sm font-medium rounded-lg bg-zinc-900 text-zinc-100 hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    {isDetecting ? (
+                      <>
+                        <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
+                        </svg>
+                        Detecting faces &amp; bodies...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                        </svg>
+                        Detect &amp; Crop ({images.length} images)
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Detection progress bar */}
+                {isDetecting && detectionProgress && detectionTotal != null && detectionProgress.total > 0 && (
+                  <div className="space-y-2">
+                    {/* Progress bar */}
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 h-2 bg-zinc-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-zinc-900 rounded-full transition-all duration-300 ease-out"
+                          style={{
+                            width: `${((detectionProgress.completed + detectionProgress.failed) / detectionProgress.total) * 100}%`,
+                          }}
+                        />
+                      </div>
+                      <span className="text-xs font-mono text-zinc-500 shrink-0 min-w-[4ch] text-right">
+                        {detectionProgress.completed + detectionProgress.failed}/{detectionProgress.total}
+                      </span>
+                    </div>
+
+                    {/* Status dots */}
+                    <div className="flex items-center gap-1.5">
+                      {Array.from({ length: detectionTotal }).map((_, i) => {
+                        const doneCount = detectionProgress.completed + detectionProgress.failed;
+                        const processingCount = detectionProgress.processing;
+                        const isDone = i < doneCount;
+                        const isProcessing = i >= doneCount && i < doneCount + processingCount;
+
+                        return (
+                          <div
+                            key={i}
+                            className={`w-2 h-2 rounded-full transition-colors ${
+                              isDone
+                                ? "bg-zinc-900"
+                                : isProcessing
+                                  ? "bg-zinc-400 animate-pulse"
+                                  : "bg-zinc-200"
+                            }`}
+                            title={`Image ${i + 1}: ${isDone ? "done" : isProcessing ? "processing" : "queued"}`}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

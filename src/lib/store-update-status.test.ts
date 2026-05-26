@@ -21,7 +21,7 @@ describe("updateImageStatus", () => {
   it("updates status to processing", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
@@ -36,7 +36,7 @@ describe("updateImageStatus", () => {
   it("updates status to completed with caption", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
@@ -58,7 +58,7 @@ describe("updateImageStatus", () => {
   it("updates status to failed with error message", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
@@ -81,7 +81,7 @@ describe("updateImageStatus", () => {
   it("stores the prompt used for each image", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost:8080",
       "llama3",
@@ -111,7 +111,7 @@ describe("updateImageStatus", () => {
   it("does not overwrite prompt when not provided", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "img.jpg", data: Buffer.from("fake") }],
       "http://localhost:8080",
       "model",
@@ -153,7 +153,7 @@ describe("updateImageStatus", () => {
   it("does not update non-existent image silently", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
@@ -167,7 +167,7 @@ describe("updateImageStatus", () => {
   it("stores reasoningContent when provided", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
@@ -191,7 +191,7 @@ describe("updateImageStatus", () => {
   it("does not overwrite reasoningContent when not provided", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "img.jpg", data: Buffer.from("fake") }],
       "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
@@ -218,7 +218,7 @@ describe("updateImageStatus", () => {
   it("updates only the specified image in a multi-image job", async () => {
     const store = await getStore();
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },

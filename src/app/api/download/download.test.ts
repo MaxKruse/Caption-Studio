@@ -44,7 +44,7 @@ describe("POST /api/download", () => {
   it("returns a ZIP file with correct Content-Type", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake-png-data") }],
       "http://localhost:8080",
       "llama3",
@@ -78,7 +78,7 @@ describe("POST /api/download", () => {
   it("includes both image and caption file entries in ZIP", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "photo1.png", data: Buffer.from("img1") },
         { name: "photo2.jpg", data: Buffer.from("img2") },
@@ -125,7 +125,7 @@ describe("POST /api/download", () => {
   it("uses default filename when captionName is empty", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost:8080",
       "llama3",
@@ -155,7 +155,7 @@ describe("POST /api/download", () => {
   it("generates .txt caption files with correct names", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "my-photo.png", data: Buffer.from("img") },
         { name: "another.jpg", data: Buffer.from("img2") },
@@ -196,7 +196,7 @@ describe("POST /api/download", () => {
   it("generates ZIP even when all captions failed", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost:8080",
       "llama3",
@@ -239,7 +239,7 @@ describe("POST /api/download", () => {
   it("deletes the job from store after download", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
       "http://localhost:8080",
       "llama3",
@@ -270,7 +270,7 @@ describe("POST /api/download", () => {
   it("renames caption files when basenames collide (same name, different extension)", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "1.png", data: Buffer.from("img-png") },
         { name: "1.jpg", data: Buffer.from("img-jpg") },
@@ -312,7 +312,7 @@ describe("POST /api/download", () => {
   it("handles three-way basename collision", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "photo.png", data: Buffer.from("a") },
         { name: "photo.jpg", data: Buffer.from("b") },
@@ -388,7 +388,7 @@ describe("POST /api/download", () => {
   it("two separate collision groups — each independently suffixed", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "1.png", data: Buffer.from("a") },
         { name: "1.jpg", data: Buffer.from("b") },
@@ -436,7 +436,7 @@ describe("POST /api/download", () => {
   it("four-way basename collision — all but first suffixed", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "x.png", data: Buffer.from("a") },
         { name: "x.jpg", data: Buffer.from("b") },
@@ -479,7 +479,7 @@ describe("POST /api/download", () => {
   it("mixed unique and collision entries — only collisions get suffixed", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "unique-a.png", data: Buffer.from("a") },
         { name: "shared.png", data: Buffer.from("b") },
@@ -529,7 +529,7 @@ describe("POST /api/download", () => {
   it("five-way collision — suffixes reach (4)", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "img.png", data: Buffer.from("a") },
         { name: "img.jpg", data: Buffer.from("b") },
@@ -577,7 +577,7 @@ describe("POST /api/download", () => {
   it("six elements — three collision groups of two", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "a.png", data: Buffer.from("a1") },
         { name: "a.jpg", data: Buffer.from("a2") },
@@ -629,7 +629,7 @@ describe("POST /api/download", () => {
   it("seven elements — one group of 4 + one group of 3", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "alpha.png", data: Buffer.from("a") },
         { name: "alpha.jpg", data: Buffer.from("b") },
@@ -687,7 +687,7 @@ describe("POST /api/download", () => {
   it("eight-way collision — all suffixes through (7)", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "d.png", data: Buffer.from("a") },
         { name: "d.jpg", data: Buffer.from("b") },
@@ -741,7 +741,7 @@ describe("POST /api/download", () => {
   it("collision with dots in base name — suffix inserted before extension only", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "my.photo.png", data: Buffer.from("a") },
         { name: "my.photo.jpg", data: Buffer.from("b") },
@@ -776,7 +776,7 @@ describe("POST /api/download", () => {
   it("every image-caption pair shares the same base name in the ZIP", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "a.png", data: Buffer.from("a") },
         { name: "a.jpg", data: Buffer.from("b") },
@@ -824,7 +824,7 @@ describe("POST /api/download", () => {
   it("no duplicate entries in the ZIP after collision resolution", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [
         { name: "x.png", data: Buffer.from("a") },
         { name: "x.jpg", data: Buffer.from("b") },
@@ -867,7 +867,7 @@ describe("POST /api/download", () => {
   it("handles files with multiple dots in the name", async () => {
     const store = await import("@/lib/store");
 
-    const jobId = store.createJob(
+    const jobId = await store.createJob(
       [{ name: "my.photo.backup.png", data: Buffer.from("fake") }],
       "http://localhost:8080",
       "llama3",

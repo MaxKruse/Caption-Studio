@@ -5,6 +5,7 @@ import {
   ImageStatus,
   ProgressState,
 } from "../CaptionStudioTypes";
+import type { ImageCrop } from "../CaptionStudioCropTypes";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -22,6 +23,7 @@ export interface UseCaptionJobOptions {
   parallelRequests: number;
   showToast: (message: string) => void;
   onDownloadComplete: () => void;
+  cropData?: ImageCrop[];
 }
 
 interface SSEHookOptions {
@@ -55,6 +57,7 @@ interface ActionsHookOptions {
   setProgress: React.Dispatch<React.SetStateAction<ProgressState>>;
   setJobId: (value: string | null) => void;
   setJobError: (value: string) => void;
+  cropData?: ImageCrop[];
 }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +154,7 @@ function useCaptionActions({
   setProgress,
   setJobId,
   setJobError,
+  cropData,
 }: ActionsHookOptions) {
   // Start batch captioning
   const startCaptioning = useCallback(async (sseHandlers: {
@@ -195,6 +199,17 @@ function useCaptionActions({
 
     try {
       const formData = new FormData();
+      // Build crop data map (filename -> crop config)
+      const cropDataMap: Record<string, { cropType: string; cropRect: { x: number; y: number; width: number; height: number } }> = {};
+      if (cropData && cropData.length > 0) {
+        for (const crop of cropData) {
+          cropDataMap[crop.imageName] = {
+            cropType: crop.cropType,
+            cropRect: crop.cropRect,
+          };
+        }
+      }
+
       formData.append("config", JSON.stringify({
         serverUrl: serverUrl.trim(),
         model: selectedModel,
@@ -205,6 +220,7 @@ function useCaptionActions({
         subjectName: subjectName.trim(),
         parallelRequests,
         imageNames: images.map((img) => img.name),
+        cropData: Object.keys(cropDataMap).length > 0 ? cropDataMap : undefined,
       }));
       for (const img of images) {
         formData.append("images", img.file);
@@ -262,6 +278,7 @@ function useCaptionActions({
     setIsProcessing,
     setImageStatuses,
     setJobId,
+    cropData,
   ]);
 
   // Download ZIP
