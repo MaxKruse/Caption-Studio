@@ -1,57 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
+  CaptionTypeId,
   ContentMode,
   ToastState,
 } from "../CaptionStudioTypes";
-import { PROMPT_PREFIX_DEFAULT, TOAST_DURATION } from "../CaptionStudioTypes";
-
-// ---------------------------------------------------------------------------
-// NSFW default prompts (current defaults)
-// ---------------------------------------------------------------------------
-
-const SYSTEM_PROMPT_NSFW = `You are an expert image captioning assistant. Produce a single, cohesive paragraph describing what is visible in the image.
-
-Follow this structure:
-1. **Subject Specification** — Identify the main subject with concrete details: age range, ethnicity, gender, distinctive physical features, body type, hair, skin tone, facial expression, and what they are doing.
-2. **Clothing & Appearance** — Describe attire, accessories, and styling with specific details about fit, material, color, and condition.
-3. **Environmental Context** — Establish the setting, time of day, lighting conditions, weather, and background elements that surround the subject.
-4. **Visual Style** — Note the photographic qualities: camera angle, framing (close-up, wide shot, etc.), depth of field, color palette, and overall mood.
-
-Rules:
-- Describe only what is physically visible. Do not speculate or assume.
-- Use definitive language. Avoid "appears to be," "possibly," or "seems."
-- Ignore text, watermarks, and UI elements in the image.
-- Be explicit and anatomically direct for NSFW content. Use precise terminology without euphemism.
-- Vary sentence structure. Avoid repetitive "Subject + verb" patterns.
-- Output a single paragraph, 30-150 words depending on visual complexity.
-- No preamble, no warnings, no disclaimers. Start directly with the description.`;
-
-const USER_PROMPT_NSFW = `Generate a detailed caption for this image. Focus on the most important visual elements: the subject's identity and appearance, what they are wearing, their pose and expression, and the environment. Be explicit and direct with NSFW content — use anatomically precise language without euphemism. Include lighting and photographic style details. Keep it to one paragraph, 30-150 words.`;
-
-// ---------------------------------------------------------------------------
-// SFW default prompts
-// ---------------------------------------------------------------------------
-
-const SYSTEM_PROMPT_SFW = `You are an expert image captioning assistant. Produce a single, cohesive paragraph describing what is visible in the image.
-
-Follow this structure:
-1. **Subject Specification** — Identify the main subject with concrete details: age range, ethnicity, gender, distinctive physical features, body type, hair, skin tone, facial expression, and what they are doing.
-2. **Clothing & Appearance** — Describe attire, accessories, and styling with specific details about fit, material, color, and condition.
-3. **Environmental Context** — Establish the setting, time of day, lighting conditions, weather, and background elements that surround the subject.
-4. **Visual Style** — Note the photographic qualities: camera angle, framing (close-up, wide shot, etc.), depth of field, color palette, and overall mood.
-
-Rules:
-- Describe only what is physically visible. Do not speculate or assume.
-- Use definitive language. Avoid "appears to be," "possibly," or "seems."
-- Ignore text, watermarks, and UI elements in the image.
-- Use clean, appropriate, safe-for-work language throughout.
-- Be specific with concrete details rather than vague descriptors like "beautiful" or "nice."
-- Vary sentence structure. Avoid repetitive "Subject + verb" patterns.
-- Output a single paragraph, 30-150 words depending on visual complexity.
-- No preamble, no warnings, no disclaimers. Start directly with the description.`;
-
-const USER_PROMPT_SFW = `Generate a detailed caption for this image. Focus on the most important visual elements: the subject's identity and appearance, what they are wearing, their pose and expression, and the environment. Include lighting and photographic style details. Keep it to one paragraph, 30-150 words. Use clean, safe-for-work language.`;
+import {
+  CAPTION_TYPES,
+  getSystemPrompt,
+  getUserPrompt,
+  TOAST_DURATION,
+} from "../CaptionStudioTypes";
 
 // ---------------------------------------------------------------------------
 // useAppConfig — manages all configuration state for the caption studio
@@ -68,17 +27,23 @@ export interface UseAppConfigResult {
   contentMode: ContentMode;
   setContentMode: (mode: ContentMode) => void;
 
+  // Caption type
+  captionTypeId: CaptionTypeId;
+  setCaptionTypeId: (id: CaptionTypeId) => void;
+
   // Prompts
   systemPrompt: string;
   setSystemPrompt: (value: string) => void;
   userPrompt: string;
   setUserPrompt: (value: string) => void;
 
+  // Caption fields (conditional based on caption type)
+  triggerWord: string;
+  setTriggerWord: (value: string) => void;
+  subjectName: string;
+  setSubjectName: (value: string) => void;
+
   // Options
-  captionName: string;
-  setCaptionName: (value: string) => void;
-  includeNameInPrompt: boolean;
-  setIncludeNameInPrompt: (value: boolean) => void;
   parallelRequests: number;
   setParallelRequests: (value: number) => void;
 
@@ -87,9 +52,12 @@ export interface UseAppConfigResult {
   showToast: (message: string) => void;
   hideToast: () => void;
 
-  // Prompt prefix (derived from includeNameInPrompt)
-  promptPrefixReadOnly: string;
-  captionNameRequired: boolean;
+  // Derived values
+  captionTypeLabel: string;
+  needsTrigger: boolean;
+  needsName: boolean;
+  triggerRequired: boolean;
+  nameRequired: boolean;
 }
 
 export function useAppConfig(): UseAppConfigResult {
@@ -100,28 +68,39 @@ export function useAppConfig(): UseAppConfigResult {
 
   const [contentMode, setContentMode] = useState<ContentMode>("nsfw");
 
-  // Initialize prompts based on mode
-  const [systemPrompt, setSystemPrompt] = useState(SYSTEM_PROMPT_NSFW);
-  const [userPrompt, setUserPrompt] = useState(USER_PROMPT_NSFW);
+  // Caption type — defaults to "generic_with_trigger" (most common for LoRA)
+  const [captionTypeId, setCaptionTypeId] = useState<CaptionTypeId>("generic_with_trigger");
 
-  const [captionName, setCaptionName] = useState("");
-  const [includeNameInPrompt, setIncludeNameInPrompt] = useState(true);
+  // Prompts — initialized from caption type + mode
+  const [systemPrompt, setSystemPrompt] = useState(() =>
+    getSystemPrompt("generic_with_trigger", "nsfw")
+  );
+  const [userPrompt, setUserPrompt] = useState(() =>
+    getUserPrompt("generic_with_trigger", "nsfw")
+  );
+
+  // Caption fields
+  const [triggerWord, setTriggerWord] = useState("");
+  const [subjectName, setSubjectName] = useState("");
+
   const [parallelRequests, setParallelRequests] = useState(4);
 
   const [toast, setToast] = useState<ToastState>({ message: "", visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Swap prompts when mode changes
+  // Update prompts when caption type changes
+  const handleCaptionTypeChange = useCallback((id: CaptionTypeId) => {
+    setCaptionTypeId(id);
+    setSystemPrompt(getSystemPrompt(id, contentMode));
+    setUserPrompt(getUserPrompt(id, contentMode));
+  }, [contentMode]);
+
+  // Update prompts when content mode changes
   const handleContentModeChange = useCallback((mode: ContentMode) => {
     setContentMode(mode);
-    if (mode === "sfw") {
-      setSystemPrompt(SYSTEM_PROMPT_SFW);
-      setUserPrompt(USER_PROMPT_SFW);
-    } else {
-      setSystemPrompt(SYSTEM_PROMPT_NSFW);
-      setUserPrompt(USER_PROMPT_NSFW);
-    }
-  }, []);
+    setSystemPrompt(getSystemPrompt(captionTypeId, mode));
+    setUserPrompt(getUserPrompt(captionTypeId, mode));
+  }, [captionTypeId]);
 
   const showToast = useCallback((message: string) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -142,8 +121,13 @@ export function useAppConfig(): UseAppConfigResult {
     };
   }, []);
 
-  const promptPrefixReadOnly = includeNameInPrompt ? PROMPT_PREFIX_DEFAULT : "";
-  const captionNameRequired = includeNameInPrompt;
+  // Derived values from caption type definition
+  const captionType = CAPTION_TYPES.find((t) => t.id === captionTypeId) ?? CAPTION_TYPES[0];
+  const captionTypeLabel = captionType.label;
+  const needsTrigger = captionType.needsTrigger;
+  const needsName = captionType.needsName;
+  const triggerRequired = needsTrigger && !triggerWord.trim();
+  const nameRequired = needsName && !subjectName.trim();
 
   return {
     serverUrl,
@@ -152,20 +136,25 @@ export function useAppConfig(): UseAppConfigResult {
     setSelectedModel: useCallback((id: string) => setSelectedModel(id), []),
     contentMode,
     setContentMode: handleContentModeChange,
+    captionTypeId,
+    setCaptionTypeId: handleCaptionTypeChange,
     systemPrompt,
     setSystemPrompt,
     userPrompt,
     setUserPrompt,
-    captionName,
-    setCaptionName,
-    includeNameInPrompt,
-    setIncludeNameInPrompt,
+    triggerWord,
+    setTriggerWord,
+    subjectName,
+    setSubjectName,
     parallelRequests,
     setParallelRequests,
     toast,
     showToast,
     hideToast,
-    promptPrefixReadOnly,
-    captionNameRequired,
+    captionTypeLabel,
+    needsTrigger,
+    needsName,
+    triggerRequired,
+    nameRequired,
   };
 }

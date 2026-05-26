@@ -44,10 +44,10 @@ describe("GET /api/status", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 
@@ -75,10 +75,10 @@ describe("GET /api/status", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 
@@ -106,10 +106,10 @@ describe("GET /api/status", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 
@@ -144,10 +144,10 @@ describe("GET /api/status", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 
@@ -172,10 +172,10 @@ describe("GET /api/status", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 
@@ -210,10 +210,10 @@ describe("GET /api/status", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 
@@ -247,10 +247,10 @@ describe("GET /api/status", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 
@@ -282,10 +282,10 @@ describe("GET /api/status", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 

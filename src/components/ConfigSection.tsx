@@ -1,4 +1,6 @@
-import { ModelInfo } from "./CaptionStudioTypes";
+"use client";
+
+import { ModelInfo, CAPTION_TYPES, CaptionTypeId } from "./CaptionStudioTypes";
 import { ModeToggle } from "./ModeToggle";
 
 export function ConfigSection({
@@ -14,17 +16,21 @@ export function ConfigSection({
   onSystemPromptChange,
   userPrompt,
   onUserPromptChange,
-  captionName,
-  onCaptionNameChange,
-  includeNameInPrompt,
-  onIncludeNameInPromptChange,
+  captionTypeId,
+  onCaptionTypeIdChange,
+  triggerWord,
+  onTriggerWordChange,
+  subjectName,
+  onSubjectNameChange,
+  needsTrigger,
+  needsName,
+  triggerRequired,
+  nameRequired,
   parallelRequests,
   onParallelRequestsChange,
   contentMode,
   onContentModeChange,
   isProcessing,
-  promptPrefixReadOnly,
-  captionNameRequired,
 }: {
   serverUrl: string;
   onServerUrlChange: (value: string) => void;
@@ -36,19 +42,23 @@ export function ConfigSection({
   onFetchModels: () => void;
   contentMode: "sfw" | "nsfw";
   onContentModeChange: (mode: "sfw" | "nsfw") => void;
+  captionTypeId: CaptionTypeId;
+  onCaptionTypeIdChange: (id: CaptionTypeId) => void;
   systemPrompt: string;
   onSystemPromptChange: (value: string) => void;
   userPrompt: string;
   onUserPromptChange: (value: string) => void;
-  captionName: string;
-  onCaptionNameChange: (value: string) => void;
-  includeNameInPrompt: boolean;
-  onIncludeNameInPromptChange: (checked: boolean) => void;
+  triggerWord: string;
+  onTriggerWordChange: (value: string) => void;
+  subjectName: string;
+  onSubjectNameChange: (value: string) => void;
+  needsTrigger: boolean;
+  needsName: boolean;
+  triggerRequired: boolean;
+  nameRequired: boolean;
   parallelRequests: number;
   onParallelRequestsChange: (value: number) => void;
   isProcessing: boolean;
-  promptPrefixReadOnly: string;
-  captionNameRequired: boolean;
 }) {
   return (
     <section className="rounded-xl border border-zinc-200 overflow-hidden">
@@ -59,7 +69,7 @@ export function ConfigSection({
         </div>
         <h2 className="text-sm font-semibold text-zinc-900">Configure</h2>
         <p className="text-xs text-zinc-400 ml-auto hidden sm:block">
-          Set up the API connection and prompts
+          Set up the API connection and caption style
         </p>
       </div>
 
@@ -90,7 +100,7 @@ export function ConfigSection({
             </button>
           </div>
           <p className="text-[11px] text-zinc-400 -mt-1">
-OpenAI-compatible server URL (default: http://localhost:8080)
+            OpenAI-compatible server URL (default: http://localhost:8080)
           </p>
 
           {modelError && <p className="text-xs text-zinc-400">{modelError}</p>}
@@ -115,10 +125,10 @@ OpenAI-compatible server URL (default: http://localhost:8080)
           )}
         </div>
 
-        {/* Prompts */}
+        {/* Caption Style */}
         <div className="space-y-3">
           <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-widest">
-            Prompts
+            Caption Style
           </h3>
 
           <ModeToggle
@@ -129,13 +139,97 @@ OpenAI-compatible server URL (default: http://localhost:8080)
 
           <div>
             <label className="block text-xs text-zinc-400 mb-1">
+              Caption Type
+            </label>
+            <select
+              value={captionTypeId}
+              onChange={(e) => onCaptionTypeIdChange(e.target.value as CaptionTypeId)}
+              disabled={isProcessing}
+              className="w-full px-3 py-2 text-sm border border-zinc-300 rounded bg-white text-zinc-900 focus:outline-none focus:border-zinc-500 appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {CAPTION_TYPES.map((type) => (
+                <option key={type.id} value={type.id}>
+                  {type.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-zinc-400 -mt-1">
+              Select the caption style for character training datasets
+            </p>
+          </div>
+
+          {/* Conditional fields: trigger word */}
+          {needsTrigger && (
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">
+                Trigger Word
+                {triggerRequired && (
+                  <span className="normal-case font-normal ml-1 text-zinc-500">
+                    — required
+                  </span>
+                )}
+              </label>
+              <input
+                type="text"
+                value={triggerWord}
+                onChange={(e) => onTriggerWordChange(e.target.value)}
+                placeholder='e.g. "skx" or a custom trigger'
+                className={`w-full px-3 py-2 text-sm border rounded bg-white text-zinc-900 placeholder-zinc-400 focus:outline-none focus:border-zinc-500 transition-colors ${
+                  triggerRequired
+                    ? "border-zinc-500 ring-1 ring-zinc-400"
+                    : "border-zinc-300"
+                }`}
+              />
+              <p className="text-[11px] text-zinc-400 -mt-1">
+                A unique token prepended to each caption — avoid words with common meanings
+              </p>
+            </div>
+          )}
+
+          {/* Conditional fields: subject name */}
+          {needsName && (
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">
+                Subject Name
+                {nameRequired && (
+                  <span className="normal-case font-normal ml-1 text-zinc-500">
+                    — required
+                  </span>
+                )}
+              </label>
+              <input
+                type="text"
+                value={subjectName}
+                onChange={(e) => onSubjectNameChange(e.target.value)}
+                placeholder='e.g. "Sarah" or "John"'
+                className={`w-full px-3 py-2 text-sm border rounded bg-white text-zinc-900 placeholder-zinc-400 focus:outline-none focus:border-zinc-500 transition-colors ${
+                  nameRequired
+                    ? "border-zinc-500 ring-1 ring-zinc-400"
+                    : "border-zinc-300"
+                }`}
+              />
+              <p className="text-[11px] text-zinc-400 -mt-1">
+                The character&apos;s name — use something the model recognizes as a name
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Prompts */}
+        <div className="space-y-3">
+          <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-widest">
+            Prompts
+          </h3>
+
+          <div>
+            <label className="block text-xs text-zinc-400 mb-1">
               System Prompt
             </label>
             <textarea
               value={systemPrompt}
               onChange={(e) => onSystemPromptChange(e.target.value)}
-              rows={2}
-              className="w-full px-3 py-2 text-sm border border-zinc-300 rounded bg-white text-zinc-900 focus:outline-none focus:border-zinc-500 resize-y"
+              rows={6}
+              className="w-full px-3 py-2 text-sm border border-zinc-300 rounded bg-white text-zinc-900 focus:outline-none focus:border-zinc-500 resize-y font-mono leading-relaxed"
             />
           </div>
 
@@ -146,20 +240,8 @@ OpenAI-compatible server URL (default: http://localhost:8080)
             <textarea
               value={userPrompt}
               onChange={(e) => onUserPromptChange(e.target.value)}
-              rows={2}
-              className="w-full px-3 py-2 text-sm border border-zinc-300 rounded bg-white text-zinc-900 focus:outline-none focus:border-zinc-500 resize-y"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs text-zinc-400 mb-1">
-              Prompt Prefix
-            </label>
-            <input
-              type="text"
-              value={promptPrefixReadOnly}
-              readOnly
-              className="w-full px-3 py-2 text-sm border border-zinc-200 rounded bg-zinc-50 text-zinc-500 cursor-not-allowed"
+              rows={3}
+              className="w-full px-3 py-2 text-sm border border-zinc-300 rounded bg-white text-zinc-900 focus:outline-none focus:border-zinc-500 resize-y font-mono leading-relaxed"
             />
           </div>
         </div>
@@ -170,57 +252,22 @@ OpenAI-compatible server URL (default: http://localhost:8080)
             Options
           </h3>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-zinc-400 mb-1">
-                Caption Name
-                <span className="normal-case font-normal ml-1">
-                  (download filename)
-                </span>
-                {captionNameRequired && (
-                  <span className="normal-case font-normal ml-1 text-zinc-500">— required</span>
-                )}
-              </label>
-              <input
-                type="text"
-                value={captionName}
-                onChange={(e) => onCaptionNameChange(e.target.value)}
-                placeholder="e.g. CharacterSet01"
-                className={`w-full px-3 py-2 text-sm border rounded bg-white text-zinc-900 placeholder-zinc-400 focus:outline-none focus:border-zinc-500 transition-colors ${
-                  captionNameRequired && !captionName.trim()
-                    ? "border-zinc-500 ring-1 ring-zinc-400"
-                    : "border-zinc-300"
-                }`}
-              />
-              <label className="flex items-center gap-2 mt-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={includeNameInPrompt}
-                  onChange={(e) => onIncludeNameInPromptChange(e.target.checked)}
-                  className="rounded border-zinc-300 text-zinc-900 focus:border-zinc-500 focus:ring-zinc-500"
-                />
-                <span className="text-xs text-zinc-600">
-                  Include in prompt
-                </span>
-              </label>
-            </div>
-            <div>
-              <label className="block text-xs text-zinc-400 mb-1">
-                Parallel Requests
-              </label>
-              <select
-                value={parallelRequests}
-                onChange={(e) => onParallelRequestsChange(Number(e.target.value))}
-                disabled={isProcessing}
-                className="w-full px-3 py-2 text-sm border border-zinc-300 rounded bg-white text-zinc-900 focus:outline-none focus:border-zinc-500 appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
-                  <option key={n} value={n}>
-                    {n} concurrent request{n > 1 ? "s" : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div>
+            <label className="block text-xs text-zinc-400 mb-1">
+              Parallel Requests
+            </label>
+            <select
+              value={parallelRequests}
+              onChange={(e) => onParallelRequestsChange(Number(e.target.value))}
+              disabled={isProcessing}
+              className="w-full px-3 py-2 text-sm border border-zinc-300 rounded bg-white text-zinc-900 focus:outline-none focus:border-zinc-500 appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+                <option key={n} value={n}>
+                  {n} concurrent request{n > 1 ? "s" : ""}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       </div>

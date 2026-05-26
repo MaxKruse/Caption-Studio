@@ -40,10 +40,10 @@ describe("GET /api/caption", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 
@@ -69,10 +69,10 @@ describe("GET /api/caption", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 
@@ -101,10 +101,10 @@ describe("GET /api/caption", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 
@@ -137,10 +137,10 @@ describe("GET /api/caption", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 
@@ -166,10 +166,10 @@ describe("GET /api/caption", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 
@@ -187,10 +187,10 @@ describe("GET /api/caption", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 
@@ -224,10 +224,10 @@ describe("GET /api/caption", () => {
       "http://localhost:8080",
       "llama3",
       "You are helpful",
-      "",
       "describe this",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 
@@ -269,10 +269,10 @@ describe("GET /api/caption", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 
@@ -315,10 +315,10 @@ describe("GET /api/caption", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 

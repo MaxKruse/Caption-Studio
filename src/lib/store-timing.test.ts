@@ -23,7 +23,7 @@ describe("updateImageStatus timing", () => {
 
     const jobId = store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
-      "http://localhost", "model", "", "", "prompt", "", false, 1
+      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
 
     const before = Date.now();
@@ -43,7 +43,7 @@ describe("updateImageStatus timing", () => {
 
     const jobId = store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
-      "http://localhost", "model", "", "", "prompt", "", false, 1
+      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
 
     store.updateImageStatus(jobId, "test.png", "processing");
@@ -64,7 +64,7 @@ describe("updateImageStatus timing", () => {
 
     const jobId = store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
-      "http://localhost", "model", "", "", "prompt", "", false, 1
+      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
 
     store.updateImageStatus(jobId, "test.png", "processing");
@@ -84,7 +84,7 @@ describe("updateImageStatus timing", () => {
 
     const jobId = store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
-      "http://localhost", "model", "", "", "prompt", "", false, 1
+      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
 
     store.updateImageStatus(jobId, "test.png", "processing");
@@ -104,7 +104,7 @@ describe("updateImageStatus timing", () => {
 
     const jobId = store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
-      "http://localhost", "model", "", "", "prompt", "", false, 1
+      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
 
     // Skip processing, go straight to completed
@@ -121,7 +121,7 @@ describe("updateImageStatus timing", () => {
 
     const jobId = store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
-      "http://localhost", "model", "", "", "prompt", "", false, 1
+      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
 
     store.updateImageStatus(jobId, "test.png", "processing");
@@ -157,7 +157,7 @@ describe("getProgress timing estimates", () => {
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },
       ],
-      "http://localhost", "model", "", "", "prompt", "", false, 1
+      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
 
     // All queued, none finished yet
@@ -177,7 +177,7 @@ describe("getProgress timing estimates", () => {
         { name: "b.png", data: Buffer.from("b") },
         { name: "c.png", data: Buffer.from("c") },
       ],
-      "http://localhost", "model", "", "", "prompt", "", false, 1
+      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
 
     store.updateImageStatus(jobId, "a.png", "processing");
@@ -201,7 +201,7 @@ describe("getProgress timing estimates", () => {
         { name: "b.png", data: Buffer.from("b") },
         { name: "c.png", data: Buffer.from("c") },
       ],
-      "http://localhost", "model", "", "", "prompt", "", false, 1
+      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
 
     store.updateImageStatus(jobId, "a.png", "processing");
@@ -226,7 +226,7 @@ describe("getProgress timing estimates", () => {
         { name: "b.png", data: Buffer.from("b") },
         { name: "c.png", data: Buffer.from("c") },
       ],
-      "http://localhost", "model", "", "", "prompt", "", false, 1
+      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
 
     // First image: ~30ms
@@ -255,7 +255,7 @@ describe("getProgress timing estimates", () => {
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },
       ],
-      "http://localhost", "model", "", "", "prompt", "", false, 1
+      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
 
     store.updateImageStatus(jobId, "a.png", "processing");
@@ -277,7 +277,7 @@ describe("getProgress timing estimates", () => {
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },
       ],
-      "http://localhost", "model", "", "", "prompt", "", false, 1
+      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
 
     store.updateImageStatus(jobId, "a.png", "processing");

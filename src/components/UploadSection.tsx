@@ -1,4 +1,11 @@
-import { ImageFile, ImageStatus } from "./CaptionStudioTypes";
+import {
+  IMAGE_COUNT_SWEET_SPOT_MAX,
+  IMAGE_COUNT_SWEET_SPOT_MIN,
+  IMAGE_COUNT_WARNING_THRESHOLD,
+  PORTRAIT_RATIO_PERCENT,
+  type ImageFile,
+  type ImageStatus,
+} from "./CaptionStudioTypes";
 import { StatusBadge } from "./ImagePreviewModal";
 
 // ---------------------------------------------------------------------------
@@ -195,6 +202,67 @@ export function UploadSection({
             className="hidden"
           />
         </div>
+
+        {/* Image count guidance */}
+        {images.length > 0 && (
+          <div className={`rounded-lg border px-4 py-3 text-xs leading-relaxed ${
+            images.length > IMAGE_COUNT_WARNING_THRESHOLD
+              ? "bg-amber-50 border-amber-200 text-amber-800"
+              : images.length >= IMAGE_COUNT_SWEET_SPOT_MIN && images.length <= IMAGE_COUNT_SWEET_SPOT_MAX
+                ? "bg-zinc-50 border-zinc-200 text-zinc-600"
+                : "bg-zinc-50 border-zinc-200 text-zinc-500"
+          }`}>
+            {images.length > IMAGE_COUNT_WARNING_THRESHOLD ? (
+              <div className="flex gap-2">
+                <svg
+                  className="w-4 h-4 shrink-0 mt-0.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
+                  />
+                </svg>
+                <div>
+                  <p className="font-semibold text-amber-900">Too many images ({images.length})</p>
+                  <p className="mt-0.5">
+                    The sweet spot for character datasets is {IMAGE_COUNT_SWEET_SPOT_MIN}–{IMAGE_COUNT_SWEET_SPOT_MAX} images.
+                    Aim for {PORTRAIT_RATIO_PERCENT}% portrait / {100 - PORTRAIT_RATIO_PERCENT}% full-body shots.
+                    Captioning large batches takes a long time — consider splitting into smaller sets.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <svg
+                  className="w-4 h-4 shrink-0 mt-0.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.702 2.808a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
+                  />
+                </svg>
+                <div>
+                  <p className="font-medium">
+                    {images.length} image{images.length !== 1 ? "s" : ""} uploaded
+                  </p>
+                  <p className="mt-0.5">
+                    Sweet spot: {IMAGE_COUNT_SWEET_SPOT_MIN}–{IMAGE_COUNT_SWEET_SPOT_MAX} images — aim for {PORTRAIT_RATIO_PERCENT}% portrait / {100 - PORTRAIT_RATIO_PERCENT}% full-body.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Gallery */}
         {images.length > 0 && (

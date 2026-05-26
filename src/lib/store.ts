@@ -21,10 +21,10 @@ export interface CaptionJob {
   serverUrl: string;
   model: string;
   systemPrompt: string;
-  promptPrefix: string;
   userPrompt: string;
-  captionName: string;
-  includeNameInPrompt: boolean;
+  captionTypeId: string;
+  triggerWord: string;
+  subjectName: string;
   parallelRequests: number;
   createdAt: number;
   abortSignal: AbortController; // used to cancel processing workers
@@ -44,10 +44,10 @@ export function createJob(
   serverUrl: string,
   model: string,
   systemPrompt: string,
-  promptPrefix: string,
   userPrompt: string,
-  captionName: string,
-  includeNameInPrompt: boolean,
+  captionTypeId: string,
+  triggerWord: string,
+  subjectName: string,
   parallelRequests: number
 ): string {
   const id = generateId();
@@ -69,10 +69,10 @@ export function createJob(
     serverUrl,
     model,
     systemPrompt,
-    promptPrefix,
     userPrompt,
-    captionName,
-    includeNameInPrompt,
+    captionTypeId,
+    triggerWord,
+    subjectName,
     parallelRequests,
     createdAt: Date.now(),
     abortSignal: abortController,

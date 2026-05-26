@@ -35,10 +35,10 @@ describe("captionImage behavior", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 

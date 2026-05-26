@@ -49,10 +49,10 @@ describe("POST /api/download", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
+      "",
       "MyBatch",
-      false,
       1
     );
 
@@ -86,10 +86,10 @@ describe("POST /api/download", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 
@@ -130,10 +130,10 @@ describe("POST /api/download", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
-      "", // empty captionName
-      false,
+      "generic_single",
+      "",
+      "", // empty subjectName
       1
     );
 
@@ -163,10 +163,10 @@ describe("POST /api/download", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 
@@ -201,10 +201,10 @@ describe("POST /api/download", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 
@@ -244,10 +244,10 @@ describe("POST /api/download", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 
@@ -278,10 +278,10 @@ describe("POST /api/download", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 
@@ -321,10 +321,10 @@ describe("POST /api/download", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 
@@ -397,7 +397,7 @@ describe("POST /api/download", () => {
       ],
       "http://localhost:8080",
       "llama3",
-      "", "", "describe", "", false, 1
+      "", "describe", "generic_single", "", "", 1
     );
 
     store.updateImageStatus(jobId, "1.png", "completed", "cap 1png");
@@ -445,7 +445,7 @@ describe("POST /api/download", () => {
       ],
       "http://localhost:8080",
       "llama3",
-      "", "", "describe", "", false, 1
+      "", "describe", "generic_single", "", "", 1
     );
 
     store.updateImageStatus(jobId, "x.png", "completed", "cap png");
@@ -489,7 +489,7 @@ describe("POST /api/download", () => {
       ],
       "http://localhost:8080",
       "llama3",
-      "", "", "describe", "", false, 1
+      "", "describe", "generic_single", "", "", 1
     );
 
     store.updateImageStatus(jobId, "unique-a.png", "completed", "cap ua");
@@ -539,7 +539,7 @@ describe("POST /api/download", () => {
       ],
       "http://localhost:8080",
       "llama3",
-      "", "", "describe", "", false, 1
+      "", "describe", "generic_single", "", "", 1
     );
 
     for (const [name, cap] of Object.entries({
@@ -588,7 +588,7 @@ describe("POST /api/download", () => {
       ],
       "http://localhost:8080",
       "llama3",
-      "", "", "describe", "", false, 1
+      "", "describe", "generic_single", "", "", 1
     );
 
     for (const name of ["a.png", "a.jpg", "b.png", "b.jpg", "c.png", "c.jpg"]) {
@@ -641,7 +641,7 @@ describe("POST /api/download", () => {
       ],
       "http://localhost:8080",
       "llama3",
-      "", "", "describe", "", false, 1
+      "", "describe", "generic_single", "", "", 1
     );
 
     for (const name of [
@@ -700,7 +700,7 @@ describe("POST /api/download", () => {
       ],
       "http://localhost:8080",
       "llama3",
-      "", "", "describe", "", false, 1
+      "", "describe", "generic_single", "", "", 1
     );
 
     for (const name of [
@@ -748,7 +748,7 @@ describe("POST /api/download", () => {
       ],
       "http://localhost:8080",
       "llama3",
-      "", "", "describe", "", false, 1
+      "", "describe", "generic_single", "", "", 1
     );
 
     store.updateImageStatus(jobId, "my.photo.png", "completed", "cap png");
@@ -787,7 +787,7 @@ describe("POST /api/download", () => {
       ],
       "http://localhost:8080",
       "llama3",
-      "", "", "describe", "", false, 1
+      "", "describe", "generic_single", "", "", 1
     );
 
     for (const name of ["a.png", "a.jpg", "a.webp", "b.png", "b.jpg", "c.png"]) {
@@ -835,7 +835,7 @@ describe("POST /api/download", () => {
       ],
       "http://localhost:8080",
       "llama3",
-      "", "", "describe", "", false, 1
+      "", "describe", "generic_single", "", "", 1
     );
 
     for (const name of ["x.png", "x.jpg", "x.webp", "x.gif", "y.png", "y.jpg"]) {
@@ -872,10 +872,10 @@ describe("POST /api/download", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 

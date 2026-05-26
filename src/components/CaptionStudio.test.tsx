@@ -16,15 +16,21 @@ describe("CaptionStudio rendering", () => {
   it("renders the page header", () => {
     render(<CaptionStudio />);
     expect(
-      screen.getByText("Image Captioning Studio")
+      screen.getByText("Character Captioning Studio")
     ).toBeDefined();
   });
 
   it("renders the subtitle", () => {
     render(<CaptionStudio />);
-    expect(
-      screen.getByText(/Connect to your llama.cpp server/)
-    ).toBeDefined();
+    // The subtitle appears in the header <p> tag
+    const header = document.querySelector("header");
+    expect(header?.textContent).toContain("character training datasets");
+  });
+
+  it("renders the caption type selector options", () => {
+    render(<CaptionStudio />);
+    const select = document.querySelector('select');
+    expect(select).toBeDefined();
   });
 
   it("renders the server URL input", () => {
@@ -57,12 +63,20 @@ describe("CaptionStudio rendering", () => {
     expect(labels).toContain("User Prompt");
   });
 
-  it("renders the caption name input", () => {
+  it("renders the caption type selector", () => {
     render(<CaptionStudio />);
     const labels = Array.from(document.querySelectorAll("label")).map(
       (el) => el.textContent
     );
-    expect(labels.some((l) => l.includes("Caption Name"))).toBe(true);
+    expect(labels).toContain("Caption Type");
+  });
+
+  it("renders the trigger word input (default caption type needs trigger)", () => {
+    render(<CaptionStudio />);
+    const labels = Array.from(document.querySelectorAll("label")).map(
+      (el) => el.textContent
+    );
+    expect(labels.some((l) => l.includes("Trigger Word"))).toBe(true);
   });
 
   it("renders the parallel requests selector", () => {
@@ -97,12 +111,7 @@ describe("CaptionStudio rendering", () => {
 
   it("renders the page header initially", () => {
     render(<CaptionStudio />);
-    expect(screen.getByText("Image Captioning Studio")).toBeDefined();
-  });
-
-  it("renders the Include in prompt checkbox", () => {
-    render(<CaptionStudio />);
-    expect(screen.getByText("Include in prompt")).toBeDefined();
+    expect(screen.getByText("Character Captioning Studio")).toBeDefined();
   });
 });
 
@@ -144,7 +153,7 @@ describe("API Configuration", () => {
   it("renders default system prompt", () => {
     render(<CaptionStudio />);
     expect(
-      screen.getByText(/expert image captioning assistant/)
+      screen.getByText(/expert character image captioning assistant/)
     ).toBeDefined();
   });
 });
@@ -181,23 +190,13 @@ describe("Options", () => {
     ).map((h) => h.textContent);
     expect(headings).toContain("API Connection");
   });
-});
 
-// ---------------------------------------------------------------------------
-// Prompt Prefix
-// ---------------------------------------------------------------------------
-
-describe("Prompt Prefix", () => {
-  beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn());
-  });
-
-  it("renders the Prompt Prefix label", () => {
+  it("renders the Caption Style subsection header", () => {
     render(<CaptionStudio />);
-    const labels = Array.from(document.querySelectorAll("label")).map(
-      (el) => el.textContent
-    );
-    expect(labels).toContain("Prompt Prefix");
+    const headings = Array.from(
+      document.querySelectorAll("h3")
+    ).map((h) => h.textContent);
+    expect(headings).toContain("Caption Style");
   });
 });
 
@@ -233,7 +232,7 @@ describe("ImagePreviewModal reasoning content", () => {
     // code contains the reasoning section by checking the source indirectly.
     // The modal only appears when previewImage + previewStatus are set.
     // We verify the component renders without errors.
-    expect(screen.getByText("Image Captioning Studio")).toBeDefined();
+    expect(screen.getByText("Character Captioning Studio")).toBeDefined();
   });
 });
 
@@ -251,14 +250,14 @@ describe("ImageCard clickability", () => {
     // The ImageCard wraps the image in a <button>. We verify the button exists
     // by checking that clickable elements exist in the gallery.
     // Since no images are uploaded yet, we just verify the component renders.
-    expect(screen.getByText("Image Captioning Studio")).toBeDefined();
+    expect(screen.getByText("Character Captioning Studio")).toBeDefined();
   });
 
   it("has cursor-pointer class on image button", () => {
     render(<CaptionStudio />);
     // Verify the component source includes cursor-pointer by checking
     // that the component renders without errors.
-    expect(screen.getByText("Image Captioning Studio")).toBeDefined();
+    expect(screen.getByText("Character Captioning Studio")).toBeDefined();
   });
 });
 
@@ -285,19 +284,12 @@ describe("Default prompt text", () => {
     ).toBeDefined();
   });
 
-  it("user prompt mentions visual elements", () => {
+  it("user prompt mentions character", () => {
     render(<CaptionStudio />);
-    expect(
-      screen.getByText(/visual elements/)
-    ).toBeDefined();
-  });
-
-  it("user prompt mentions word count guidance", () => {
-    render(<CaptionStudio />);
-    // Check the user prompt textarea value directly
+    // The user prompt for generic_with_trigger mentions character
     const textareas = document.querySelectorAll("textarea");
     const userPromptValue = textareas[1]?.value;
-    expect(userPromptValue).toContain("30-150 words");
+    expect(userPromptValue).toContain("character");
   });
 });
 

@@ -23,7 +23,7 @@ describe("updateImageStatus", () => {
 
     const jobId = store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
-      "http://localhost", "model", "", "", "prompt", "", false, 1
+      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
 
     store.updateImageStatus(jobId, "test.png", "processing");
@@ -38,7 +38,7 @@ describe("updateImageStatus", () => {
 
     const jobId = store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
-      "http://localhost", "model", "", "", "prompt", "", false, 1
+      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
 
     store.updateImageStatus(
@@ -60,7 +60,7 @@ describe("updateImageStatus", () => {
 
     const jobId = store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
-      "http://localhost", "model", "", "", "prompt", "", false, 1
+      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
 
     store.updateImageStatus(
@@ -86,10 +86,10 @@ describe("updateImageStatus", () => {
       "http://localhost:8080",
       "llama3",
       "system prompt",
-      "",
       "describe this",
+      "generic_single",
       "",
-      false,
+      "",
       4
     );
 
@@ -116,10 +116,10 @@ describe("updateImageStatus", () => {
       "http://localhost:8080",
       "model",
       "",
-      "",
       "user prompt text",
+      "generic_single",
       "",
-      false,
+      "",
       1
     );
 
@@ -155,7 +155,7 @@ describe("updateImageStatus", () => {
 
     const jobId = store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
-      "http://localhost", "model", "", "", "prompt", "", false, 1
+      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
 
     // Should not throw
@@ -169,7 +169,7 @@ describe("updateImageStatus", () => {
 
     const jobId = store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
-      "http://localhost", "model", "", "", "prompt", "", false, 1
+      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
 
     store.updateImageStatus(
@@ -193,7 +193,7 @@ describe("updateImageStatus", () => {
 
     const jobId = store.createJob(
       [{ name: "img.jpg", data: Buffer.from("fake") }],
-      "http://localhost", "model", "", "", "prompt", "", false, 1
+      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
 
     store.updateImageStatus(
@@ -224,7 +224,7 @@ describe("updateImageStatus", () => {
         { name: "b.png", data: Buffer.from("b") },
         { name: "c.png", data: Buffer.from("c") },
       ],
-      "http://localhost", "model", "", "", "prompt", "", false, 1
+      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
 
     store.updateImageStatus(jobId, "b.png", "completed", "caption b");

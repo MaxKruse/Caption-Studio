@@ -49,13 +49,14 @@ export default function CaptionStudio() {
     serverUrl: config.serverUrl,
     systemPrompt: config.systemPrompt,
     userPrompt: config.userPrompt,
-    includeNameInPrompt: config.includeNameInPrompt,
+    captionTypeId: config.captionTypeId,
+    triggerWord: config.triggerWord,
+    subjectName: config.subjectName,
     parallelRequests: config.parallelRequests,
-    captionName: config.captionName,
     showToast: config.showToast,
     onDownloadComplete: () => {
       imageUpload.clearAll();
-      config.setCaptionName("");
+      config.setSubjectName("");
     },
   });
 
@@ -113,7 +114,8 @@ export default function CaptionStudio() {
     imageUpload.images.length > 0 &&
     !!selectedModel &&
     !!config.serverUrl.trim() &&
-    (!config.includeNameInPrompt || !!config.captionName.trim());
+    !config.triggerRequired &&
+    !config.nameRequired;
 
   const jobDone = !!captionJob.jobId && !captionJob.isProcessing;
 
@@ -175,19 +177,23 @@ export default function CaptionStudio() {
         onFetchModels={fetchModels}
         contentMode={config.contentMode}
         onContentModeChange={config.setContentMode}
+        captionTypeId={config.captionTypeId}
+        onCaptionTypeIdChange={config.setCaptionTypeId}
         systemPrompt={config.systemPrompt}
         onSystemPromptChange={config.setSystemPrompt}
         userPrompt={config.userPrompt}
         onUserPromptChange={config.setUserPrompt}
-        captionName={config.captionName}
-        onCaptionNameChange={config.setCaptionName}
-        includeNameInPrompt={config.includeNameInPrompt}
-        onIncludeNameInPromptChange={config.setIncludeNameInPrompt}
+        triggerWord={config.triggerWord}
+        onTriggerWordChange={config.setTriggerWord}
+        subjectName={config.subjectName}
+        onSubjectNameChange={config.setSubjectName}
+        needsTrigger={config.needsTrigger}
+        needsName={config.needsName}
+        triggerRequired={config.triggerRequired}
+        nameRequired={config.nameRequired}
         parallelRequests={config.parallelRequests}
         onParallelRequestsChange={config.setParallelRequests}
         isProcessing={captionJob.isProcessing}
-        promptPrefixReadOnly={config.promptPrefixReadOnly}
-        captionNameRequired={config.captionNameRequired}
       />
 
       <UploadSection

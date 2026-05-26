@@ -26,10 +26,10 @@ describe("createJob", () => {
       "http://localhost:8080",
       "llama3",
       "system prompt",
-      "",
       "describe this",
+      "generic_single",
       "",
-      false,
+      "",
       4
     );
 
@@ -59,17 +59,16 @@ describe("createJob", () => {
       "http://localhost:8080",
       "llama3",
       "",
-      "",
       "describe",
+      "generic_single",
+      "",
       "Batch01",
-      true,
       2
     );
 
     const job = store.getJob(jobId);
     expect(job?.images.size).toBe(3);
-    expect(job?.captionName).toBe("Batch01");
-    expect(job?.includeNameInPrompt).toBe(true);
+    expect(job?.subjectName).toBe("Batch01");
     expect(job?.parallelRequests).toBe(2);
 
     // All images start as queued
@@ -88,10 +87,10 @@ describe("createJob", () => {
       "http://example.com/api",
       "gpt-4o",
       "You are helpful",
-      "Prefix text",
       "User prompt text",
+      "generic_single",
+      "",
       "MyBatch",
-      true,
       8
     );
 
@@ -99,10 +98,9 @@ describe("createJob", () => {
     expect(job?.serverUrl).toBe("http://example.com/api");
     expect(job?.model).toBe("gpt-4o");
     expect(job?.systemPrompt).toBe("You are helpful");
-    expect(job?.promptPrefix).toBe("Prefix text");
     expect(job?.userPrompt).toBe("User prompt text");
-    expect(job?.captionName).toBe("MyBatch");
-    expect(job?.includeNameInPrompt).toBe(true);
+    expect(job?.captionTypeId).toBe("generic_single");
+    expect(job?.subjectName).toBe("MyBatch");
     expect(job?.parallelRequests).toBe(8);
     expect(job?.createdAt).toBeGreaterThan(0);
 
@@ -114,11 +112,11 @@ describe("createJob", () => {
 
     const id1 = store.createJob(
       [{ name: "a.png", data: Buffer.from("a") }],
-      "http://localhost", "model", "", "", "prompt", "", false, 1
+      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
     const id2 = store.createJob(
       [{ name: "b.png", data: Buffer.from("b") }],
-      "http://localhost", "model", "", "", "prompt", "", false, 1
+      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
 
     expect(id1).not.toBe(id2);
@@ -131,7 +129,7 @@ describe("createJob", () => {
 
     const jobId = store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
-      "http://localhost", "model", "", "", "prompt", "", false, 1
+      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
 
     const job = store.getJob(jobId);
@@ -156,7 +154,7 @@ describe("getJob", () => {
 
     const jobId = store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
-      "http://localhost", "model", "", "", "prompt", "", false, 1
+      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
 
     const job = store.getJob(jobId);
@@ -195,7 +193,7 @@ describe("deleteJob", () => {
 
     const jobId = store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
-      "http://localhost", "model", "", "", "prompt", "", false, 1
+      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
     );
 
     expect(store.getJob(jobId)).toBeDefined();
