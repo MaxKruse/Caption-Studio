@@ -18,6 +18,7 @@ import {
 } from "@/lib/store";
 import { prepareForApi, type CropRect } from "@/lib/image-utils";
 import { normalizeServerUrl } from "@/lib/url-utils";
+import { resolveCaptionTypeId } from "@/components/CaptionStudioConstants";
 
 // ---------------------------------------------------------------------------
 // Job config shape — parsed from either FormData or JSON
@@ -64,7 +65,7 @@ function parseJobConfigFromFormData(formData: FormData): JobConfig | null {
     model: config.model,
     systemPrompt: config.systemPrompt ?? "",
     userPrompt: config.userPrompt ?? "",
-    captionTypeId: config.captionTypeId ?? "generic_single",
+    captionTypeId: resolveCaptionTypeId(config.captionTypeId ?? "detailed"),
     triggerWord: config.triggerWord ?? "",
     subjectName: config.subjectName ?? "",
     parallelRequests: config.parallelRequests ?? 4,
@@ -79,7 +80,7 @@ function parseJobConfigFromBody(rest: Record<string, unknown>): JobConfig {
     model: (rest.model as string) ?? "",
     systemPrompt: (rest.systemPrompt as string) ?? "",
     userPrompt: (rest.userPrompt as string) ?? "",
-    captionTypeId: (rest.captionTypeId as string) ?? "generic_single",
+    captionTypeId: resolveCaptionTypeId((rest.captionTypeId as string) ?? "detailed"),
     triggerWord: (rest.triggerWord as string) ?? "",
     subjectName: (rest.subjectName as string) ?? "",
     parallelRequests: (rest.parallelRequests as number) ?? 4,
@@ -122,31 +123,19 @@ function buildCaptionPrefix(job: CaptionJob): string {
   const name = job.subjectName.trim();
 
   switch (job.captionTypeId) {
-    case "generic_single":
-    case "strict_crop_generic":
-    case "short_with_generic":
-    case "short_only":
+    case "detailed":
+    case "short":
       // No prefix
       return "";
 
-    case "generic_with_trigger":
-    case "strict_crop_trigger":
+    case "detailed_with_trigger":
     case "short_with_trigger":
       // Trigger only
       return trigger || "";
 
-    case "name_only":
+    case "name":
       // Just the name
       return name || "";
-
-    case "name_with_generic":
-      // Name only — model outputs the generic word
-      return name || "";
-
-    case "name_with_trigger":
-      // Trigger + name
-      const parts = [trigger, name].filter(Boolean);
-      return parts.join(" ");
 
     default:
       return "";
@@ -161,10 +150,7 @@ function buildFinalCaption(job: CaptionJob, modelOutput: string): string {
   const prefix = buildCaptionPrefix(job);
 
   // For types where the prefix IS the entire caption
-  if (job.captionTypeId === "strict_crop_trigger") {
-    return job.triggerWord.trim() || "";
-  }
-  if (job.captionTypeId === "name_only") {
+  if (job.captionTypeId === "name") {
     return job.subjectName.trim() || "";
   }
 
@@ -177,25 +163,8 @@ function buildFinalCaption(job: CaptionJob, modelOutput: string): string {
     return prefix;
   }
 
-  // Combine prefix and model output
-  if (job.captionTypeId === "name_with_trigger") {
-    // "trigger name" — already combined in prefix
-    return prefix;
-  }
-
   // For trigger-based types: "trigger, model_output"
-  if (job.captionTypeId === "generic_with_trigger" ||
-      job.captionTypeId === "short_with_trigger") {
-    return `${prefix}, ${trimmedOutput}`;
-  }
-
-  // For name-based types: "Name, model_output"
-  if (job.captionTypeId === "name_with_generic") {
-    return `${prefix}, ${trimmedOutput}`;
-  }
-
-  // Default: just concatenate
-  return `${prefix} ${trimmedOutput}`;
+  return `${prefix}, ${trimmedOutput}`;
 }
 
 function buildApiMessages(
@@ -313,7 +282,7 @@ export async function POST(request: NextRequest) {
     config.model,
     config.systemPrompt || "",
     config.userPrompt || "",
-    config.captionTypeId || "generic_single",
+    resolveCaptionTypeId(config.captionTypeId || "detailed"),
     config.triggerWord || "",
     config.subjectName || "",
     Math.min(Math.max(Number(config.parallelRequests) || 4, 1), 8),
@@ -495,7 +464,7 @@ async function captionImage(
     if (userText) console.log(`  User:   ${userText}`);
 
     // For caption types that don't need model output, skip API call
-    if (job.captionTypeId === "strict_crop_trigger" || job.captionTypeId === "name_only") {
+    if (job.captionTypeId === "name") {
       const finalCaption = buildFinalCaption(job, "");
       updateImageStatus(
         jobId,

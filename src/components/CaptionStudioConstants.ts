@@ -24,16 +24,11 @@ export const PORTRAIT_RATIO_PERCENT = 80;
 // ---------------------------------------------------------------------------
 
 export type CaptionTypeId =
-  | "generic_single"
-  | "generic_with_trigger"
-  | "strict_crop_trigger"
-  | "strict_crop_generic"
-  | "name_only"
-  | "name_with_generic"
-  | "name_with_trigger"
+  | "detailed"
+  | "detailed_with_trigger"
+  | "short"
   | "short_with_trigger"
-  | "short_with_generic"
-  | "short_only";
+  | "name";
 
 export interface CaptionTypeDefinition {
   id: CaptionTypeId;
@@ -48,84 +43,44 @@ export interface CaptionTypeDefinition {
 
 export const CAPTION_TYPES: CaptionTypeDefinition[] = [
   {
-    id: "generic_single",
-    label: "Generic single caption",
-    description: "A detailed paragraph describing the subject",
+    id: "detailed",
+    label: "Detailed paragraph",
+    description: "A full description paragraph of the subject",
     outputStyle: "detailed_paragraph",
     needsTrigger: false,
     needsName: false,
   },
   {
-    id: "generic_with_trigger",
-    label: "Generic caption with trigger",
-    description: "Trigger word + detailed description paragraph",
+    id: "detailed_with_trigger",
+    label: "Detailed + trigger word",
+    description: "Trigger word prepended to a full description paragraph",
     outputStyle: "detailed_paragraph",
     needsTrigger: true,
     needsName: false,
   },
   {
-    id: "strict_crop_trigger",
-    label: "Strict crop with trigger",
-    description: "Just the trigger word — for face crops",
-    outputStyle: "none",
-    needsTrigger: true,
-    needsName: false,
-  },
-  {
-    id: "strict_crop_generic",
-    label: "Strict crop with generic caption",
-    description: "One generic word like \"woman\" or \"man\" — for face crops",
-    outputStyle: "single_word",
+    id: "short",
+    label: "Short description",
+    description: "A concise 5-15 word descriptive phrase",
+    outputStyle: "short_description",
     needsTrigger: false,
     needsName: false,
-  },
-  {
-    id: "name_only",
-    label: "Name only caption",
-    description: "Just the subject's name",
-    outputStyle: "none",
-    needsTrigger: false,
-    needsName: true,
-  },
-  {
-    id: "name_with_generic",
-    label: "Name with generic caption",
-    description: "Name + one generic word (e.g. \"Sarah, a young woman\")",
-    outputStyle: "single_word",
-    needsTrigger: false,
-    needsName: true,
-  },
-  {
-    id: "name_with_trigger",
-    label: "Name with trigger caption",
-    description: "Trigger + name (e.g. \"skx Sarah\")",
-    outputStyle: "name_only",
-    needsTrigger: true,
-    needsName: true,
   },
   {
     id: "short_with_trigger",
-    label: "Short description with trigger",
-    description: "Trigger + short phrase (e.g. \"skx, a young man with short hair\")",
+    label: "Short + trigger word",
+    description: "Trigger word prepended to a short descriptive phrase",
     outputStyle: "short_description",
     needsTrigger: true,
     needsName: false,
   },
   {
-    id: "short_with_generic",
-    label: "Short description with generic caption",
-    description: "Generic word + short phrase (e.g. \"woman, with short hair\")",
-    outputStyle: "short_description",
+    id: "name",
+    label: "Subject name only",
+    description: "Just the subject's name — no model output needed",
+    outputStyle: "none",
     needsTrigger: false,
-    needsName: false,
-  },
-  {
-    id: "short_only",
-    label: "Short description only caption",
-    description: "A concise descriptive phrase (e.g. \"a young man with short hair\")",
-    outputStyle: "short_description",
-    needsTrigger: false,
-    needsName: false,
+    needsName: true,
   },
 ];
 
@@ -263,6 +218,29 @@ export function getSystemPrompt(
         ? SYSTEM_PROMPT_DETAILED_PARAGRAPH_NSFW
         : SYSTEM_PROMPT_DETAILED_PARAGRAPH_SFW;
   }
+}
+
+/**
+ * Legacy caption type migration — maps old IDs to new ones.
+ * Existing jobs with old captionTypeId values will still work.
+ */
+const LEGACY_CAPTION_TYPE_MAP: Record<string, CaptionTypeId> = {
+  generic_single: "detailed",
+  generic_with_trigger: "detailed_with_trigger",
+  strict_crop_trigger: "name",
+  strict_crop_generic: "detailed",
+  name_only: "name",
+  name_with_generic: "name",
+  name_with_trigger: "name",
+  short_with_trigger: "short_with_trigger",
+  short_with_generic: "short",
+  short_only: "short",
+};
+
+/** Resolve a caption type ID, migrating legacy IDs if needed. */
+export function resolveCaptionTypeId(id: string): CaptionTypeId {
+  if (CAPTION_TYPES.some((t) => t.id === id)) return id as CaptionTypeId;
+  return LEGACY_CAPTION_TYPE_MAP[id] ?? "detailed";
 }
 
 /** Get default user prompt for a caption type and content mode. */

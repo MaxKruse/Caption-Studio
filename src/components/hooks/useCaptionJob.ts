@@ -173,21 +173,15 @@ function useCaptionActions({
       return;
     }
     // Validate required fields based on caption type
-    if (captionTypeId === "generic_with_trigger" || captionTypeId === "strict_crop_trigger" || captionTypeId === "short_with_trigger") {
+    if (captionTypeId === "detailed_with_trigger" || captionTypeId === "short_with_trigger") {
       if (!triggerWord.trim()) {
         setJobError("Enter a Trigger Word");
         return;
       }
     }
-    if (captionTypeId === "name_only" || captionTypeId === "name_with_generic" || captionTypeId === "name_with_trigger") {
+    if (captionTypeId === "name") {
       if (!subjectName.trim()) {
         setJobError("Enter a Subject Name");
-        return;
-      }
-    }
-    if (captionTypeId === "name_with_trigger") {
-      if (!triggerWord.trim()) {
-        setJobError("Enter a Trigger Word");
         return;
       }
     }

@@ -103,7 +103,7 @@ export function ConfigSection({
               {modelLoading ? "Loading..." : "Fetch Models"}
             </button>
           </div>
-          <p className="text-[11px] text-zinc-400 -mt-1">
+          <p className="text-[11px] text-zinc-400 mt-1">
             OpenAI-compatible server URL (default: http://localhost:8080)
           </p>
 
@@ -157,7 +157,7 @@ export function ConfigSection({
                 </option>
               ))}
             </select>
-            <p className="text-[11px] text-zinc-400 -mt-1">
+            <p className="text-[11px] text-zinc-400 mt-1">
               Select the caption style for character training datasets
             </p>
           </div>
@@ -184,7 +184,7 @@ export function ConfigSection({
                     : "border-zinc-300"
                 }`}
               />
-              <p className="text-[11px] text-zinc-400 -mt-1">
+              <p className="text-[11px] text-zinc-400 mt-1">
                 A unique token prepended to each caption — avoid words with common meanings
               </p>
             </div>
@@ -212,7 +212,7 @@ export function ConfigSection({
                     : "border-zinc-300"
                 }`}
               />
-              <p className="text-[11px] text-zinc-400 -mt-1">
+              <p className="text-[11px] text-zinc-400 mt-1">
                 The character&apos;s name — use something the model recognizes as a name
               </p>
             </div>
@@ -255,7 +255,7 @@ export function ConfigSection({
           <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-widest">
             Crop Ruleset
           </h3>
-          <p className="text-[11px] text-zinc-400 -mt-2">
+          <p className="text-[11px] text-zinc-400 mt-1">
             Portrait (face) / Body (pose) split for auto-detection
           </p>
           <div className="flex flex-wrap gap-2">
