@@ -20,8 +20,9 @@ export function ModeToggle({
       <label className="block text-xs text-zinc-400">
         Content Mode
       </label>
+      {/* Outer wrapper — holds glow (no overflow clip so glow bleeds out) */}
       <div
-        className="relative flex rounded-full cursor-pointer select-none"
+        className="relative cursor-pointer select-none"
         onClick={() => {
           if (disabled) return;
           onModeChange(isSfw ? "nsfw" : "sfw");
@@ -37,7 +38,7 @@ export function ModeToggle({
           }
         }}
       >
-        {/* Glow layer — behind the track */}
+        {/* Glow — behind everything */}
         <div
           className={`absolute inset-0 rounded-full transition-all duration-500 ${
             isSfw
@@ -46,38 +47,33 @@ export function ModeToggle({
           }`}
         />
 
-        {/* Track background */}
-        <div className="relative flex rounded-full overflow-hidden border border-zinc-300 bg-zinc-100">
-          {/* Left — SFW */}
+        {/* Inner track — clips knob edges, sits on glow */}
+        <div className="relative flex rounded-full overflow-hidden border border-zinc-500 bg-zinc-800">
+          {/* Sliding translucent knob — behind text */}
           <div
-            className={`flex-1 px-5 py-2.5 text-sm font-semibold text-center transition-colors duration-300 ${
+            className={`absolute top-[2px] bottom-[2px] w-1/2 rounded-full transition-all duration-300 ease-out ${
               isSfw
-                ? "text-green-950"
-                : "text-zinc-400"
+                ? "left-[2px] bg-green-500/30"
+                : "left-1/2 bg-red-500/30"
+            }`}
+          />
+
+          {/* Labels — on top */}
+          <div
+            className={`relative flex z-10 flex-1 px-5 py-2.5 text-sm font-semibold text-center transition-colors duration-300 pointer-events-none ${
+              isSfw ? "text-zinc-200" : "text-zinc-500"
             }`}
           >
             SFW
           </div>
-          {/* Right — NSFW */}
           <div
-            className={`flex-1 px-5 py-2.5 text-sm font-semibold text-center transition-colors duration-300 ${
-              !isSfw
-                ? "text-red-950"
-                : "text-zinc-400"
+            className={`relative flex z-10 flex-1 px-5 py-2.5 text-sm font-semibold text-center transition-colors duration-300 pointer-events-none ${
+              !isSfw ? "text-zinc-200" : "text-zinc-500"
             }`}
           >
             NSFW
           </div>
         </div>
-
-        {/* Sliding knob */}
-        <div
-          className={`absolute top-[2px] bottom-[2px] w-1/2 rounded-full transition-all duration-300 ease-out ${
-            isSfw
-              ? "left-[2px] bg-green-400/30 shadow-[0_0_12px_2px_rgba(34,197,94,0.3)]"
-              : "left-1/2 bg-red-400/30 shadow-[0_0_12px_2px_rgba(239,68,68,0.3)]"
-          }`}
-        />
       </div>
       <p className="text-[11px] text-zinc-400 -mt-1">
         {isSfw

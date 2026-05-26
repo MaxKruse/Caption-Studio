@@ -144,7 +144,7 @@ describe("API Configuration", () => {
   it("renders default system prompt", () => {
     render(<CaptionStudio />);
     expect(
-      screen.getByText(/unfiltered, explicit image captioning expert/)
+      screen.getByText(/expert image captioning assistant/)
     ).toBeDefined();
   });
 });
@@ -281,23 +281,23 @@ describe("Default prompt text", () => {
   it("system prompt mentions ignoring text", () => {
     render(<CaptionStudio />);
     expect(
-      screen.getByText(/Ignore all text/)
+      screen.getByText(/Ignore text/)
     ).toBeDefined();
   });
 
-  it("user prompt mentions compositional hierarchy", () => {
+  it("user prompt mentions visual elements", () => {
     render(<CaptionStudio />);
     expect(
-      screen.getByText(/compositional hierarchy/)
+      screen.getByText(/visual elements/)
     ).toBeDefined();
   });
 
-  it("user prompt mentions Narrative Flow", () => {
+  it("user prompt mentions word count guidance", () => {
     render(<CaptionStudio />);
     // Check the user prompt textarea value directly
     const textareas = document.querySelectorAll("textarea");
     const userPromptValue = textareas[1]?.value;
-    expect(userPromptValue).toContain("Narrative Flow");
+    expect(userPromptValue).toContain("30-150 words");
   });
 });
 

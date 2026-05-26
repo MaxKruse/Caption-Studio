@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { ImageFile, ImageStatus } from "./CaptionStudioTypes";
 
@@ -45,6 +45,10 @@ export function ImagePreviewModal({
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex < allImages.length - 1;
 
+  // Collapsible sections — system prompt and reasoning start collapsed
+  const [showPrompt, setShowPrompt] = useState(false);
+  const [showReasoning, setShowReasoning] = useState(false);
+
   // Use the original file for full-quality preview in the modal
   const fullQualitySrc = useMemo(() => URL.createObjectURL(img.file), [img.file]);
 
@@ -73,7 +77,7 @@ export function ImagePreviewModal({
           &times;
         </button>
 
-        {/* Image with nav arrows */}
+        {/* Image with nav arrows — max 66vh */}
         <div className="flex-shrink-0 bg-zinc-100 flex items-center justify-center relative">
           {/* Previous button */}
           {hasPrev && (
@@ -95,7 +99,7 @@ export function ImagePreviewModal({
           <img
             src={fullQualitySrc}
             alt={img.name}
-            className="max-h-[80vh] w-full object-contain"
+            className="max-h-[66vh] w-full object-contain"
           />
 
           {/* Next button */}
@@ -127,28 +131,59 @@ export function ImagePreviewModal({
             )}
           </div>
 
+          {/* Prompt — collapsed by default */}
           {status.prompt && (
             <div className="space-y-1.5">
-              <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-widest">
+              <button
+                onClick={() => setShowPrompt((p) => !p)}
+                className="flex items-center gap-1.5 text-xs font-semibold text-zinc-400 uppercase tracking-widest hover:text-zinc-600 transition-colors"
+              >
+                <svg
+                  className={`w-3.5 h-3.5 transition-transform ${showPrompt ? "rotate-90" : ""}`}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
                 Prompt
-              </h4>
-              <div className="p-3 bg-zinc-50 border border-zinc-200 rounded text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed">
-                {status.prompt}
-              </div>
+              </button>
+              {showPrompt && (
+                <div className="p-3 bg-zinc-50 border border-zinc-200 rounded text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed">
+                  {status.prompt}
+                </div>
+              )}
             </div>
           )}
 
+          {/* Reasoning — collapsed by default */}
           {status.reasoningContent && (
             <div className="space-y-1.5">
-              <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-widest">
+              <button
+                onClick={() => setShowReasoning((p) => !p)}
+                className="flex items-center gap-1.5 text-xs font-semibold text-zinc-400 uppercase tracking-widest hover:text-zinc-600 transition-colors"
+              >
+                <svg
+                  className={`w-3.5 h-3.5 transition-transform ${showReasoning ? "rotate-90" : ""}`}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
                 Reasoning
-              </h4>
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded text-sm text-amber-900 whitespace-pre-wrap leading-relaxed">
-                {status.reasoningContent}
-              </div>
+              </button>
+              {showReasoning && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded text-sm text-amber-900 whitespace-pre-wrap leading-relaxed">
+                  {status.reasoningContent}
+                </div>
+              )}
             </div>
           )}
 
+          {/* Generated Caption — always visible */}
           {status.caption && (
             <div className="space-y-1.5">
               <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-widest">
