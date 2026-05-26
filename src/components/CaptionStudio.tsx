@@ -420,14 +420,10 @@ export default function CaptionStudio() {
       {showCropEditor && (
         <CropEditor
           images={imageUpload.images}
-          selectedModel={selectedModel}
           ruleset={cropRuleset}
-          onRulesetChange={setCropRuleset}
           crops={crops}
           detections={detections}
-          isDetecting={isDetecting}
           detectionError={detectionError}
-          onDetect={handleDetect}
           onAutoAssign={handleAutoAssign}
           onUpdateCrop={handleUpdateCrop}
           disabled={captionJob.isProcessing}

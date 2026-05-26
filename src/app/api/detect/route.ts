@@ -5,9 +5,10 @@
  */
 
 import { NextRequest } from "next/server";
-import { prepareForApi } from "@/lib/image-utils";
+import { prepareForDetection } from "@/lib/image-utils";
 import { normalizeServerUrl } from "@/lib/url-utils";
 import {
+  DETECTION_CONCURRENCY,
   DETECTION_SYSTEM_PROMPT,
   DETECTION_USER_PROMPT,
 } from "@/components/CaptionStudioCropConstants";
@@ -147,7 +148,7 @@ export async function GET(request: NextRequest) {
 // Async detection processor
 // ---------------------------------------------------------------------------
 
-/** Process all images for face + body detection (one at a time, updating store). */
+/** Process all images for face + body detection (parallel worker pool). */
 async function processDetectionJob(
   jobId: string,
   serverUrl: string,
@@ -155,69 +156,82 @@ async function processDetectionJob(
   imageFiles: File[]
 ): Promise<void> {
   const baseUrl = normalizeServerUrl(serverUrl);
+  const queue: File[] = [...imageFiles];
 
-  for (let index = 0; index < imageFiles.length; index++) {
-    const file = imageFiles[index];
+  async function detectOne(): Promise<void> {
+    while (queue.length > 0) {
+      const file = queue.shift()!;
 
-    updateDetectionImage(jobId, file.name, "processing");
+      updateDetectionImage(jobId, file.name, "processing");
 
-    try {
-      const imageBuffer = Buffer.from(await file.arrayBuffer());
-      const { buffer, mimeType } = await prepareForApi(file.name, imageBuffer);
-      const base64 = buffer.toString("base64");
+      try {
+        const imageBuffer = Buffer.from(await file.arrayBuffer());
+        // Scale down for detection — bbox coords are 1000-normalized so they
+        // apply correctly to the original full-resolution image
+        const { buffer, mimeType } = await prepareForDetection(imageBuffer);
+        const base64 = buffer.toString("base64");
 
-      const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model,
-          messages: [
-            {
-              role: "system",
-              content: DETECTION_SYSTEM_PROMPT,
-            },
-            {
-              role: "user",
-              content: [
-                {
-                  type: "image_url",
-                  image_url: {
-                    url: `data:${mimeType};base64,${base64}`,
+        const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model,
+            messages: [
+              {
+                role: "system",
+                content: DETECTION_SYSTEM_PROMPT,
+              },
+              {
+                role: "user",
+                content: [
+                  {
+                    type: "image_url",
+                    image_url: {
+                      url: `data:${mimeType};base64,${base64}`,
+                    },
                   },
-                },
-                {
-                  type: "text",
-                  text: DETECTION_USER_PROMPT,
-                },
-              ],
-            },
-          ],
-        }),
-        cache: "no-store",
-        signal: AbortSignal.timeout(180_000), // 3 min timeout
-      });
+                  {
+                    type: "text",
+                    text: DETECTION_USER_PROMPT,
+                  },
+                ],
+              },
+            ],
+          }),
+          cache: "no-store",
+          signal: AbortSignal.timeout(180_000), // 3 min timeout
+        });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API ${response.status}: ${errorText}`);
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`API ${response.status}: ${errorText}`);
+        }
+
+        const data = await response.json();
+        const content = (data?.choices?.[0]?.message?.content ?? "").trim();
+        const { faceBoxes, bodyBoxes } = parseDetectionResponse(content);
+
+        updateDetectionImage(
+          jobId,
+          file.name,
+          "completed",
+          faceBoxes,
+          bodyBoxes
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        updateDetectionImage(jobId, file.name, "failed", [], [], message);
       }
-
-      const data = await response.json();
-      const content = (data?.choices?.[0]?.message?.content ?? "").trim();
-      const { faceBoxes, bodyBoxes } = parseDetectionResponse(content);
-
-      updateDetectionImage(
-        jobId,
-        file.name,
-        "completed",
-        faceBoxes,
-        bodyBoxes
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      updateDetectionImage(jobId, file.name, "failed", [], [], message);
     }
   }
+
+  // Launch up to DETECTION_CONCURRENCY workers
+  await Promise.all(
+    Array.from(
+      { length: Math.min(DETECTION_CONCURRENCY, imageFiles.length) },
+      () => detectOne()
+    )
+  );
 }
 
 // ---------------------------------------------------------------------------

@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ImageFile } from "./CaptionStudioTypes";
 import type { BoundingBox, CropRuleset, DetectionResult, ImageCrop } from "./CaptionStudioCropTypes";
-import { CropRulesetSelector } from "./CropRulesetSelector";
 import { CropOverlay } from "./CropOverlay";
 
 // ---------------------------------------------------------------------------
@@ -12,27 +11,19 @@ import { CropOverlay } from "./CropOverlay";
 
 export function CropEditor({
   images,
-  selectedModel,
   ruleset,
-  onRulesetChange,
   crops,
   detections,
-  isDetecting,
   detectionError,
-  onDetect,
   onAutoAssign,
   onUpdateCrop,
   disabled,
 }: {
   images: ImageFile[];
-  selectedModel: string;
   ruleset: CropRuleset | null;
-  onRulesetChange: (ruleset: CropRuleset) => void;
   crops: ImageCrop[];
   detections: DetectionResult[];
-  isDetecting: boolean;
   detectionError: string | null;
-  onDetect: () => Promise<void>;
   onAutoAssign: () => void;
   onUpdateCrop: (imageIndex: number, partial: Partial<ImageCrop>) => void;
   disabled?: boolean;
@@ -143,50 +134,28 @@ export function CropEditor({
       </div>
 
       <div className="p-5 space-y-4">
-        {/* Ruleset selector + detection controls */}
-        <div className="flex flex-col sm:flex-row gap-4 items-start">
-          <div className="flex-1">
-            <CropRulesetSelector
-              selected={ruleset}
-              onSelect={onRulesetChange}
-              disabled={isDetecting || !!disabled}
-            />
+        {/* Controls bar */}
+        {crops.length > 0 && (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {ruleset && (
+                <span className="text-xs text-zinc-400">
+                  Ruleset: <span className="font-medium text-zinc-600">{ruleset.label}</span>
+                </span>
+              )}
+            </div>
+            <button
+              onClick={onAutoAssign}
+              disabled={!!disabled}
+              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
+              </svg>
+              Re-assign crops
+            </button>
           </div>
-
-          <div className="flex flex-col gap-2 shrink-0">
-            {crops.length === 0 ? (
-              <button
-                onClick={onDetect}
-                disabled={isDetecting || !ruleset || !!disabled || !selectedModel}
-                className="px-4 py-2 text-xs font-medium rounded-lg bg-zinc-900 text-zinc-100 hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                {isDetecting ? (
-                  <>
-                    <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
-                    </svg>
-                    Detecting...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-                    </svg>
-                    Detect Faces &amp; Bodies
-                  </>
-                )}
-              </button>
-            ) : (
-              <button
-                onClick={onAutoAssign}
-                disabled={isDetecting || !!disabled}
-                className="px-4 py-2 text-xs font-medium rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 transition-colors disabled:opacity-50"
-              >
-                Re-assign crops
-              </button>
-            )}
-          </div>
-        </div>
+        )}
 
         {/* Detection error */}
         {detectionError && (

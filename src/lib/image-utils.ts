@@ -111,3 +111,33 @@ export interface CropRect {
   width: number;
   height: number;
 }
+
+// ---------------------------------------------------------------------------
+// Detection utilities
+// ---------------------------------------------------------------------------
+
+/**
+ * Max dimension for images sent to the vision API for detection.
+ * Detection (bounding boxes) doesn't need full resolution — 1024px is plenty.
+ * This reduces bandwidth and API cost significantly.
+ */
+export const DETECTION_MAX_DIMENSION = 1024;
+
+/**
+ * Prepares an image for detection — scales down to DETECTION_MAX_DIMENSION
+ * and converts to JPEG. Coordinates returned by the API (1000-normalized)
+ * are resolution-independent, so they apply correctly to the original image.
+ */
+export async function prepareForDetection(
+  imageBuffer: Buffer
+): Promise<{ buffer: Buffer; mimeType: string }> {
+  const resized = await sharp(imageBuffer)
+    .resize(DETECTION_MAX_DIMENSION, DETECTION_MAX_DIMENSION, {
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    .jpeg({ quality: 85 })
+    .toBuffer();
+
+  return { buffer: resized, mimeType: "image/jpeg" };
+}

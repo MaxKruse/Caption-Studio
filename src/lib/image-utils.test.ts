@@ -163,4 +163,46 @@ describe("convertToJpeg", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// prepareForDetection (mocked sharp)
+// ---------------------------------------------------------------------------
+
+describe("prepareForDetection", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it("scales image to max 1024px and converts to JPEG", async () => {
+    const mockResize = vi.fn().mockReturnThis();
+    const mockJpeg = vi.fn().mockReturnThis();
+    const mockToBuffer = vi.fn().mockResolvedValue(Buffer.from("scaled-jpeg"));
+
+    mockSharp.mockImplementation(() =>
+      ({
+        resize: mockResize,
+        jpeg: mockJpeg,
+        toBuffer: mockToBuffer,
+      }) as any
+    );
+
+    const { prepareForDetection, DETECTION_MAX_DIMENSION } = await import("./image-utils");
+
+    const result = await prepareForDetection(Buffer.from("original-data"));
+
+    expect(result.mimeType).toBe("image/jpeg");
+    expect(result.buffer).toEqual(Buffer.from("scaled-jpeg"));
+    expect(mockResize).toHaveBeenCalledWith(
+      DETECTION_MAX_DIMENSION,
+      DETECTION_MAX_DIMENSION,
+      { fit: "inside", withoutEnlargement: true }
+    );
+    expect(mockJpeg).toHaveBeenCalledWith({ quality: 85 });
+  });
+
+  it("uses DETECTION_MAX_DIMENSION constant of 1024", async () => {
+    const { DETECTION_MAX_DIMENSION } = await import("./image-utils");
+    expect(DETECTION_MAX_DIMENSION).toBe(1024);
+  });
+});
+
 
