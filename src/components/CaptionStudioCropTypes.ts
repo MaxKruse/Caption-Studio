@@ -38,10 +38,8 @@ export interface DetectionResult {
 
 /**
  * Type of crop assigned to an image.
- * "portrait" = face-focused crop (uses face bounding box)
- * "body" = full-body/pose crop (uses body bounding box or full image)
  */
-export type CropType = "portrait" | "body";
+export type CropType = "face" | "body";
 
 /**
  * Crop rectangle in 1000-normalized coordinates (same as OpenAI bounding boxes).
@@ -49,24 +47,19 @@ export type CropType = "portrait" | "body";
 export type CropRect = { x: number; y: number; width: number; height: number };
 
 /**
- * Crop configuration for a single image.
- * Each image is assigned ONE crop type (face or body) by the auto-assignment algorithm.
- * The selected crop is used for captioning; the other is kept as a fallback/preview.
+ * Single crop configuration for one image.
+ * Each image gets exactly ONE crop type and ONE crop rectangle.
  * Coordinates are 1000-normalized (same as OpenAI bounding boxes).
  */
 export interface ImageCrop {
   imageIndex: number;
   imageName: string;
-  /** Which crop type is selected for this image (used for captioning). */
-  selectedCrop: "face" | "body";
-  /** Face/portrait crop rectangle. If no face detected, defaults to full image. */
-  faceCrop: CropRect;
-  /** Body/full-body crop rectangle. If no body detected, defaults to full image. */
-  bodyCrop: CropRect;
-  /** Whether the face crop was auto-detected (true) or manually adjusted (false). */
-  faceAutoDetected: boolean;
-  /** Whether the body crop was auto-detected (true) or manually adjusted (false). */
-  bodyAutoDetected: boolean;
+  /** Crop type assigned to this image. */
+  cropType: CropType;
+  /** Crop rectangle (1000-normalized). */
+  cropRect: CropRect;
+  /** Whether this crop was auto-detected (true) or manually adjusted (false). */
+  autoDetected: boolean;
 }
 
 /**
@@ -116,6 +109,8 @@ export interface DetectionProgress {
 export type DetectionImageStatus = {
   status: "queued" | "processing" | "completed" | "failed";
   error?: string;
+  faceBoxes?: BoundingBox[];
+  bodyBoxes?: BoundingBox[];
 };
 
 /** SSE handlers returned by the hook for attaching to an EventSource. */
@@ -123,6 +118,15 @@ export interface DetectionSSEHandlers {
   onMessage: (event: MessageEvent) => void;
   onDone: () => void;
   onError: () => void;
+}
+
+/** Ruleset validation result. */
+export interface RulesetValidation {
+  valid: boolean;
+  faceCount: number;
+  bodyCount: number;
+  expectedFaceRange: [number, number]; // [min, max] acceptable face count
+  expectedBodyRange: [number, number]; // [min, max] acceptable body count
 }
 
 export interface UseCropDetectionReturn {
@@ -140,8 +144,10 @@ export interface UseCropDetectionReturn {
   setRuleset: (ruleset: CropRuleset) => void;
   /** Set detection results from API response. */
   setDetectionResults: (results: DetectionResult[]) => void;
-  /** Update crop for a specific image (face or body crop). */
-  updateCrop: (imageIndex: number, cropTarget: "face" | "body", rect: Partial<CropRect>) => void;
+  /** Change crop type for a single image (toggles face/body). */
+  setCropType: (imageIndex: number, cropType: CropType) => void;
+  /** Update crop rectangle for a specific image. */
+  updateCropRect: (imageIndex: number, rect: Partial<CropRect>) => void;
   /** Reset a single image's crop back to auto-detected defaults. */
   resetCrop: (imageIndex: number) => void;
   /** Apply auto-assignment based on current ruleset and detections. */
@@ -152,6 +158,10 @@ export interface UseCropDetectionReturn {
   getFinalCrops: () => ImageCrop[];
   /** Whether there are any crops configured. */
   hasCrops: boolean;
+  /** Validate current crop counts against ruleset. */
+  validateRuleset: () => RulesetValidation;
+  /** Whether ruleset validation passes. */
+  rulesetValid: boolean;
   /** SSE handlers to attach to an EventSource for detection progress. */
   getSSEHandlers: () => DetectionSSEHandlers;
 }

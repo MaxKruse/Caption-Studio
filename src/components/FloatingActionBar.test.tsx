@@ -151,12 +151,13 @@ describe("FloatingActionBar crop step", () => {
         step="crop"
         imagesCount={5}
         canProceedToCaption={true}
+        rulesetValid={true}
         onProceedToCaption={() => {}}
         onBackToUpload={() => {}}
       />
     );
     expect(
-      screen.getByRole("button", { name: "Proceed to Caption" })
+      screen.getByRole("button", { name: /Caption Cropped/ })
     ).toBeDefined();
     expect(screen.getByRole("button", { name: "Back" })).toBeDefined();
   });
@@ -167,13 +168,30 @@ describe("FloatingActionBar crop step", () => {
         step="crop"
         imagesCount={5}
         canProceedToCaption={false}
+        rulesetValid={false}
+        rulesetValidation={{ valid: false, faceCount: 5, bodyCount: 0, expectedFaceRange: [2, 3], expectedBodyRange: [2, 3] }}
         onProceedToCaption={() => {}}
         onBackToUpload={() => {}}
       />
     );
     expect(
-      screen.getByRole("button", { name: "Proceed to Caption" })
+      screen.getByRole("button", { name: /Caption Cropped/ })
     ).toBeDisabled();
+  });
+
+  it("shows ruleset validation warning when invalid", () => {
+    render(
+      <FloatingActionBar
+        step="crop"
+        imagesCount={5}
+        canProceedToCaption={false}
+        rulesetValid={false}
+        rulesetValidation={{ valid: false, faceCount: 5, bodyCount: 0, expectedFaceRange: [2, 3], expectedBodyRange: [2, 3] }}
+        onProceedToCaption={() => {}}
+        onBackToUpload={() => {}}
+      />
+    );
+    expect(screen.getByText(/Need 2\u20133 face/)).toBeDefined();
   });
 });
 
@@ -390,6 +408,6 @@ describe("FloatingActionBar done step", () => {
         onClearAll={() => {}}
       />
     );
-    expect(screen.queryByRole("button", { name: "Proceed to Caption" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Caption Cropped/ })).toBeNull();
   });
 });

@@ -2,7 +2,7 @@
 
 import { formatDuration } from "./CaptionStudioTypes";
 import type { ImageFile, ProgressState } from "./CaptionStudioTypes";
-import type { DetectionImageStatus, DetectionProgress } from "./CaptionStudioCropTypes";
+import type { DetectionImageStatus, DetectionProgress, RulesetValidation } from "./CaptionStudioCropTypes";
 
 // ---------------------------------------------------------------------------
 // FloatingActionBar — fixed bottom bar reflecting current workflow step
@@ -34,6 +34,8 @@ export function FloatingActionBar({
   onClearAll,
   canDetect,
   canProceedToCaption,
+  rulesetValid,
+  rulesetValidation,
 }: {
   // Current workflow step
   step: "upload" | "detect" | "crop" | "caption" | "done";
@@ -66,6 +68,10 @@ export function FloatingActionBar({
   // Enable/disable flags
   canDetect?: boolean;
   canProceedToCaption?: boolean;
+
+  // Ruleset validation (step = "crop")
+  rulesetValid?: boolean;
+  rulesetValidation?: RulesetValidation;
 }) {
   // Nothing to show — no images
   if (imagesCount === 0) return null;
@@ -233,47 +239,61 @@ export function FloatingActionBar({
         {/* CROP — crops ready, prompt to proceed                             */}
         {/* ----------------------------------------------------------------- */}
         {step === "crop" && (
-          <div className="flex items-center gap-3">
-            <button
-              onClick={onBackToUpload}
-              className="shrink-0 px-3 py-2.5 text-xs font-medium rounded-lg bg-zinc-100 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 transition-colors flex items-center gap-1.5"
-            >
-              <svg
-                className="w-3.5 h-3.5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
-              Back
-            </button>
+          <div className="space-y-2">
+            {/* Ruleset validation warning */}
+            {!rulesetValid && rulesetValidation && (
+              <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">
+                <svg className="w-4 h-4 shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                </svg>
+                <span>
+                  Need {rulesetValidation.expectedFaceRange[0]}&ndash;{rulesetValidation.expectedFaceRange[1]} face and {rulesetValidation.expectedBodyRange[0]}&ndash;{rulesetValidation.expectedBodyRange[1]} body crops. Currently: {rulesetValidation.faceCount} face, {rulesetValidation.bodyCount} body.
+                </span>
+              </div>
+            )}
 
-            <button
-              onClick={onProceedToCaption}
-              disabled={!canProceedToCaption}
-              className={`flex-1 px-4 py-2.5 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2 ${
-                canProceedToCaption
-                  ? "bg-zinc-900 text-zinc-100 hover:bg-zinc-800 shadow-sm"
-                  : "bg-zinc-200 text-zinc-400 cursor-not-allowed"
-              }`}
-            >
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                viewBox="0 0 24 24"
+            <div className="flex items-center gap-3">
+              <button
+                onClick={onBackToUpload}
+                className="shrink-0 px-3 py-2.5 text-xs font-medium rounded-lg bg-zinc-100 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 transition-colors flex items-center gap-1.5"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z"
-                />
-              </svg>
-              Proceed to Caption
-            </button>
+                <svg
+                  className="w-3.5 h-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+                Back
+              </button>
+
+              <button
+                onClick={onProceedToCaption}
+                disabled={!canProceedToCaption}
+                className={`flex-1 px-4 py-2.5 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2 ${
+                  canProceedToCaption
+                    ? "bg-zinc-900 text-zinc-100 hover:bg-zinc-800 shadow-sm"
+                    : "bg-zinc-200 text-zinc-400 cursor-not-allowed"
+                }`}
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z"
+                  />
+                </svg>
+                Caption Cropped ({imagesCount} images)
+              </button>
+            </div>
           </div>
         )}
 
