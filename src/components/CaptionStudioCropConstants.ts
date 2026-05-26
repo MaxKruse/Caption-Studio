@@ -51,7 +51,7 @@ export const DETECTION_CONCURRENCY = 3;
 export const DETECTION_TIMEOUT_MS = 3 * 60 * 1000;
 
 /** Default detection prompt — asks for both face and body bounding boxes. */
-export const DETECTION_SYSTEM_PROMPT = `You are an object detection assistant. Detect all faces and bodies (full-body poses) in the image and return bounding boxes in JSON format.`;
+export const DETECTION_SYSTEM_PROMPT = `You are an object detection assistant. Detect all faces and bodies (full-body poses) in the image and return bounding boxes in JSON format. Respond in English only.`;
 
 export const DETECTION_USER_PROMPT = `Detect ALL faces and ALL bodies (full-body poses) in this image. Return two JSON arrays.
 
@@ -68,4 +68,5 @@ Format:
 \`\`\`
 
 Coordinates are normalized to 1000 (x_min, y_min, x_max, y_max).
-Return ONLY the JSON object. If none detected for a category, return an empty array for that category.`;
+Return ONLY the JSON object. If none detected for a category, return an empty array for that category.
+Respond in English only.`;

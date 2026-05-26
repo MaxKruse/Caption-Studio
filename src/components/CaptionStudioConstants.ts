@@ -107,6 +107,7 @@ Follow this structure:
 4. **Visual Style** — Note camera angle, framing, depth of field, and overall mood.
 
 Rules:
+- **Respond in English only. Never use any other language.**
 - Describe only what is physically visible. Do not speculate.
 - Use definitive language. Avoid "appears to be," "possibly," or "seems."
 - Ignore text, watermarks, and UI elements.
@@ -126,6 +127,7 @@ Follow this structure:
 4. **Visual Style** — Note camera angle, framing, depth of field, and overall mood.
 
 Rules:
+- **Respond in English only. Never use any other language.**
 - Describe only what is physically visible. Do not speculate.
 - Use definitive language. Avoid "appears to be," "possibly," or "seems."
 - Ignore text, watermarks, and UI elements.
@@ -139,6 +141,7 @@ Rules:
 const SYSTEM_PROMPT_SINGLE_WORD_SFW = `You are an expert character image captioning assistant. Output exactly ONE generic word describing the main subject's gender identity — like "woman", "man", "girl", or "boy".
 
 Rules:
+- **Respond in English only. Never use any other language.**
 - Output ONLY the single word. Nothing else.
 - No punctuation, no quotes, no extra text.
 - Do NOT describe age, appearance, or anything beyond the gender word.
@@ -147,6 +150,7 @@ Rules:
 const SYSTEM_PROMPT_SINGLE_WORD_NSFW = `You are an expert character image captioning assistant. Output exactly ONE generic word describing the main subject's gender identity — like "woman", "man", "girl", or "boy".
 
 Rules:
+- **Respond in English only. Never use any other language.**
 - Output ONLY the single word. Nothing else.
 - No punctuation, no quotes, no extra text.
 - Do NOT describe age, appearance, or anything beyond the gender word.`;
@@ -156,6 +160,7 @@ const SYSTEM_PROMPT_SHORT_DESCRIPTION_SFW = `You are an expert character image c
 Focus on: gender, distinctive features (hair, build), clothing, and pose.
 
 Rules:
+- **Respond in English only. Never use any other language.**
 - Output ONLY the descriptive phrase. No preamble, no quotes.
 - Do NOT include trigger words or names — only describe what you see.
 - Do NOT describe the subject's age.
@@ -167,6 +172,7 @@ const SYSTEM_PROMPT_SHORT_DESCRIPTION_NSFW = `You are an expert character image 
 Focus on: gender, distinctive features (hair, build), clothing, and pose.
 
 Rules:
+- **Respond in English only. Never use any other language.**
 - Output ONLY the descriptive phrase. No preamble, no quotes.
 - Do NOT include trigger words or names — only describe what you see.
 - Do NOT describe the subject's age.
@@ -176,12 +182,14 @@ Rules:
 const SYSTEM_PROMPT_NAME_ONLY_SFW = `You are an expert character image captioning assistant. The user will provide a name — output that name exactly as given.
 
 Rules:
+- **Respond in English only. Never use any other language.**
 - Output ONLY the name. Nothing else.
 - No quotes, no extra text.`;
 
 const SYSTEM_PROMPT_NAME_ONLY_NSFW = `You are an expert character image captioning assistant. The user will provide a name — output that name exactly as given.
 
 Rules:
+- **Respond in English only. Never use any other language.**
 - Output ONLY the name. Nothing else.
 - No quotes, no extra text.`;
 

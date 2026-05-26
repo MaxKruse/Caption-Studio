@@ -10,10 +10,12 @@ import { StatusBadge } from "./ImagePreviewModal";
 function ResultCard({
   img,
   status,
+  croppedPreview,
   onPreview,
 }: {
   img: ImageFile;
   status?: ImageStatus;
+  croppedPreview?: string;
   onPreview: (img: ImageFile) => void;
 }) {
   return (
@@ -25,7 +27,7 @@ function ResultCard({
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={img.preview}
+          src={croppedPreview ?? img.preview}
           alt={img.name}
           className="w-full aspect-square object-cover"
         />
@@ -64,10 +66,12 @@ function ResultCard({
 export function ResultsGallery({
   images,
   imageStatuses,
+  croppedPreviews,
   onPreview,
 }: {
   images: ImageFile[];
   imageStatuses: Record<string, ImageStatus>;
+  croppedPreviews?: Record<string, string>;
   onPreview: (img: ImageFile) => void;
 }) {
   const completedCount = images.filter(
@@ -99,6 +103,7 @@ export function ResultsGallery({
               key={img.name}
               img={img}
               status={imageStatuses[img.name]}
+              croppedPreview={croppedPreviews?.[img.name]}
               onPreview={onPreview}
             />
           ))}

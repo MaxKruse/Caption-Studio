@@ -97,7 +97,7 @@ export async function POST(request: Request) {
 
   const buffer = Buffer.concat(chunks);
 
-  const safeName = job.subjectName.trim() || "Untitled";
+  const safeName = job.subjectName.trim() || job.triggerWord.trim() || "Untitled";
   const filename = `Captions${safeName}.zip`;
 
   return new Response(buffer, {

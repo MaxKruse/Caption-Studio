@@ -299,7 +299,7 @@ function useCaptionActions({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const safeName = subjectName.trim() || "Untitled";
+      const safeName = subjectName.trim() || triggerWord.trim() || "Untitled";
       a.download = `Captions${safeName}.zip`;
       document.body.appendChild(a);
       a.click();
@@ -326,7 +326,7 @@ function useCaptionActions({
     } finally {
       setIsDownloading(false);
     }
-  }, [jobId, subjectName, showToast, onDownloadComplete, setJobError, setJobId, setImageStatuses, setProgress, setIsDownloading]);
+  }, [jobId, subjectName, triggerWord, showToast, onDownloadComplete, setJobError, setJobId, setImageStatuses, setProgress, setIsDownloading]);
 
   // Reset job state (called by clearAll)
   const reset = useCallback(() => {

@@ -80,6 +80,58 @@ export function resizeImage(
 }
 
 /**
+ * Crops a preview image data URL using 1000-normalized crop coordinates.
+ * Returns a new data URL (JPEG) of the cropped region.
+ */
+export function cropImagePreview(
+  dataUrl: string,
+  cropRect: { x: number; y: number; width: number; height: number }
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const { width, height } = img;
+
+      // Convert 1000-normalized coords to pixel coords
+      const scaleX = width / 1000;
+      const scaleY = height / 1000;
+
+      const sx = Math.max(0, Math.round(cropRect.x * scaleX));
+      const sy = Math.max(0, Math.round(cropRect.y * scaleY));
+      const sWidth = Math.min(width - sx, Math.round(cropRect.width * scaleX));
+      const sHeight = Math.min(height - sy, Math.round(cropRect.height * scaleY));
+
+      if (sWidth <= 0 || sHeight <= 0) {
+        reject(new Error("Invalid crop dimensions"));
+        return;
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = sWidth;
+      canvas.height = sHeight;
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Canvas context not available"));
+        return;
+      }
+
+      ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight);
+
+      queueMicrotask(() => {
+        try {
+          resolve(canvas.toDataURL("image/jpeg", RESIZE_QUALITY));
+        } catch (err) {
+          reject(err);
+        }
+      });
+    };
+    img.onerror = () => reject(new Error("Failed to load image for cropping"));
+    img.src = dataUrl;
+  });
+}
+
+/**
  * Creates a small thumbnail data URL for gallery display.
  * Much smaller than the full preview to keep memory usage low.
  */

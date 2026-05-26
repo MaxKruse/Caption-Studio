@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 
 import type { ImageFile, ImageStatus, WorkflowStep } from "./CaptionStudioTypes";
-import type { CropRuleset, DetectionResult } from "./CaptionStudioCropTypes";
+import type { CropRuleset, DetectionResult, ImageCrop } from "./CaptionStudioCropTypes";
 import { CROP_RULESETS } from "./CaptionStudioCropConstants";
 export { formatDuration } from "./CaptionStudioTypes";
+import { cropImagePreview } from "@/lib/image-client-utils";
 import { AppHeader } from "./AppHeader";
 import { ConfigSection } from "./ConfigSection";
 import { CropEditor } from "./CropEditor";
@@ -222,13 +223,32 @@ export default function CaptionStudio() {
     cropDetection.setSelectedImageIndex(index);
   }, [cropDetection]);
 
+  // -- Cropped previews map (image name -> cropped preview URL) --
+  const [croppedPreviews, setCroppedPreviews] = useState<Record<string, string>>({});
+
   // -- Proceed from crop to caption --
-  const handleProceedFromCrop = useCallback(() => {
+  const handleProceedFromCrop = useCallback(async () => {
+    // Generate cropped previews for the results gallery
+    const crops = cropDetection.getFinalCrops();
+    if (crops.length > 0) {
+      const previews: Record<string, string> = {};
+      await Promise.allSettled(crops.map(async (crop: ImageCrop) => {
+        const img = imageUpload.images[crop.imageIndex];
+        if (!img) return;
+        try {
+          previews[crop.imageName] = await cropImagePreview(img.preview, crop.cropRect);
+        } catch {
+          // Fall back to original preview on error
+        }
+      }));
+      setCroppedPreviews(previews);
+    }
+
     setWorkflowStep("caption");
     setTimeout(() => {
       captionJob.startCaptioning();
     }, 100);
-  }, [captionJob]);
+  }, [captionJob, cropDetection, imageUpload.images]);
 
   // -- Back from crop to upload --
   const handleBackFromCrop = useCallback(() => {
@@ -284,7 +304,10 @@ export default function CaptionStudio() {
         const crops = cropDetection.getFinalCrops();
         const crop = crops.find((c) => c.imageIndex === current);
         if (crop) {
-          cropDetection.setCropType(current, crop.cropType === "face" ? "body" : "face");
+          // Toggle type AND snap to the best bounding box for the new type
+          const newType = crop.cropType === "face" ? "body" : "face";
+          cropDetection.setCropType(current, newType);
+          cropDetection.resetCrop(current);
         }
       }
     };
@@ -497,6 +520,7 @@ export default function CaptionStudio() {
         <ResultsGallery
           images={imageUpload.images}
           imageStatuses={mergedImageStatuses}
+          croppedPreviews={croppedPreviews}
           onPreview={openPreview}
         />
       )}
