@@ -53,6 +53,55 @@ function buildCropRectFromBestBox(
 }
 
 /**
+ * Compute a quality score for a set of bounding boxes (0-1 range).
+ * Based on the largest box's area relative to the full 1000×1000 canvas.
+ */
+function computeBoxQuality(boxes: BoundingBox[]): number {
+  if (boxes.length === 0) return 0;
+  const largest = boxes.reduce((max, bb) => {
+    const area = (bb.bbox_2d[2] - bb.bbox_2d[0]) * (bb.bbox_2d[3] - bb.bbox_2d[1]);
+    const maxArea = (max.bbox_2d[2] - max.bbox_2d[0]) * (max.bbox_2d[3] - max.bbox_2d[1]);
+    return area > maxArea ? bb : max;
+  });
+  const area = (largest.bbox_2d[2] - largest.bbox_2d[0]) * (largest.bbox_2d[3] - largest.bbox_2d[1]);
+  // Normalize: 1000×1000 = 1,000,000. A reasonable face is ~50×50 = 2500 (0.0025).
+  // Scale so typical detections score 0.5-1.0.
+  return Math.min(1, area / 100000);
+}
+
+/**
+ * Allocate crop types to images based on detection quality and ruleset ratio.
+ * Each image gets exactly ONE crop type (face or body).
+ */
+function allocateCropTypes(
+  detections: Array<{ faceBoxes: BoundingBox[]; bodyBoxes: BoundingBox[] }>,
+  portraitRatio: number
+): ("face" | "body")[] {
+  const total = detections.length;
+  const portraitCount = Math.round(total * portraitRatio);
+
+  // Score each image: face quality vs body quality
+  const scored = detections.map((d, i) => {
+    const faceQuality = computeBoxQuality(d.faceBoxes);
+    const bodyQuality = computeBoxQuality(d.bodyBoxes);
+    // Preference: positive = prefers face, negative = prefers body
+    const preference = faceQuality - bodyQuality;
+    return { index: i, faceQuality, bodyQuality, preference };
+  });
+
+  // Sort by preference (most face-preferring first)
+  scored.sort((a, b) => b.preference - a.preference);
+
+  // Allocate: top N get face, rest get body
+  const result = new Array<"face" | "body">(total);
+  scored.forEach((item, rank) => {
+    result[item.index] = rank < portraitCount ? "face" : "body";
+  });
+
+  return result;
+}
+
+/**
  * Build a crop rectangle from a bounding box, centered on the box.
  * Free aspect ratio — the crop rect starts at the exact box size.
  * paddingFactor: fraction of box size to expand on each side (0.05 = 5%, 0.25 = 25%).
@@ -142,19 +191,28 @@ export function useCropDetection({
   }, []);
 
   // -----------------------------------------------------------------------
-  // Auto-assign crops based on detections — creates BOTH face + body crops
+  // Auto-assign crops — assigns ONE crop type per image based on ruleset + quality
   // -----------------------------------------------------------------------
   const autoAssignCrops = useCallback(() => {
     setState((prev) => {
       if (prev.detections.length === 0) return prev;
+      if (!prev.ruleset) return prev;
+
+      // Allocate crop types: each image gets exactly one (face or body)
+      const cropTypes = allocateCropTypes(
+        prev.detections,
+        prev.ruleset.portraitRatio
+      );
 
       const crops: ImageCrop[] = prev.detections.map((detection, i) => {
+        const selectedType = cropTypes[i];
         const faceCrop = buildCropRectFromBestBox(detection.faceBoxes, FACE_CROP_PADDING);
         const bodyCrop = buildCropRectFromBestBox(detection.bodyBoxes, BODY_CROP_PADDING);
 
         return {
           imageIndex: i,
           imageName: imageNames[i] ?? detection.imageName ?? `image_${i}`,
+          selectedCrop: selectedType,
           faceCrop: faceCrop ?? buildDefaultCrop(),
           bodyCrop: bodyCrop ?? buildDefaultCrop(),
           faceAutoDetected: faceCrop !== null,

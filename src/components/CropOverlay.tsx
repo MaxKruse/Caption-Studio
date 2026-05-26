@@ -212,33 +212,6 @@ export function CropOverlay({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
     >
-      {/* Detected bounding boxes */}
-      {boundingBoxes.map((bb, i) => {
-        const bx = toPixel(bb.bbox_2d[0], true);
-        const by = toPixel(bb.bbox_2d[1], false);
-        const bw = toPixel(bb.bbox_2d[2] - bb.bbox_2d[0], true);
-        const bh = toPixel(bb.bbox_2d[3] - bb.bbox_2d[1], false);
-
-        return (
-          <div
-            key={i}
-            className="absolute border-2 border-amber-400/70 rounded cursor-pointer hover:border-amber-400 transition-colors"
-            style={{
-              left: bx,
-              top: by,
-              width: bw,
-              height: bh,
-            }}
-            onPointerDown={(e) => handlePointerDown(e, "snap", bb)}
-            title={`Snap to: ${bb.label}`}
-          >
-            <span className="absolute -top-4 left-0 text-[9px] font-medium text-amber-400 bg-zinc-900/80 px-1 rounded">
-              {bb.label}
-            </span>
-          </div>
-        );
-      })}
-
       {/* Inactive crop (dimmed overlay) */}
       <div
         className="absolute pointer-events-none"
@@ -353,6 +326,34 @@ export function CropOverlay({
           <div className="absolute top-2/3 left-0 right-0 h-px bg-white/30" />
         </div>
       </div>
+
+      {/* Detected bounding boxes — rendered LAST so they sit on top of crop overlays
+          and remain clickable for snap-to functionality */}
+      {boundingBoxes.map((bb, i) => {
+        const bx = toPixel(bb.bbox_2d[0], true);
+        const by = toPixel(bb.bbox_2d[1], false);
+        const bw = toPixel(bb.bbox_2d[2] - bb.bbox_2d[0], true);
+        const bh = toPixel(bb.bbox_2d[3] - bb.bbox_2d[1], false);
+
+        return (
+          <div
+            key={i}
+            className="absolute border-2 border-amber-400/70 rounded cursor-pointer hover:border-amber-400 transition-colors"
+            style={{
+              left: bx,
+              top: by,
+              width: bw,
+              height: bh,
+            }}
+            onPointerDown={(e) => handlePointerDown(e, "snap", bb)}
+            title={`Snap to: ${bb.label}`}
+          >
+            <span className="absolute -top-4 left-0 text-[9px] font-medium text-amber-400 bg-zinc-900/80 px-1 rounded">
+              {bb.label}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }

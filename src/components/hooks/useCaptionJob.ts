@@ -193,13 +193,16 @@ function useCaptionActions({
 
     try {
       const formData = new FormData();
-      // Build crop data map (filename -> { face: CropRect, body: CropRect })
-      const cropDataMap: Record<string, { face: { x: number; y: number; width: number; height: number }; body: { x: number; y: number; width: number; height: number } }> = {};
+      // Build crop data map (filename -> single crop with type)
+      // Each image has ONE selected crop type (face or body)
+      const cropDataMap: Record<string, { cropType: "portrait" | "body"; cropRect: { x: number; y: number; width: number; height: number } }> = {};
       if (cropData && cropData.length > 0) {
         for (const crop of cropData) {
+          const selectedType = crop.selectedCrop;
+          const selectedRect = selectedType === "face" ? crop.faceCrop : crop.bodyCrop;
           cropDataMap[crop.imageName] = {
-            face: crop.faceCrop,
-            body: crop.bodyCrop,
+            cropType: selectedType === "face" ? "portrait" : "body",
+            cropRect: selectedRect,
           };
         }
       }

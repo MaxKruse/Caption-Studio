@@ -32,6 +32,7 @@ export function CropEditor({
 }) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [activeCropTarget, setActiveCropTarget] = useState<ActiveCropTarget>("face");
+
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   // Original image dimensions (from the actual file, not the thumbnail)
@@ -103,8 +104,7 @@ export function CropEditor({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentImage?.name, currentImage?.file]);
 
-  // Derived values — now every image has both crops
-  const totalImages = crops.length;
+  // Derived values
 
   // Handlers
   const handleCropChange = useCallback(
@@ -133,7 +133,7 @@ export function CropEditor({
         <h2 className="text-sm font-semibold text-zinc-900">Crop Images</h2>
         {crops.length > 0 && (
           <span className="text-xs text-zinc-400 ml-auto">
-            {totalImages} images × 2 crops
+            {crops.filter((c) => c.selectedCrop === "face").length} face · {crops.filter((c) => c.selectedCrop === "body").length} body
           </span>
         )}
       </div>
@@ -213,11 +213,11 @@ export function CropEditor({
                 </p>
                 <div className="flex gap-1.5">
                   <span className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded-full ${
-                    activeCropTarget === "face"
+                    currentCrop?.selectedCrop === "face"
                       ? "bg-blue-50 text-blue-700"
                       : "bg-purple-50 text-purple-700"
                   }`}>
-                    editing: {activeCropTarget}
+                    assigned: {currentCrop?.selectedCrop}
                   </span>
                 </div>
               </div>
@@ -291,7 +291,10 @@ export function CropEditor({
               return (
                 <button
                   key={img.name}
-                  onClick={() => setSelectedIndex(i)}
+                  onClick={() => {
+                    setSelectedIndex(i);
+                    if (crop) setActiveCropTarget(crop.selectedCrop);
+                  }}
                   className={`relative aspect-square rounded overflow-hidden border-2 transition-colors ${
                     isSelected
                       ? "border-blue-500 ring-1 ring-blue-200"
@@ -301,12 +304,13 @@ export function CropEditor({
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={img.preview} alt={img.name} className="w-full h-full object-cover" />
                   {crop && (
-                    <div className="absolute bottom-0 inset-x-0 flex">
-                      <span className="flex-1 text-[7px] text-center py-0.5 font-medium bg-blue-500/80 text-white">
-                        F
-                      </span>
-                      <span className="flex-1 text-[7px] text-center py-0.5 font-medium bg-purple-500/80 text-white">
-                        B
+                    <div className="absolute bottom-0 inset-x-0">
+                      <span className={`block w-full text-[7px] text-center py-0.5 font-medium ${
+                        crop.selectedCrop === "face"
+                          ? "bg-blue-500/80 text-white"
+                          : "bg-purple-500/80 text-white"
+                      }`}>
+                        {crop.selectedCrop === "face" ? "F" : "B"}
                       </span>
                     </div>
                   )}

@@ -289,46 +289,10 @@ export default function CaptionStudio() {
 
   const jobDone = !!captionJob.jobId && !captionJob.isProcessing;
 
-  // Build merged image statuses — combine face_ and body_ crop statuses per image
+  // Build image statuses — single crop mode: one entry per image
   const mergedImageStatuses: Record<string, ImageStatus> = {};
   for (const img of imageUpload.images) {
-    const faceStatus = captionJob.imageStatuses[`face_${img.name}`];
-    const bodyStatus = captionJob.imageStatuses[`body_${img.name}`];
-
-    // If no prefixed statuses, fall back to original name (legacy/no-crop mode)
-    if (!faceStatus && !bodyStatus) {
-      mergedImageStatuses[img.name] = captionJob.imageStatuses[img.name];
-      continue;
-    }
-
-    // Determine overall status
-    const statuses = [faceStatus, bodyStatus].filter(Boolean) as ImageStatus[];
-    const allCompleted = statuses.every((s) => s.status === "completed");
-    const allFailed = statuses.every((s) => s.status === "failed");
-    const anyProcessing = statuses.some((s) => s.status === "processing");
-    const anyQueued = statuses.some((s) => s.status === "queued");
-
-    let overallStatus: ImageStatus["status"] = "queued";
-    if (allCompleted) overallStatus = "completed";
-    else if (allFailed) overallStatus = "failed";
-    else if (anyProcessing) overallStatus = "processing";
-    else if (anyQueued) overallStatus = "queued";
-
-    // Combine captions
-    const captions = statuses.map((s) => s.caption).filter(Boolean) as string[];
-    const combinedCaption = captions.length > 0
-      ? captions.map((c, i) => `${i === 0 ? "face" : "body"}: ${c}`).join("\n")
-      : undefined;
-
-    // Combine errors
-    const errors = statuses.map((s) => s.error).filter(Boolean) as string[];
-    const combinedError = errors.length > 0 ? errors.join("; ") : undefined;
-
-    mergedImageStatuses[img.name] = {
-      status: overallStatus,
-      caption: combinedCaption,
-      error: combinedError,
-    };
+    mergedImageStatuses[img.name] = captionJob.imageStatuses[img.name];
   }
 
   const failedImages = imageUpload.images

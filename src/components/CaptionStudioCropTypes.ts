@@ -50,12 +50,15 @@ export type CropRect = { x: number; y: number; width: number; height: number };
 
 /**
  * Crop configuration for a single image.
- * Every image has BOTH a face crop and a body crop.
+ * Each image is assigned ONE crop type (face or body) by the auto-assignment algorithm.
+ * The selected crop is used for captioning; the other is kept as a fallback/preview.
  * Coordinates are 1000-normalized (same as OpenAI bounding boxes).
  */
 export interface ImageCrop {
   imageIndex: number;
   imageName: string;
+  /** Which crop type is selected for this image (used for captioning). */
+  selectedCrop: "face" | "body";
   /** Face/portrait crop rectangle. If no face detected, defaults to full image. */
   faceCrop: CropRect;
   /** Body/full-body crop rectangle. If no body detected, defaults to full image. */
