@@ -369,7 +369,7 @@ export default function CaptionStudio() {
   // -- Derived display step --
   const displayStep: WorkflowStep = jobDone ? "done" : workflowStep;
 
-  const showUploadSection = displayStep === "upload" || displayStep === "configure";
+  const showUploadSection = displayStep === "upload" || displayStep === "configure" || displayStep === "detect" || displayStep === "crop";
   const showCropEditor = displayStep === "crop";
   const showGallery = displayStep === "caption" || displayStep === "done";
 

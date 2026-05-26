@@ -10,10 +10,6 @@ const CROP_PREVIEW_MAX_DIM = 1024;
 
 // ---------------------------------------------------------------------------
 // CropEditor — main crop editing interface
-//
-// Layout:
-//   [ Main area: image preview (1024px max) with crop overlay ]
-//   [ Thumbnail strip: navigate between images, toggle F/B ]
 // ---------------------------------------------------------------------------
 
 export function CropEditor({
@@ -47,31 +43,13 @@ export function CropEditor({
   selectedIndex: number;
   disabled?: boolean;
 }) {
-  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
-  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   const [originalSize, setOriginalSize] = useState({ width: 0, height: 0 });
   const [scaledPreviewUrl, setScaledPreviewUrl] = useState<string | null>(null);
+  // Actual rendered image dimensions within the container (accounts for object-contain)
+  const [renderedImage, setRenderedImage] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
-
-  // Measure container — re-measure when image loads (scaledPreviewUrl changes)
-  useEffect(() => {
-    const updateSize = () => {
-      if (containerRef.current) {
-        const rect = containerRef.current.getBoundingClientRect();
-        setContainerSize({ width: rect.width, height: rect.height });
-      }
-    };
-    // Measure after a frame to ensure layout is complete
-    const timer = requestAnimationFrame(() => {
-      updateSize();
-    });
-    window.addEventListener("resize", updateSize);
-    return () => {
-      cancelAnimationFrame(timer);
-      window.removeEventListener("resize", updateSize);
-    };
-  }, [scaledPreviewUrl]);
 
   // Current image and crop
   const currentImage = images[selectedIndex];
@@ -105,13 +83,11 @@ export function CropEditor({
 
       setOriginalSize({ width: img.naturalWidth, height: img.naturalHeight });
 
-      // Scale to 1024px max dimension
       const origWidth = img.naturalWidth;
       const origHeight = img.naturalHeight;
       const biggest = Math.max(origWidth, origHeight);
 
       if (biggest <= CROP_PREVIEW_MAX_DIM) {
-        // Already small enough
         setScaledPreviewUrl(url);
       } else {
         const scale = CROP_PREVIEW_MAX_DIM / biggest;
@@ -125,8 +101,7 @@ export function CropEditor({
         if (ctx) {
           ctx.drawImage(img, 0, 0, newWidth, newHeight);
           URL.revokeObjectURL(url);
-          const scaledUrl = canvas.toDataURL("image/jpeg", 0.92);
-          setScaledPreviewUrl(scaledUrl);
+          setScaledPreviewUrl(canvas.toDataURL("image/jpeg", 0.92));
         }
       }
     };
@@ -149,15 +124,47 @@ export function CropEditor({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentImage?.name, currentImage?.file]);
 
-  // Update displayed image size when image loads
+  // Measure the actual rendered image position/size within the container.
+  // This runs AFTER the image loads so we get correct dimensions.
   const handleImageLoad = useCallback(() => {
-    if (imageRef.current) {
-      setImageSize({
-        width: imageRef.current.clientWidth,
-        height: imageRef.current.clientHeight,
-      });
-    }
+    if (!imageRef.current || !containerRef.current) return;
+
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const imageRect = imageRef.current.getBoundingClientRect();
+
+    // Image position relative to container
+    setRenderedImage({
+      x: imageRect.left - containerRect.left,
+      y: imageRect.top - containerRect.top,
+      width: imageRect.width,
+      height: imageRect.height,
+    });
   }, []);
+
+  // Re-measure on container resize (window resize, sidebar toggle, etc.)
+  useEffect(() => {
+    if (!scaledPreviewUrl) return;
+
+    const measure = () => {
+      if (!imageRef.current || !containerRef.current) return;
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const imageRect = imageRef.current.getBoundingClientRect();
+      setRenderedImage({
+        x: imageRect.left - containerRect.left,
+        y: imageRect.top - containerRect.top,
+        width: imageRect.width,
+        height: imageRect.height,
+      });
+    };
+
+    // Initial measure after paint
+    const timer = requestAnimationFrame(measure);
+    window.addEventListener("resize", measure);
+    return () => {
+      cancelAnimationFrame(timer);
+      window.removeEventListener("resize", measure);
+    };
+  }, [scaledPreviewUrl]);
 
   // Crop change handler
   const handleCropChange = useCallback(
@@ -264,7 +271,7 @@ export function CropEditor({
         )}
 
         {/* Main editor area */}
-        {crops.length > 0 && currentCrop && scaledPreviewUrl && containerSize.width > 0 && (
+        {crops.length > 0 && currentCrop && scaledPreviewUrl && renderedImage && renderedImage.width > 0 && (
           <div className="flex flex-col lg:flex-row gap-4">
             {/* Image with crop overlay */}
             <div
@@ -281,32 +288,30 @@ export function CropEditor({
                 onLoad={handleImageLoad}
               />
 
-              {/* Crop overlay */}
-              {imageSize.width > 0 && containerSize.width > 0 && (
-                <CropOverlay
-                  cropRect={currentCrop.cropRect}
-                  boundingBoxes={boundingBoxes}
-                  imageWidth={originalSize.width}
-                  imageHeight={originalSize.height}
-                  containerWidth={containerSize.width}
-                  containerHeight={containerSize.height}
-                  cropType={currentCrop.cropType}
-                  onChange={handleCropChange}
-                  disabled={disabled}
-                />
-              )}
+              {/* Crop overlay — positioned on actual rendered image */}
+              <CropOverlay
+                cropRect={currentCrop.cropRect}
+                boundingBoxes={boundingBoxes}
+                imageWidth={originalSize.width}
+                imageHeight={originalSize.height}
+                imageOffsetX={renderedImage.x}
+                imageOffsetY={renderedImage.y}
+                imageDisplayWidth={renderedImage.width}
+                imageDisplayHeight={renderedImage.height}
+                cropType={currentCrop.cropType}
+                onChange={handleCropChange}
+                disabled={disabled}
+              />
             </div>
 
             {/* Image info sidebar */}
             <div className="lg:w-56 space-y-3 shrink-0">
-              {/* Image name + type toggle */}
               <div className="rounded-lg border border-zinc-200 p-3 space-y-2">
                 <p className="text-xs font-medium text-zinc-500">Selected Image</p>
                 <p className="text-xs text-zinc-700 truncate" title={currentImage.name}>
                   {currentImage.name}
                 </p>
 
-                {/* Crop type toggle */}
                 <button
                   onClick={handleToggleCropType}
                   disabled={!!disabled}
@@ -317,11 +322,7 @@ export function CropEditor({
                   } disabled:opacity-50`}
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                    {currentCrop.cropType === "face" ? (
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
-                    ) : (
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
-                    )}
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
                   </svg>
                   {currentCrop.cropType === "face" ? "Face" : "Body"}
                   <svg className="w-3 h-3 ml-1" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -330,7 +331,6 @@ export function CropEditor({
                 </button>
               </div>
 
-              {/* Crop resolution */}
               {originalSize.width > 0 && (
                 <div className="rounded-lg border border-zinc-200 p-3 space-y-1">
                   <p className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider">Crop Output</p>
@@ -346,7 +346,6 @@ export function CropEditor({
                 </div>
               )}
 
-              {/* Original image resolution */}
               {originalSize.width > 0 && (
                 <div className="rounded-lg border border-zinc-200 p-3 space-y-1">
                   <p className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider">Original Image</p>
@@ -356,7 +355,6 @@ export function CropEditor({
                 </div>
               )}
 
-              {/* Detection info */}
               {currentDetection && (
                 <div className="rounded-lg border border-zinc-200 p-3 space-y-1">
                   <p className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider">Detection</p>
@@ -373,7 +371,6 @@ export function CropEditor({
                 </div>
               )}
 
-              {/* Keyboard hint */}
               <div className="rounded-lg border border-zinc-100 p-3">
                 <p className="text-[10px] text-zinc-400">
                   <span className="font-mono bg-zinc-100 px-1 rounded">←</span>
@@ -410,8 +407,6 @@ export function CropEditor({
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={img.preview} alt={img.name} className="w-full h-full object-cover" />
-
-                    {/* Crop type badge */}
                     {crop && (
                       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                         <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded shadow-sm ${
