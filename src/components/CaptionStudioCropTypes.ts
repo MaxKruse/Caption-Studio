@@ -112,6 +112,12 @@ export interface DetectionProgress {
   done?: boolean;
 }
 
+/** Per-image detection status from SSE stream. */
+export type DetectionImageStatus = {
+  status: "queued" | "processing" | "completed" | "failed";
+  error?: string;
+};
+
 /** SSE handlers returned by the hook for attaching to an EventSource. */
 export interface DetectionSSEHandlers {
   onMessage: (event: MessageEvent) => void;
@@ -124,6 +130,8 @@ export interface UseCropDetectionReturn {
   state: CropState;
   /** Current detection progress (from SSE). */
   detectionProgress: DetectionProgress;
+  /** Per-image detection statuses from SSE (name -> status). */
+  detectionStatuses: Record<string, DetectionImageStatus>;
   /** Selected image index for editing. */
   selectedImageIndex: number;
   /** Set the selected image index. */
@@ -134,6 +142,8 @@ export interface UseCropDetectionReturn {
   setDetectionResults: (results: DetectionResult[]) => void;
   /** Update crop for a specific image (face or body crop). */
   updateCrop: (imageIndex: number, cropTarget: "face" | "body", rect: Partial<CropRect>) => void;
+  /** Reset a single image's crop back to auto-detected defaults. */
+  resetCrop: (imageIndex: number) => void;
   /** Apply auto-assignment based on current ruleset and detections. */
   autoAssignCrops: () => void;
   /** Reset all crop state. */

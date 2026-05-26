@@ -214,6 +214,11 @@ export default function CaptionStudio() {
     cropDetection.updateCrop(imageIndex, cropTarget, rect);
   }, [cropDetection]);
 
+  // -- Crop reset handler (single image) --
+  const handleResetCrop = useCallback((imageIndex: number) => {
+    cropDetection.resetCrop(imageIndex);
+  }, [cropDetection]);
+
   // -- Proceed from crop to caption --
   const handleProceedFromCrop = useCallback(() => {
     setWorkflowStep("caption");
@@ -440,6 +445,7 @@ export default function CaptionStudio() {
           detectionError={detectionError}
           onAutoAssign={handleAutoAssign}
           onUpdateCrop={handleUpdateCrop}
+          onResetCrop={handleResetCrop}
           disabled={captionJob.isProcessing}
         />
       )}
@@ -470,7 +476,9 @@ export default function CaptionStudio() {
       <FloatingActionBar
         step={actionBarStep}
         imagesCount={imageUpload.images.length}
+        images={imageUpload.images}
         detectionProgress={cropDetection.detectionProgress}
+        detectionStatuses={cropDetection.detectionStatuses}
         captionProgress={captionJob.progress}
         captionProgressPercent={progressPercent}
         estimatedRemainingMs={captionJob.progress.estimatedRemainingMs}

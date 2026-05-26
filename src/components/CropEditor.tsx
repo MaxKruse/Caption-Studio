@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ImageFile } from "./CaptionStudioTypes";
 import type { BoundingBox, CropRuleset, DetectionResult, ImageCrop } from "./CaptionStudioCropTypes";
-import { CropOverlay } from "./CropOverlay";
+import { CropOverlay, type CropViewMode } from "./CropOverlay";
 
 type ActiveCropTarget = "face" | "body";
 
@@ -19,6 +19,7 @@ export function CropEditor({
   detectionError,
   onAutoAssign,
   onUpdateCrop,
+  onResetCrop,
   disabled,
 }: {
   images: ImageFile[];
@@ -28,10 +29,12 @@ export function CropEditor({
   detectionError: string | null;
   onAutoAssign: () => void;
   onUpdateCrop: (imageIndex: number, cropTarget: "face" | "body", rect: Partial<{ x: number; y: number; width: number; height: number }>) => void;
+  onResetCrop: (imageIndex: number) => void;
   disabled?: boolean;
 }) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [activeCropTarget, setActiveCropTarget] = useState<ActiveCropTarget>("face");
+  const [viewMode, setViewMode] = useState<CropViewMode>("both");
 
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
@@ -107,16 +110,26 @@ export function CropEditor({
   // Derived values
 
   // Handlers
+  // In single-crop mode (face/body), edits go to that crop type.
+  // In "both" mode, edits go to whichever crop is active.
+  const editTarget = viewMode === "both" ? activeCropTarget : viewMode;
   const handleCropChange = useCallback(
     (rect: Partial<{ x: number; y: number; width: number; height: number }>) => {
-      onUpdateCrop(selectedIndex, activeCropTarget, rect);
+      onUpdateCrop(selectedIndex, editTarget as "face" | "body", rect);
     },
-    [selectedIndex, activeCropTarget, onUpdateCrop]
+    [selectedIndex, editTarget, onUpdateCrop]
   );
 
   const handleActiveCropChange = useCallback(
     (target: "face" | "body") => {
       setActiveCropTarget(target);
+    },
+    []
+  );
+
+  const handleViewModeChange = useCallback(
+    (mode: CropViewMode) => {
+      setViewMode(mode);
     },
     []
   );
@@ -149,16 +162,29 @@ export function CropEditor({
                 </span>
               )}
             </div>
-            <button
-              onClick={onAutoAssign}
-              disabled={!!disabled}
-              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 transition-colors disabled:opacity-50 flex items-center gap-1.5"
-            >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
-              </svg>
-              Re-assign crops
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => onResetCrop(selectedIndex)}
+                disabled={!!disabled}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                title="Reset this image's crop to auto-detected defaults"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
+                </svg>
+                Reset crop
+              </button>
+              <button
+                onClick={onAutoAssign}
+                disabled={!!disabled}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
+                </svg>
+                Re-assign all
+              </button>
+            </div>
           </div>
         )}
 
@@ -197,8 +223,10 @@ export function CropEditor({
                   containerWidth={containerSize.width}
                   containerHeight={containerSize.height}
                   activeCrop={activeCropTarget}
+                  viewMode={viewMode}
                   onChange={handleCropChange}
                   onActiveCropChange={handleActiveCropChange}
+                  onViewModeChange={handleViewModeChange}
                   disabled={disabled}
                 />
               )}

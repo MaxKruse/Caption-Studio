@@ -3,6 +3,7 @@ import { CROP_RULESETS } from "../CaptionStudioCropConstants";
 import type {
   BoundingBox,
   CropState,
+  DetectionImageStatus,
   DetectionProgress,
   DetectionResult,
   ImageCrop,
@@ -28,8 +29,8 @@ function createEmptyState(): CropState {
 // Auto-assignment logic
 // ---------------------------------------------------------------------------
 
-/** Default padding factor for body crops (tight fit). */
-const BODY_CROP_PADDING = 0.05;
+/** No extra padding for body crops — LLM body boxes are already well-sized. */
+const BODY_CROP_PADDING = 0;
 /** Extra padding for face crops — LLMs return tight face boxes, so expand significantly. */
 const FACE_CROP_PADDING = 0.25;
 
@@ -124,9 +125,9 @@ function buildCropRectFromBox(
   let cropWidth = bw + paddingW * 2;
   let cropHeight = bh + paddingH * 2;
 
-  // Clamp to image bounds (0-1000)
-  if (cropX < 0) { cropX = 0; cropWidth = Math.min(cropWidth + cropX, 1000); }
-  if (cropY < 0) { cropY = 0; cropHeight = Math.min(cropHeight + cropY, 1000); }
+  // Clamp to image bounds (0-1000) — adjust size then clamp position
+  if (cropX < 0) { cropWidth += cropX; cropX = 0; }
+  if (cropY < 0) { cropHeight += cropY; cropY = 0; }
   if (cropX + cropWidth > 1000) cropWidth = 1000 - cropX;
   if (cropY + cropHeight > 1000) cropHeight = 1000 - cropY;
 
@@ -168,6 +169,7 @@ export function useCropDetection({
     completed: 0,
     failed: 0,
   });
+  const [detectionStatuses, setDetectionStatuses] = useState<Record<string, DetectionImageStatus>>({});
 
   // -----------------------------------------------------------------------
   // Set ruleset
@@ -254,6 +256,34 @@ export function useCropDetection({
   }, []);
 
   // -----------------------------------------------------------------------
+  // Reset a single image's crop back to auto-detected defaults
+  // -----------------------------------------------------------------------
+  const resetCrop = useCallback((imageIndex: number) => {
+    setState((prev) => {
+      const detectionIndex = prev.detections.findIndex((d) => d.imageIndex === imageIndex);
+      if (detectionIndex === -1) return prev;
+      const cropIndex = prev.crops.findIndex((c) => c.imageIndex === imageIndex);
+      if (cropIndex === -1) return prev;
+
+      const detection = prev.detections[detectionIndex];
+      const existing = prev.crops[cropIndex];
+      const faceCrop = buildCropRectFromBestBox(detection.faceBoxes, FACE_CROP_PADDING);
+      const bodyCrop = buildCropRectFromBestBox(detection.bodyBoxes, BODY_CROP_PADDING);
+
+      const updatedCrops = [...prev.crops];
+      updatedCrops[cropIndex] = {
+        ...existing,
+        faceCrop: faceCrop ?? buildDefaultCrop(),
+        bodyCrop: bodyCrop ?? buildDefaultCrop(),
+        faceAutoDetected: faceCrop !== null,
+        bodyAutoDetected: bodyCrop !== null,
+      };
+
+      return { ...prev, crops: updatedCrops };
+    });
+  }, []);
+
+  // -----------------------------------------------------------------------
   // Get final crops
   // -----------------------------------------------------------------------
   const getFinalCrops = useCallback(() => {
@@ -273,6 +303,7 @@ export function useCropDetection({
       completed: 0,
       failed: 0,
     });
+    setDetectionStatuses({});
   }, []);
 
   // -----------------------------------------------------------------------
@@ -282,12 +313,15 @@ export function useCropDetection({
   const setProgressRef = useRef(setDetectionProgress);
   useEffect(() => { setProgressRef.current = setDetectionProgress; }, [setDetectionProgress]);
 
+  const setStatusesRef = useRef(setDetectionStatuses);
+  useEffect(() => { setStatusesRef.current = setDetectionStatuses; }, [setDetectionStatuses]);
+
   const setStateRef = useRef(setState);
   useEffect(() => { setStateRef.current = setState; }, [setState]);
 
   const getSSEHandlers = useCallback(() => {
     const onMessage = (event: MessageEvent) => {
-      const data: DetectionProgress & { done?: boolean } = JSON.parse(event.data);
+      const data: DetectionProgress & { done?: boolean; statuses?: Record<string, DetectionImageStatus> } = JSON.parse(event.data);
       setProgressRef.current({
         total: data.total ?? 0,
         queued: data.queued ?? 0,
@@ -296,6 +330,11 @@ export function useCropDetection({
         failed: data.failed ?? 0,
         done: data.done,
       });
+
+      // Update per-image statuses
+      if (data.statuses) {
+        setStatusesRef.current(data.statuses);
+      }
 
       // When done, mark detecting as false
       if (data.done) {
@@ -333,12 +372,14 @@ export function useCropDetection({
   return {
     state,
     detectionProgress,
+    detectionStatuses,
     selectedImageIndex,
     setSelectedImageIndex,
     setRuleset,
     setDetectionResults,
     autoAssignCrops,
     updateCrop,
+    resetCrop,
     reset,
     getFinalCrops,
     hasCrops,

@@ -1,8 +1,8 @@
 "use client";
 
 import { formatDuration } from "./CaptionStudioTypes";
-import type { ProgressState } from "./CaptionStudioTypes";
-import type { DetectionProgress } from "./CaptionStudioCropTypes";
+import type { ImageFile, ProgressState } from "./CaptionStudioTypes";
+import type { DetectionImageStatus, DetectionProgress } from "./CaptionStudioCropTypes";
 
 // ---------------------------------------------------------------------------
 // FloatingActionBar — fixed bottom bar reflecting current workflow step
@@ -18,7 +18,9 @@ import type { DetectionProgress } from "./CaptionStudioCropTypes";
 export function FloatingActionBar({
   step,
   imagesCount,
+  images,
   detectionProgress,
+  detectionStatuses,
   captionProgress,
   captionProgressPercent,
   estimatedRemainingMs,
@@ -39,8 +41,12 @@ export function FloatingActionBar({
   // Image count
   imagesCount: number;
 
+  // Images (for per-image detection status)
+  images?: ImageFile[];
+
   // Detection progress (step = "detect")
   detectionProgress?: DetectionProgress;
+  detectionStatuses?: Record<string, DetectionImageStatus>;
 
   // Caption progress (step = "caption")
   captionProgress?: ProgressState;
@@ -117,68 +123,109 @@ export function FloatingActionBar({
         )}
 
         {/* ----------------------------------------------------------------- */}
-        {/* DETECT — running detection, show progress                         */}
+        {/* DETECT — running detection, show progress + per-image list        */}
         {/* ----------------------------------------------------------------- */}
         {step === "detect" && detectionProgress && (
-          <div className="flex items-center gap-4">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between text-xs text-zinc-500 mb-1.5">
-                <span className="space-x-2 truncate">
-                  <span>{detectionProgress.completed} detected</span>
-                  {detectionProgress.failed > 0 && (
-                    <span className="text-zinc-400">
-                      &middot; {detectionProgress.failed} failed
-                    </span>
-                  )}
-                  {detectionProgress.processing > 0 && (
-                    <span className="text-zinc-400">
-                      &middot; {detectionProgress.processing} processing
-                    </span>
-                  )}
-                </span>
-                <span className="font-medium shrink-0">
-                  {detectionProgress.total > 0
-                    ? Math.round(
-                        ((detectionProgress.completed + detectionProgress.failed) /
-                          detectionProgress.total) *
-                          100
-                      )
-                    : 0}
-                  %
-                </span>
-              </div>
-              <div className="h-2 bg-zinc-200 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-zinc-700 transition-all duration-300 ease-out rounded-full"
-                  style={{
-                    width: `${
-                      detectionProgress.total > 0
-                        ? ((detectionProgress.completed + detectionProgress.failed) /
+          <div className="space-y-2">
+            {/* Progress bar */}
+            <div className="flex items-center gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between text-xs text-zinc-500 mb-1.5">
+                  <span className="space-x-2 truncate">
+                    <span>{detectionProgress.completed} detected</span>
+                    {detectionProgress.failed > 0 && (
+                      <span className="text-zinc-400">
+                        &middot; {detectionProgress.failed} failed
+                      </span>
+                    )}
+                    {detectionProgress.processing > 0 && (
+                      <span className="text-zinc-400">
+                        &middot; {detectionProgress.processing} processing
+                      </span>
+                    )}
+                  </span>
+                  <span className="font-medium shrink-0">
+                    {detectionProgress.total > 0
+                      ? Math.round(
+                          ((detectionProgress.completed + detectionProgress.failed) /
                             detectionProgress.total) *
-                          100
-                        : 0
-                    }%`,
-                  }}
-                />
+                            100
+                        )
+                      : 0}
+                    %
+                  </span>
+                </div>
+                <div className="h-2 bg-zinc-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-zinc-700 transition-all duration-300 ease-out rounded-full"
+                    style={{
+                      width: `${
+                        detectionProgress.total > 0
+                          ? ((detectionProgress.completed + detectionProgress.failed) /
+                              detectionProgress.total) *
+                            100
+                          : 0
+                      }%`,
+                    }}
+                  />
+                </div>
               </div>
+
+              <button
+                onClick={onAbortDetection}
+                className="shrink-0 px-3 py-1.5 text-xs font-medium rounded-md bg-zinc-200 text-zinc-600 hover:bg-zinc-300 hover:text-zinc-800 transition-colors flex items-center gap-1.5"
+                aria-label="Abort detection"
+              >
+                <svg
+                  className="w-3.5 h-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Abort
+              </button>
             </div>
 
-            <button
-              onClick={onAbortDetection}
-              className="shrink-0 px-3 py-1.5 text-xs font-medium rounded-md bg-zinc-200 text-zinc-600 hover:bg-zinc-300 hover:text-zinc-800 transition-colors flex items-center gap-1.5"
-              aria-label="Abort detection"
-            >
-              <svg
-                className="w-3.5 h-3.5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-              Abort
-            </button>
+            {/* Per-image status list */}
+            {images && images.length > 0 && detectionStatuses && (
+              <div className="flex gap-1.5 overflow-x-auto pb-1">
+                {images.map((img) => {
+                  const status = detectionStatuses[img.name];
+                  const statusStyle = status?.status === "completed"
+                    ? "bg-zinc-700 text-zinc-100"
+                    : status?.status === "processing"
+                      ? "bg-zinc-400 text-zinc-900 animate-pulse"
+                      : status?.status === "failed"
+                        ? "bg-red-500 text-white"
+                        : "bg-zinc-200 text-zinc-500";
+
+                  return (
+                    <div
+                      key={img.name}
+                      className="shrink-0 flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium bg-zinc-50 border border-zinc-200"
+                    >
+                      {/* Status dot */}
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                        status?.status === "completed"
+                          ? "bg-zinc-700"
+                          : status?.status === "processing"
+                            ? "bg-zinc-400 animate-pulse"
+                            : status?.status === "failed"
+                              ? "bg-red-500"
+                              : "bg-zinc-300"
+                      }`} />
+                      <span className="truncate max-w-[120px] text-zinc-600">{img.name}</span>
+                      <span className={`shrink-0 px-1 py-0.5 rounded text-[8px] uppercase tracking-wide ${statusStyle}`}>
+                        {status?.status ?? "queued"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 

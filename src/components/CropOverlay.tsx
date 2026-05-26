@@ -5,8 +5,10 @@ import type { BoundingBox, CropRect, ImageCrop } from "./CaptionStudioCropTypes"
 
 // ---------------------------------------------------------------------------
 // CropOverlay — interactive crop rectangle on an image
-// Shows both face and body crops; user edits the active one
+// Toggle between face-only, body-only, or both crop boxes
 // ---------------------------------------------------------------------------
+
+export type CropViewMode = "face" | "body" | "both";
 
 interface CropOverlayProps {
   crop: ImageCrop;
@@ -17,8 +19,11 @@ interface CropOverlayProps {
   containerHeight: number; // displayed container height
   /** Which crop is currently being edited */
   activeCrop: "face" | "body";
+  /** What to display: single crop or both */
+  viewMode: CropViewMode;
   onChange: (rect: Partial<CropRect>) => void;
   onActiveCropChange: (target: "face" | "body") => void;
+  onViewModeChange: (mode: CropViewMode) => void;
   disabled?: boolean;
 }
 
@@ -31,7 +36,9 @@ export function CropOverlay({
   containerHeight,
   onChange,
   onActiveCropChange,
+  onViewModeChange,
   activeCrop,
+  viewMode,
   disabled,
 }: CropOverlayProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -45,25 +52,8 @@ export function CropOverlay({
   // Convert 1000-normalized to container pixels
   const toPixel = (val: number, isX: boolean) => val * (isX ? scaleX : scaleY);
 
-  // Active and inactive crop rects
-  const activeRect = activeCrop === "face" ? crop.faceCrop : crop.bodyCrop;
+  // Inactive crop rect (for "both" mode)
   const inactiveRect = activeCrop === "face" ? crop.bodyCrop : crop.faceCrop;
-
-  // Compute actual cropped resolution (in real image pixels)
-  const cropResolution = imageWidth > 0 && imageHeight > 0
-    ? {
-        width: Math.round((activeRect.width / 1000) * imageWidth),
-        height: Math.round((activeRect.height / 1000) * imageHeight),
-      }
-    : null;
-
-  // Active crop rect in container pixels
-  const activePixel = {
-    x: toPixel(activeRect.x, true),
-    y: toPixel(activeRect.y, false),
-    w: toPixel(activeRect.width, true),
-    h: toPixel(activeRect.height, false),
-  };
 
   // Inactive crop rect in container pixels
   const inactivePixel = {
@@ -72,6 +62,26 @@ export function CropOverlay({
     w: toPixel(inactiveRect.width, true),
     h: toPixel(inactiveRect.height, false),
   };
+
+  // Visibility
+  const showBoth = viewMode === "both";
+
+  // In single-crop mode, the active crop follows the view mode
+  // In "both" mode, active crop follows activeCrop prop
+  const editableCrop = showBoth ? activeCrop : viewMode;
+  const editableRect = editableCrop === "face" ? crop.faceCrop : crop.bodyCrop;
+  const editablePixel = {
+    x: toPixel(editableRect.x, true),
+    y: toPixel(editableRect.y, false),
+    w: toPixel(editableRect.width, true),
+    h: toPixel(editableRect.height, false),
+  };
+  const editableResolution = imageWidth > 0 && imageHeight > 0
+    ? {
+        width: Math.round((editableRect.width / 1000) * imageWidth),
+        height: Math.round((editableRect.height / 1000) * imageHeight),
+      }
+    : null;
 
   // Handle mouse/touch interactions
   const handlePointerDown = useCallback(
@@ -88,8 +98,8 @@ export function CropOverlay({
         const bw = snapBox.bbox_2d[2] - bx;
         const bh = snapBox.bbox_2d[3] - by;
         // Face boxes get wider padding (25%) since LLMs return tight face boxes
-        // Body boxes get tight padding (5%)
-        const paddingFactor = snapBox.label === "face" ? 0.25 : 0.05;
+        // Body boxes use no extra padding — already well-sized
+        const paddingFactor = snapBox.label === "face" ? 0.25 : 0;
         const padW = bw * paddingFactor;
         const padH = bh * paddingFactor;
 
@@ -98,11 +108,11 @@ export function CropOverlay({
         let newW = bw + padW * 2;
         let newH = bh + padH * 2;
 
-        // Clamp to bounds
-        newX = Math.max(0, newX);
-        newY = Math.max(0, newY);
-        newW = Math.min(newW, 1000 - newX);
-        newH = Math.min(newH, 1000 - newY);
+        // Clamp to bounds (0-1000) — adjust size first, then clamp position
+        if (newX < 0) { newW += newX; newX = 0; }
+        if (newY < 0) { newH += newY; newY = 0; }
+        if (newX + newW > 1000) newW = 1000 - newX;
+        if (newY + newH > 1000) newH = 1000 - newY;
 
         onChange({ x: newX, y: newY, width: newW, height: newH });
         return;
@@ -112,11 +122,11 @@ export function CropOverlay({
         type,
         startX: e.clientX,
         startY: e.clientY,
-        origCrop: { ...activeRect },
+        origCrop: { ...editableRect },
         resizeMode: type === "resize" && typeof resizeModeOrSnapBox === "string" ? resizeModeOrSnapBox : undefined,
       };
     },
-    [disabled, activeRect, onChange]
+    [disabled, editableRect, onChange]
   );
 
   const handlePointerMove = useCallback(
@@ -204,6 +214,14 @@ export function CropOverlay({
   // Resize handle size in pixels
   const handleSize = 12;
 
+  // Toggle button handler — cycle through or direct select
+  const handleToggle = (mode: CropViewMode) => {
+    onViewModeChange(mode);
+    if (mode !== "both") {
+      onActiveCropChange(mode);
+    }
+  };
+
   return (
     <div
       ref={containerRef}
@@ -212,58 +230,66 @@ export function CropOverlay({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
     >
-      {/* Inactive crop (dimmed overlay) */}
-      <div
-        className="absolute pointer-events-none"
-        style={{
-          left: inactivePixel.x,
-          top: inactivePixel.y,
-          width: inactivePixel.w,
-          height: inactivePixel.h,
-        }}
-      >
-        <div className="absolute inset-0 border-2 border-purple-400/40 rounded" />
-        <div className="absolute -top-3 left-0 text-[8px] font-medium text-purple-400/60 bg-zinc-900/60 px-1 rounded">
-          {activeCrop === "face" ? "body" : "face"}
-        </div>
+      {/* View mode toggle — fixed position top-right */}
+      <div className="absolute top-2 right-2 flex items-center gap-0.5 z-50">
+        {(["face", "body", "both"] as CropViewMode[]).map((mode) => (
+          <button
+            key={mode}
+            onClick={() => handleToggle(mode)}
+            className={`text-[9px] font-medium px-1.5 py-0.5 rounded transition-colors ${
+              viewMode === mode
+                ? "bg-blue-500 text-white"
+                : "bg-zinc-900/70 text-zinc-300 hover:text-white hover:bg-zinc-900/90"
+            }`}
+          >
+            {mode}
+          </button>
+        ))}
       </div>
 
-      {/* Active crop overlay */}
+      {/* "both" mode — inactive crop (dimmed overlay) */}
+      {showBoth && (
+        <div
+          className="absolute pointer-events-none"
+          style={{
+            left: inactivePixel.x,
+            top: inactivePixel.y,
+            width: inactivePixel.w,
+            height: inactivePixel.h,
+          }}
+        >
+          <div className="absolute inset-0 border-2 border-purple-400/40 rounded" />
+          <div className="absolute -top-3 left-0 text-[8px] font-medium text-purple-400/60 bg-zinc-900/60 px-1 rounded">
+            {activeCrop === "face" ? "body" : "face"}
+          </div>
+        </div>
+      )}
+
+      {/* Editable crop overlay */}
       <div
         className="absolute border-2 border-blue-400 rounded cursor-move"
         style={{
-          left: activePixel.x,
-          top: activePixel.y,
-          width: activePixel.w,
-          height: activePixel.h,
+          left: editablePixel.x,
+          top: editablePixel.y,
+          width: editablePixel.w,
+          height: editablePixel.h,
         }}
         onPointerDown={(e) => handlePointerDown(e, "move")}
       >
-        {/* Crop type label + resolution tooltip */}
+        {/* Crop type label + resolution */}
         <div className="absolute -top-5 left-0 flex items-center gap-1">
-          <button
-            onClick={(e) => { e.stopPropagation(); onActiveCropChange("face"); }}
+          <span
             className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${
-              activeCrop === "face"
+              editableCrop === "face"
                 ? "bg-blue-500 text-white"
-                : "bg-zinc-800/80 text-zinc-300 hover:text-white"
+                : "bg-purple-500 text-white"
             }`}
           >
-            face
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); onActiveCropChange("body"); }}
-            className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${
-              activeCrop === "body"
-                ? "bg-blue-500 text-white"
-                : "bg-zinc-800/80 text-zinc-300 hover:text-white"
-            }`}
-          >
-            body
-          </button>
-          {cropResolution && (
+            {editableCrop}
+          </span>
+          {editableResolution && (
             <span className="text-[9px] font-mono text-zinc-300 bg-zinc-900/90 px-1.5 py-0.5 rounded whitespace-nowrap">
-              {cropResolution.width} × {cropResolution.height}
+              {editableResolution.width} × {editableResolution.height}
             </span>
           )}
         </div>
