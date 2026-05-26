@@ -6,8 +6,8 @@ import { describe, it, expect, beforeEach } from "vitest";
 
 describe("parseDetectionResponse", () => {
   let parse: (content: string) => {
-    faceBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string }>;
-    bodyBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string }>;
+    faceBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }>;
+    bodyBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }>;
   };
 
   beforeEach(async () => {
@@ -31,10 +31,10 @@ describe("parseDetectionResponse", () => {
   it("parses plain JSON with faces and bodies", () => {
     const json = JSON.stringify({
       faces: [
-        { bbox_2d: [100, 200, 400, 500], label: "face" },
+        { bbox_2d: [100, 200, 400, 500], label: "face", confidence: 0.85 },
       ],
       bodies: [
-        { bbox_2d: [50, 100, 950, 900], label: "body" },
+        { bbox_2d: [50, 100, 950, 900], label: "body", confidence: 0.30 },
       ],
     });
 
@@ -43,10 +43,12 @@ describe("parseDetectionResponse", () => {
     expect(result.faceBoxes).toHaveLength(1);
     expect(result.faceBoxes[0].bbox_2d).toEqual([100, 200, 400, 500]);
     expect(result.faceBoxes[0].label).toBe("face");
+    expect(result.faceBoxes[0].confidence).toBe(0.85);
 
     expect(result.bodyBoxes).toHaveLength(1);
     expect(result.bodyBoxes[0].bbox_2d).toEqual([50, 100, 950, 900]);
     expect(result.bodyBoxes[0].label).toBe("body");
+    expect(result.bodyBoxes[0].confidence).toBe(0.30);
   });
 
   it("parses JSON inside markdown code block with json fence", () => {
@@ -228,6 +230,47 @@ describe("parseDetectionResponse", () => {
 
     expect(result.faceBoxes).toHaveLength(1);
     expect(result.faceBoxes[0].bbox_2d).toEqual([100.5, 200.7, 300.3, 400.9]);
+  });
+
+  it("defaults confidence to 0.5 when missing", () => {
+    const json = JSON.stringify({
+      faces: [
+        { bbox_2d: [100, 200, 300, 400], label: "face" },
+      ],
+      bodies: [],
+    });
+
+    const result = parse(json);
+
+    expect(result.faceBoxes[0].confidence).toBe(0.5);
+  });
+
+  it("clamps confidence to 0-1 range", () => {
+    const json = JSON.stringify({
+      faces: [
+        { bbox_2d: [100, 200, 300, 400], label: "face", confidence: 1.5 },
+        { bbox_2d: [400, 500, 600, 700], label: "face", confidence: -0.3 },
+      ],
+      bodies: [],
+    });
+
+    const result = parse(json);
+
+    expect(result.faceBoxes[0].confidence).toBe(1);
+    expect(result.faceBoxes[1].confidence).toBe(0);
+  });
+
+  it("defaults confidence to 0.5 for NaN", () => {
+    const json = JSON.stringify({
+      faces: [
+        { bbox_2d: [100, 200, 300, 400], label: "face", confidence: null },
+      ],
+      bodies: [],
+    });
+
+    const result = parse(json);
+
+    expect(result.faceBoxes[0].confidence).toBe(0.5);
   });
 
   it("handles multiple bodies", () => {

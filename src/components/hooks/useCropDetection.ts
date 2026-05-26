@@ -56,22 +56,19 @@ function buildCropRectFromBestBox(
 
 /**
  * Compute a quality score for bounding boxes (0-1 range).
+ * Uses the highest confidence score — reflects visual importance
+ * (SFW: face importance, NSFW: body importance), not just box size.
  */
-function computeBoxQuality(boxes: BoundingBox[]): number {
+export function computeBoxQuality(boxes: BoundingBox[]): number {
   if (boxes.length === 0) return 0;
-  const largest = boxes.reduce((max, bb) => {
-    const area = (bb.bbox_2d[2] - bb.bbox_2d[0]) * (bb.bbox_2d[3] - bb.bbox_2d[1]);
-    const maxArea = (max.bbox_2d[2] - max.bbox_2d[0]) * (max.bbox_2d[3] - max.bbox_2d[1]);
-    return area > maxArea ? bb : max;
-  });
-  const area = (largest.bbox_2d[2] - largest.bbox_2d[0]) * (largest.bbox_2d[3] - largest.bbox_2d[1]);
-  return Math.min(1, area / 100000);
+  return Math.max(...boxes.map((bb) => bb.confidence));
 }
 
 /**
  * Allocate crop types to images based on detection quality and ruleset ratio.
+ * Sorts images by (faceQuality - bodyQuality) descending; top N get "face", rest get "body".
  */
-function allocateCropTypes(
+export function allocateCropTypes(
   detections: Array<{ faceBoxes: BoundingBox[]; bodyBoxes: BoundingBox[] }>,
   portraitRatio: number
 ): ("face" | "body")[] {
@@ -81,7 +78,9 @@ function allocateCropTypes(
   const scored = detections.map((d, i) => {
     const faceQuality = computeBoxQuality(d.faceBoxes);
     const bodyQuality = computeBoxQuality(d.bodyBoxes);
-    const preference = faceQuality - bodyQuality;
+    // Round to 2 decimals to avoid floating-point sort instability
+    // (confidence scores are given to 2 decimal places)
+    const preference = Math.round((faceQuality - bodyQuality) * 100) / 100;
     return { index: i, faceQuality, bodyQuality, preference };
   });
 
@@ -196,6 +195,42 @@ export function useCropDetection({
   }, []);
 
   // -----------------------------------------------------------------------
+  // Low-confidence detection warning
+  // -----------------------------------------------------------------------
+  const CONFIDENCE_WARNING_THRESHOLD = 0.60;
+
+  function buildLowConfidenceWarning(
+    results: DetectionResult[]
+  ): string | null {
+    const validResults = results.filter((r) => !r.error);
+    if (validResults.length === 0) return null;
+
+    const categories: Array<{ name: string; avgConfidence: number; count: number }> = [];
+
+    // Compute average face confidence
+    const faceConfidences = validResults.flatMap((r) => r.faceBoxes.map((b) => b.confidence));
+    if (faceConfidences.length > 0) {
+      const avg = faceConfidences.reduce((sum, c) => sum + c, 0) / faceConfidences.length;
+      categories.push({ name: "face", avgConfidence: avg, count: faceConfidences.length });
+    }
+
+    // Compute average body confidence
+    const bodyConfidences = validResults.flatMap((r) => r.bodyBoxes.map((b) => b.confidence));
+    if (bodyConfidences.length > 0) {
+      const avg = bodyConfidences.reduce((sum, c) => sum + c, 0) / bodyConfidences.length;
+      categories.push({ name: "body", avgConfidence: avg, count: bodyConfidences.length });
+    }
+
+    const lowConfidence = categories.filter((c) => c.avgConfidence < CONFIDENCE_WARNING_THRESHOLD);
+    if (lowConfidence.length === 0) return null;
+
+    const parts = lowConfidence.map((c) =>
+      `${c.name} (avg ${(c.avgConfidence * 100).toFixed(0)}% across ${c.count} detection(s))`
+    );
+    return `Low detection confidence for: ${parts.join(", ")}. The body/face crop split will still be respected, but consider using images with clearer ${lowConfidence.map((c) => c.name).join("/")} visibility for better results.`;
+  }
+
+  // -----------------------------------------------------------------------
   // Set detection results
   // -----------------------------------------------------------------------
   const setDetectionResults = useCallback((results: DetectionResult[]) => {
@@ -204,6 +239,9 @@ export function useCropDetection({
       .filter((r) => r.error && (r.error.includes("permanently") || r.error.includes("skipped")))
       .map((r) => r.imageName);
     setSkippedImages(skipped);
+
+    // Check for low confidence scores
+    const lowConfWarning = buildLowConfidenceWarning(results);
 
     setState((prev) => {
       const hasErrors = results.some((r) => r.error);
@@ -214,6 +252,11 @@ export function useCropDetection({
         detectionError = `${skipped.length} image(s) skipped after failed detection (will be omitted from crops): ${skipped.join(", ")}`;
       } else if (hasErrors) {
         detectionError = `${results.filter((r) => r.error).length} image(s) had detection issues`;
+      }
+
+      // Prepend low-confidence warning if present
+      if (lowConfWarning) {
+        detectionError = lowConfWarning + (detectionError ? `\n${detectionError}` : "");
       }
 
       return {

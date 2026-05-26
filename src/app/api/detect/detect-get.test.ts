@@ -222,8 +222,8 @@ describe("GET /api/detect", () => {
       "gpt-4o"
     );
 
-    const faceBoxes = [{ bbox_2d: [100, 200, 400, 500] as [number, number, number, number], label: "face" }];
-    const bodyBoxes = [{ bbox_2d: [50, 100, 950, 900] as [number, number, number, number], label: "body" }];
+    const faceBoxes = [{ bbox_2d: [100, 200, 400, 500] as [number, number, number, number], label: "face", confidence: 0.85 }];
+    const bodyBoxes = [{ bbox_2d: [50, 100, 950, 900] as [number, number, number, number], label: "body", confidence: 0.30 }];
 
     store.updateDetectionImage(jobId, "a.png", "completed", faceBoxes, bodyBoxes);
 

@@ -9,8 +9,7 @@ import { prepareForDetection } from "@/lib/image-utils";
 import { normalizeServerUrl } from "@/lib/url-utils";
 import {
   DETECTION_CONCURRENCY,
-  DETECTION_SYSTEM_PROMPT,
-  DETECTION_USER_PROMPT,
+  getDetectionPrompts,
 } from "@/components/CaptionStudioCropConstants";
 import {
   createDetectionJob,
@@ -31,6 +30,7 @@ import {
 interface DetectRequest {
   serverUrl: string;
   model: string;
+  contentMode: "sfw" | "nsfw";
 }
 
 // ---------------------------------------------------------------------------
@@ -63,6 +63,8 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "No images provided" }, { status: 400 });
   }
 
+  const contentMode = config.contentMode ?? "nsfw";
+
   // Create detection job in store
   const imageNames = imageFiles.map((f) => f.name);
   const jobId = createDetectionJob(
@@ -72,7 +74,7 @@ export async function POST(request: NextRequest) {
   );
 
   // Start async processing (fire and forget)
-  void processDetectionJob(jobId, config.serverUrl, config.model, imageFiles);
+  void processDetectionJob(jobId, config.serverUrl, config.model, imageFiles, contentMode);
 
   return Response.json({ jobId });
 }
@@ -155,9 +157,11 @@ async function processDetectionJob(
   jobId: string,
   serverUrl: string,
   model: string,
-  imageFiles: File[]
+  imageFiles: File[],
+  contentMode: "sfw" | "nsfw"
 ): Promise<void> {
   const baseUrl = normalizeServerUrl(serverUrl);
+  const { systemPrompt, userPrompt } = getDetectionPrompts(contentMode);
   const primaryQueue: File[] = [...imageFiles];
   const retryCount = new Map<string, number>();
 
@@ -178,7 +182,7 @@ async function processDetectionJob(
           messages: [
             {
               role: "system",
-              content: DETECTION_SYSTEM_PROMPT,
+              content: systemPrompt,
             },
             {
               role: "user",
@@ -191,7 +195,7 @@ async function processDetectionJob(
                 },
                 {
                   type: "text",
-                  text: DETECTION_USER_PROMPT,
+                  text: userPrompt,
                 },
               ],
             },
@@ -305,10 +309,11 @@ async function processDetectionJob(
 /**
  * Parse the model's detection response into face and body bounding box arrays.
  * Handles JSON objects, markdown code blocks, and plain text.
+ * Extracts confidence scores (defaults to 0.5 when missing).
  */
 export function parseDetectionResponse(content: string): {
-  faceBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string }>;
-  bodyBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string }>;
+  faceBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }>;
+  bodyBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }>;
 } {
   if (!content) {
     return { faceBoxes: [], bodyBoxes: [] };
@@ -332,14 +337,22 @@ export function parseDetectionResponse(content: string): {
 
     const parseBoxArray = (
       arr: unknown[]
-    ): Array<{ bbox_2d: [number, number, number, number]; label: string }> => {
+    ): Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }> => {
       if (!Array.isArray(arr)) return [];
       return arr
         .filter((b: unknown): b is Record<string, unknown> => b != null && typeof b === "object")
-        .map((b) => ({
-          bbox_2d: b.bbox_2d as [number, number, number, number],
-          label: (b.label as string) ?? "unknown",
-        }))
+        .map((b) => {
+          const rawConfidence = b.confidence;
+          const confidence =
+            typeof rawConfidence === "number" && !Number.isNaN(rawConfidence)
+              ? Math.max(0, Math.min(1, rawConfidence))
+              : 0.5;
+          return {
+            bbox_2d: b.bbox_2d as [number, number, number, number],
+            label: (b.label as string) ?? "unknown",
+            confidence,
+          };
+        })
         .filter((b) => b.bbox_2d && Array.isArray(b.bbox_2d) && b.bbox_2d.length === 4);
     };
 

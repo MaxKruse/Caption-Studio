@@ -23,6 +23,8 @@ export interface CropRuleset {
 export interface BoundingBox {
   bbox_2d: [number, number, number, number]; // [x_min, y_min, x_max, y_max] in 1000-normalized coords
   label: string;
+  /** Visual importance score 0.0–1.0, context-aware (SFW vs NSFW). Defaults to 0.5. */
+  confidence: number;
 }
 
 /**

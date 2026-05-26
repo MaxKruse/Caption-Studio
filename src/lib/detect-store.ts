@@ -10,8 +10,8 @@
 export interface DetectionImageEntry {
   name: string;
   status: "queued" | "processing" | "completed" | "failed" | "skipped";
-  faceBoxes?: Array<{ bbox_2d: [number, number, number, number]; label: string }>;
-  bodyBoxes?: Array<{ bbox_2d: [number, number, number, number]; label: string }>;
+  faceBoxes?: Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }>;
+  bodyBoxes?: Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }>;
   error?: string;
   /** Number of retry attempts made (0 = not retried yet). */
   retryCount: number;

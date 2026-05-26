@@ -117,6 +117,7 @@ export default function CaptionStudio() {
       formData.append("config", JSON.stringify({
         serverUrl: config.serverUrl.trim(),
         model: selectedModel,
+        contentMode: config.contentMode,
       }));
       for (const img of imageUpload.images) {
         formData.append("images", img.file);

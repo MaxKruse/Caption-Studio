@@ -66,17 +66,17 @@ export function useAppConfig(): UseAppConfigResult {
   );
   const [selectedModel, setSelectedModel] = useState("");
 
-  const [contentMode, setContentMode] = useState<ContentMode>("nsfw");
+  const [contentMode, setContentMode] = useState<ContentMode>("sfw");
 
-  // Caption type — defaults to "detailed_with_trigger" (most common for LoRA)
-  const [captionTypeId, setCaptionTypeId] = useState<CaptionTypeId>("detailed_with_trigger");
+  // Caption type — defaults to "name" (subject name only)
+  const [captionTypeId, setCaptionTypeId] = useState<CaptionTypeId>("name");
 
   // Prompts — initialized from caption type + mode
   const [systemPrompt, setSystemPrompt] = useState(() =>
-    getSystemPrompt("detailed_with_trigger", "nsfw")
+    getSystemPrompt("name", "sfw")
   );
   const [userPrompt, setUserPrompt] = useState(() =>
-    getUserPrompt("detailed_with_trigger", "nsfw")
+    getUserPrompt("name", "sfw")
   );
 
   // Caption fields

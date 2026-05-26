@@ -100,8 +100,8 @@ describe("detect-store", () => {
     it("updates status to completed with boxes", () => {
       const jobId = store.createDetectionJob(["a.png"], "http://x", "m");
 
-      const faceBoxes = [{ bbox_2d: [100, 200, 300, 400] as [number, number, number, number], label: "face" }];
-      const bodyBoxes = [{ bbox_2d: [50, 100, 950, 900] as [number, number, number, number], label: "body" }];
+      const faceBoxes = [{ bbox_2d: [100, 200, 300, 400] as [number, number, number, number], label: "face", confidence: 0.85 }];
+      const bodyBoxes = [{ bbox_2d: [50, 100, 950, 900] as [number, number, number, number], label: "body", confidence: 0.30 }];
 
       store.updateDetectionImage(jobId, "a.png", "completed", faceBoxes, bodyBoxes);
 
@@ -265,8 +265,8 @@ describe("detect-store", () => {
     it("includes faceBoxes and bodyBoxes for completed images", () => {
       const jobId = store.createDetectionJob(["a.png"], "http://x", "m");
 
-      const faceBoxes = [{ bbox_2d: [100, 200, 300, 400] as [number, number, number, number], label: "face" }];
-      const bodyBoxes = [{ bbox_2d: [50, 100, 950, 900] as [number, number, number, number], label: "body" }];
+      const faceBoxes = [{ bbox_2d: [100, 200, 300, 400] as [number, number, number, number], label: "face", confidence: 0.85 }];
+      const bodyBoxes = [{ bbox_2d: [50, 100, 950, 900] as [number, number, number, number], label: "body", confidence: 0.30 }];
 
       store.updateDetectionImage(jobId, "a.png", "completed", faceBoxes, bodyBoxes);
 

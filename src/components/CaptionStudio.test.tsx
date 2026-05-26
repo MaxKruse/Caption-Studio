@@ -74,12 +74,12 @@ describe("CaptionStudio rendering", () => {
     expect(labels).toContain("Caption Type");
   });
 
-  it("renders the trigger word input (default caption type needs trigger)", () => {
+  it("renders the subject name input (default caption type needs name)", () => {
     render(<CaptionStudio />);
     const labels = Array.from(document.querySelectorAll("label")).map(
       (el) => el.textContent
     );
-    expect(labels.some((l) => l.includes("Trigger Word"))).toBe(true);
+    expect(labels.some((l) => l.includes("Subject Name"))).toBe(true);
   });
 
   it("renders the parallel requests selector", () => {
@@ -153,11 +153,11 @@ describe("API Configuration", () => {
     expect(input?.value).toBe("http://localhost:8080");
   });
 
-  it("renders default system prompt", () => {
+  it("renders default system prompt (name type, outputStyle none)", () => {
     render(<CaptionStudio />);
-    expect(
-      screen.getByText(/expert character image captioning assistant/)
-    ).toBeDefined();
+    const textareas = document.querySelectorAll("textarea");
+    const systemPromptValue = textareas[0]?.value;
+    expect(systemPromptValue).toContain("provided as a prefix");
   });
 });
 
@@ -273,26 +273,18 @@ describe("Default prompt text", () => {
     vi.stubGlobal("fetch", vi.fn());
   });
 
-  it("system prompt mentions watermarks", () => {
+  it("system prompt is the prefix-only prompt", () => {
     render(<CaptionStudio />);
-    expect(
-      screen.getByText(/watermarks/)
-    ).toBeDefined();
+    const textareas = document.querySelectorAll("textarea");
+    const systemPromptValue = textareas[0]?.value;
+    expect(systemPromptValue).toContain("captioning assistant");
   });
 
-  it("system prompt mentions ignoring text", () => {
+  it("user prompt textarea is empty for name type", () => {
     render(<CaptionStudio />);
-    expect(
-      screen.getByText(/Ignore text/)
-    ).toBeDefined();
-  });
-
-  it("user prompt mentions character", () => {
-    render(<CaptionStudio />);
-    // The user prompt for generic_with_trigger mentions character
     const textareas = document.querySelectorAll("textarea");
     const userPromptValue = textareas[1]?.value;
-    expect(userPromptValue).toContain("character");
+    expect(userPromptValue).toBe("");
   });
 });
 
