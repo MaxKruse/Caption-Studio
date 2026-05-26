@@ -62,6 +62,14 @@ export default function CaptionStudio() {
     showToast: config.showToast,
   });
 
+  // -- Sync ruleset into crop detection hook --
+  const cropSetRuleset = cropDetection.setRuleset;
+  useEffect(() => {
+    if (cropRuleset) {
+      cropSetRuleset(cropRuleset);
+    }
+  }, [cropRuleset, cropSetRuleset]);
+
   // -- Detection state --
   const [isDetecting, setIsDetecting] = useState(false);
   const [detectionError, setDetectionError] = useState<string | null>(null);
