@@ -168,11 +168,24 @@ describe("detect-store", () => {
       expect(store.isDetectionDone(jobId)).toBe(true);
     });
 
-    it("returns true with mixed completed and failed", () => {
+    it("returns false when images are failed (needs retry)", () => {
       const jobId = store.createDetectionJob(["a.png", "b.jpg"], "http://x", "m");
 
       store.updateDetectionImage(jobId, "a.png", "completed", [], []);
       store.updateDetectionImage(jobId, "b.jpg", "failed", [], [], "err");
+
+      // Failed images (retryCount=0) need retry — not done yet
+      expect(store.isDetectionDone(jobId)).toBe(false);
+    });
+
+    it("returns true with mixed completed and skipped", () => {
+      const jobId = store.createDetectionJob(["a.png", "b.jpg"], "http://x", "m");
+
+      store.updateDetectionImage(jobId, "a.png", "completed", [], []);
+      const entry = store.getDetectionJob(jobId)!.images.get("b.jpg");
+      entry!.status = "skipped";
+      entry!.retryCount = 1;
+      entry!.error = "Detection failed permanently";
 
       expect(store.isDetectionDone(jobId)).toBe(true);
     });
@@ -192,6 +205,7 @@ describe("detect-store", () => {
         processing: 0,
         completed: 0,
         failed: 0,
+        skipped: 0,
       });
     });
 
@@ -272,6 +286,70 @@ describe("detect-store", () => {
       const statuses = store.buildDetectionStatusMap(job);
 
       expect(statuses["a.png"].error).toBe("API timeout");
+    });
+
+    it("includes retryCount in status map", () => {
+      const jobId = store.createDetectionJob(["a.png"], "http://x", "m");
+
+      store.updateDetectionImage(jobId, "a.png", "failed", [], [], "retrying");
+      const entry = store.getDetectionJob(jobId)!.images.get("a.png");
+      entry!.retryCount = 1;
+
+      const job = store.getDetectionJob(jobId)!;
+      const statuses = store.buildDetectionStatusMap(job);
+
+      expect(statuses["a.png"].retryCount).toBe(1);
+    });
+  });
+
+  describe("retry queue", () => {
+    it("adds and retrieves files from retry queue", () => {
+      const mockFile = { name: "test.png" } as File;
+      const jobId = store.createDetectionJob(["test.png"], "http://x", "m");
+
+      store.addToRetryQueue(jobId, mockFile);
+      const queue = store.getRetryQueue(jobId);
+
+      expect(queue).toBeDefined();
+      expect(queue!.has("test.png")).toBe(true);
+      store.deleteDetectionJob(jobId);
+    });
+
+    it("returns undefined for nonexistent retry queue", () => {
+      expect(store.getRetryQueue("nonexistent")).toBeUndefined();
+    });
+
+    it("cleanupJob removes job and retry queue", () => {
+      const mockFile = { name: "test.png" } as File;
+      const jobId = store.createDetectionJob(["test.png"], "http://x", "m");
+      store.addToRetryQueue(jobId, mockFile);
+
+      store.cleanupJob(jobId);
+
+      expect(store.getDetectionJob(jobId)).toBeUndefined();
+      expect(store.getRetryQueue(jobId)).toBeUndefined();
+    });
+  });
+
+  describe("retry tracking", () => {
+    it("new entries start with retryCount 0", () => {
+      const jobId = store.createDetectionJob(["a.png"], "http://x", "m");
+      const entry = store.getDetectionJob(jobId)!.images.get("a.png");
+      expect(entry!.retryCount).toBe(0);
+    });
+
+    it("isDetectionDone returns false for failed with retryCount 0", () => {
+      const jobId = store.createDetectionJob(["a.png"], "http://x", "m");
+      store.updateDetectionImage(jobId, "a.png", "failed", [], [], "err");
+      expect(store.isDetectionDone(jobId)).toBe(false);
+    });
+
+    it("isDetectionDone returns true for skipped with retryCount 1", () => {
+      const jobId = store.createDetectionJob(["a.png"], "http://x", "m");
+      const entry = store.getDetectionJob(jobId)!.images.get("a.png");
+      entry!.status = "skipped";
+      entry!.retryCount = 1;
+      expect(store.isDetectionDone(jobId)).toBe(true);
     });
   });
 });

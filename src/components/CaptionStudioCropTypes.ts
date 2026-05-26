@@ -102,15 +102,17 @@ export interface DetectionProgress {
   processing: number;
   completed: number;
   failed: number;
+  skipped?: number;
   done?: boolean;
 }
 
 /** Per-image detection status from SSE stream. */
 export type DetectionImageStatus = {
-  status: "queued" | "processing" | "completed" | "failed";
+  status: "queued" | "processing" | "completed" | "failed" | "skipped";
   error?: string;
   faceBoxes?: BoundingBox[];
   bodyBoxes?: BoundingBox[];
+  retryCount?: number;
 };
 
 /** SSE handlers returned by the hook for attaching to an EventSource. */
@@ -136,6 +138,8 @@ export interface UseCropDetectionReturn {
   detectionProgress: DetectionProgress;
   /** Per-image detection statuses from SSE (name -> status). */
   detectionStatuses: Record<string, DetectionImageStatus>;
+  /** List of image names that were skipped due to failed detection. */
+  skippedImages: string[];
   /** Selected image index for editing. */
   selectedImageIndex: number;
   /** Set the selected image index. */

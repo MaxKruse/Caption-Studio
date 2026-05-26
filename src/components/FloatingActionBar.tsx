@@ -140,8 +140,13 @@ export function FloatingActionBar({
                   <span className="space-x-2 truncate">
                     <span>{detectionProgress.completed} detected</span>
                     {detectionProgress.failed > 0 && (
-                      <span className="text-zinc-400">
-                        &middot; {detectionProgress.failed} failed
+                      <span className="text-amber-600">
+                        &middot; {detectionProgress.failed} retrying
+                      </span>
+                    )}
+                    {(detectionProgress.skipped ?? 0) > 0 && (
+                      <span className="text-red-500">
+                        &middot; {detectionProgress.skipped} skipped
                       </span>
                     )}
                     {detectionProgress.processing > 0 && (
@@ -204,9 +209,11 @@ export function FloatingActionBar({
                     ? "bg-zinc-700 text-zinc-100"
                     : status?.status === "processing"
                       ? "bg-zinc-400 text-zinc-900 animate-pulse"
-                      : status?.status === "failed"
-                        ? "bg-red-500 text-white"
-                        : "bg-zinc-200 text-zinc-500";
+                      : status?.status === "skipped"
+                        ? "bg-red-600 text-white"
+                        : status?.status === "failed"
+                          ? "bg-amber-500 text-white"
+                          : "bg-zinc-200 text-zinc-500";
 
                   return (
                     <div
@@ -219,9 +226,11 @@ export function FloatingActionBar({
                           ? "bg-zinc-700"
                           : status?.status === "processing"
                             ? "bg-zinc-400 animate-pulse"
-                            : status?.status === "failed"
-                              ? "bg-red-500"
-                              : "bg-zinc-300"
+                            : status?.status === "skipped"
+                              ? "bg-red-600"
+                              : status?.status === "failed"
+                                ? "bg-amber-500"
+                                : "bg-zinc-300"
                       }`} />
                       <span className="truncate max-w-[120px] text-zinc-600">{img.name}</span>
                       <span className={`shrink-0 px-1 py-0.5 rounded text-[8px] uppercase tracking-wide ${statusStyle}`}>

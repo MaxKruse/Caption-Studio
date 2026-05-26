@@ -149,7 +149,7 @@ export default function CaptionStudio() {
         if (parsed.done) {
           es.close();
 
-          type SseStatus = { status: string; faceBoxes?: DetectionResult["faceBoxes"]; bodyBoxes?: DetectionResult["bodyBoxes"]; error?: string };
+          type SseStatus = { status: string; faceBoxes?: DetectionResult["faceBoxes"]; bodyBoxes?: DetectionResult["bodyBoxes"]; error?: string; retryCount?: number };
           const statuses = (parsed.statuses ?? {}) as Record<string, SseStatus | undefined>;
 
           const results: DetectionResult[] = imageUpload.images.map((img, i) => {
@@ -165,13 +165,36 @@ export default function CaptionStudio() {
 
           cropDetection.setDetectionResults(results);
 
-          const hasErrors = results.some((r) => r.error);
-          if (hasErrors) {
-            setDetectionError(`${results.filter((r) => r.error).length} image(s) failed detection`);
+          // Auto-assign crops based on ruleset (skips failed images)
+          cropDetection.autoAssignCrops();
+
+          // Ensure selected image index points to a valid (non-skipped) image
+          const validCrops = cropDetection.getFinalCrops();
+          if (validCrops.length > 0) {
+            cropDetection.setSelectedImageIndex(validCrops[0].imageIndex);
           }
 
-          // Auto-assign crops based on ruleset
-          cropDetection.autoAssignCrops();
+          // Check if we have any crops to work with
+          const hasValidCrops = validCrops.length > 0;
+
+          if (!hasValidCrops) {
+            // All images failed — go back to upload
+            setDetectionError(
+              `All ${imageUpload.images.length} image(s) failed detection. Please try different images or a different model.`
+            );
+            setIsDetecting(false);
+            setWorkflowStep("upload");
+            config.showToast("All images failed detection — please try again");
+            return;
+          }
+
+          // Check for skipped images and warn
+          const skippedCount = results.filter((r) => r.error && (r.error.includes("permanently") || r.error.includes("skipped"))).length;
+          if (skippedCount > 0) {
+            setDetectionError(
+              `${skippedCount} image(s) skipped after failed detection and will be omitted from crops. ${hasValidCrops ? "Proceeding with remaining images." : ""}`
+            );
+          }
 
           // Move to crop step
           setWorkflowStep("crop");
@@ -222,6 +245,20 @@ export default function CaptionStudio() {
   const handleSelectCropImage = useCallback((index: number) => {
     cropDetection.setSelectedImageIndex(index);
   }, [cropDetection]);
+
+  // Ensure selected image index stays valid when crops change (e.g., after auto-assign)
+  useEffect(() => {
+    if (workflowStep !== "crop") return;
+    const validCrops = cropDetection.getFinalCrops();
+    if (validCrops.length === 0) return;
+
+    const current = cropDetection.selectedImageIndex;
+    const hasCrop = validCrops.some((c) => c.imageIndex === current);
+    if (!hasCrop) {
+      // Current selection has no crop — select first valid crop
+      cropDetection.setSelectedImageIndex(validCrops[0].imageIndex);
+    }
+  }, [workflowStep, cropDetection]);
 
   // -- Cropped previews map (image name -> cropped preview URL) --
   const [croppedPreviews, setCroppedPreviews] = useState<Record<string, string>>({});
@@ -281,27 +318,33 @@ export default function CaptionStudio() {
     onNavigate: navigatePreview,
   });
 
-  // -- Keyboard navigation for crop editor --
+  // -- Keyboard navigation for crop editor (skips skipped images) --
   useEffect(() => {
     if (workflowStep !== "crop") return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const images = imageUpload.images;
-      if (images.length === 0) return;
+      const crops = cropDetection.getFinalCrops();
+      if (images.length === 0 || crops.length === 0) return;
+
+      // Build list of valid (non-skipped) image indices
+      const validIndices = crops.map((c) => c.imageIndex);
+      if (validIndices.length === 0) return;
 
       const current = cropDetection.selectedImageIndex;
+      const currentValidIndex = validIndices.indexOf(current);
+      const currentIndexInValid = currentValidIndex >= 0 ? currentValidIndex : 0;
 
       if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
         e.preventDefault();
-        const next = current > 0 ? current - 1 : images.length - 1;
-        cropDetection.setSelectedImageIndex(next);
+        const nextValidIndex = currentIndexInValid > 0 ? currentIndexInValid - 1 : validIndices.length - 1;
+        cropDetection.setSelectedImageIndex(validIndices[nextValidIndex]);
       } else if (e.key === "ArrowRight" || e.key === "ArrowDown") {
         e.preventDefault();
-        const next = current < images.length - 1 ? current + 1 : 0;
-        cropDetection.setSelectedImageIndex(next);
+        const nextValidIndex = currentIndexInValid < validIndices.length - 1 ? currentIndexInValid + 1 : 0;
+        cropDetection.setSelectedImageIndex(validIndices[nextValidIndex]);
       } else if (e.key === " ") {
         e.preventDefault();
-        const crops = cropDetection.getFinalCrops();
         const crop = crops.find((c) => c.imageIndex === current);
         if (crop) {
           // Toggle type AND snap to the best bounding box for the new type
@@ -512,6 +555,7 @@ export default function CaptionStudio() {
           onSelectImage={handleSelectCropImage}
           selectedIndex={cropDetection.selectedImageIndex}
           disabled={captionJob.isProcessing}
+          skippedImageNames={cropDetection.skippedImages}
         />
       )}
 

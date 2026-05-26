@@ -9,10 +9,12 @@
 
 export interface DetectionImageEntry {
   name: string;
-  status: "queued" | "processing" | "completed" | "failed";
+  status: "queued" | "processing" | "completed" | "failed" | "skipped";
   faceBoxes?: Array<{ bbox_2d: [number, number, number, number]; label: string }>;
   bodyBoxes?: Array<{ bbox_2d: [number, number, number, number]; label: string }>;
   error?: string;
+  /** Number of retry attempts made (0 = not retried yet). */
+  retryCount: number;
 }
 
 export interface DetectionJob {
@@ -25,6 +27,9 @@ export interface DetectionJob {
 
 /** Global map of active detection jobs. */
 const detectionJobs = new Map<string, DetectionJob>();
+
+/** Queue of files waiting for retry (filename -> file). */
+const retryQueues = new Map<string, Map<string, File>>();
 
 /** Generate a short random job ID. */
 function generateId(): string {
@@ -45,7 +50,7 @@ export function createDetectionJob(
   const imageMap = new Map<string, DetectionImageEntry>();
 
   for (const name of imageNames) {
-    imageMap.set(name, { name, status: "queued" });
+    imageMap.set(name, { name, status: "queued", retryCount: 0 });
   }
 
   detectionJobs.set(id, {
@@ -107,6 +112,13 @@ export function isDetectionDone(jobId: string): boolean {
       return false;
     }
   }
+  // Check if there are any failed images that haven't been retried yet
+  const hasUnretriedFailed = Array.from(job.images.values()).some(
+    (entry) => entry.status === "failed" && entry.retryCount === 0
+  );
+  if (hasUnretriedFailed) {
+    return false;
+  }
   return true;
 }
 
@@ -117,11 +129,12 @@ export function getDetectionProgress(jobId: string): {
   processing: number;
   completed: number;
   failed: number;
+  skipped: number;
 } {
   const job = detectionJobs.get(jobId);
-  if (!job) return { total: 0, queued: 0, processing: 0, completed: 0, failed: 0 };
+  if (!job) return { total: 0, queued: 0, processing: 0, completed: 0, failed: 0, skipped: 0 };
 
-  let queued = 0, processing = 0, completed = 0, failed = 0;
+  let queued = 0, processing = 0, completed = 0, failed = 0, skipped = 0;
 
   for (const entry of job.images.values()) {
     switch (entry.status) {
@@ -129,6 +142,7 @@ export function getDetectionProgress(jobId: string): {
       case "processing": processing++; break;
       case "completed": completed++; break;
       case "failed": failed++; break;
+      case "skipped": skipped++; break;
     }
   }
 
@@ -138,14 +152,36 @@ export function getDetectionProgress(jobId: string): {
     processing,
     completed,
     failed,
+    skipped,
   };
+}
+
+/** Get files waiting for retry for a job. */
+export function getRetryQueue(jobId: string): Map<string, File> | undefined {
+  return retryQueues.get(jobId);
+}
+
+/** Add a file to the retry queue for a job. */
+export function addToRetryQueue(jobId: string, file: File): void {
+  let queue = retryQueues.get(jobId);
+  if (!queue) {
+    queue = new Map();
+    retryQueues.set(jobId, queue);
+  }
+  queue.set(file.name, file);
+}
+
+/** Remove all retry queues for a job. */
+export function cleanupJob(jobId: string): void {
+  deleteDetectionJob(jobId);
+  retryQueues.delete(jobId);
 }
 
 /** Build a per-image status map for API responses. */
 export function buildDetectionStatusMap(
   job: DetectionJob
-): Record<string, { status: string; faceBoxes?: unknown[]; bodyBoxes?: unknown[]; error?: string }> {
-  const statuses: Record<string, { status: string; faceBoxes?: unknown[]; bodyBoxes?: unknown[]; error?: string }> = {};
+): Record<string, { status: string; faceBoxes?: unknown[]; bodyBoxes?: unknown[]; error?: string; retryCount?: number }> {
+  const statuses: Record<string, { status: string; faceBoxes?: unknown[]; bodyBoxes?: unknown[]; error?: string; retryCount?: number }> = {};
 
   for (const [, entry] of job.images.entries()) {
     statuses[entry.name] = {
@@ -153,6 +189,7 @@ export function buildDetectionStatusMap(
       faceBoxes: entry.faceBoxes,
       bodyBoxes: entry.bodyBoxes,
       error: entry.error,
+      retryCount: entry.retryCount,
     };
   }
 

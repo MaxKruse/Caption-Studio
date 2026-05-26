@@ -15,11 +15,13 @@ import {
 import {
   createDetectionJob,
   getDetectionJob,
-  deleteDetectionJob,
+  cleanupJob,
   updateDetectionImage,
   isDetectionDone,
   getDetectionProgress,
   buildDetectionStatusMap,
+  getRetryQueue,
+  addToRetryQueue,
 } from "@/lib/detect-store";
 
 // ---------------------------------------------------------------------------
@@ -126,7 +128,7 @@ export async function GET(request: NextRequest) {
       controller?.close();
 
       // Cleanup job from memory
-      deleteDetectionJob(jobId);
+      cleanupJob(jobId);
     }
   }, 300);
 
@@ -148,7 +150,7 @@ export async function GET(request: NextRequest) {
 // Async detection processor
 // ---------------------------------------------------------------------------
 
-/** Process all images for face + body detection (parallel worker pool). */
+/** Process all images for face + body detection (parallel worker pool with retry). */
 async function processDetectionJob(
   jobId: string,
   serverUrl: string,
@@ -156,82 +158,144 @@ async function processDetectionJob(
   imageFiles: File[]
 ): Promise<void> {
   const baseUrl = normalizeServerUrl(serverUrl);
-  const queue: File[] = [...imageFiles];
+  const primaryQueue: File[] = [...imageFiles];
+  const retryCount = new Map<string, number>();
 
-  async function detectOne(): Promise<void> {
-    while (queue.length > 0) {
-      const file = queue.shift()!;
+  /** Attempt detection for a single image. Returns true if successful. */
+  async function attemptDetection(file: File): Promise<boolean> {
+    const attempts = retryCount.get(file.name) ?? 0;
 
-      updateDetectionImage(jobId, file.name, "processing");
+    try {
+      const imageBuffer = Buffer.from(await file.arrayBuffer());
+      const { buffer, mimeType } = await prepareForDetection(imageBuffer);
+      const base64 = buffer.toString("base64");
 
-      try {
-        const imageBuffer = Buffer.from(await file.arrayBuffer());
-        // Scale down for detection — bbox coords are 1000-normalized so they
-        // apply correctly to the original full-resolution image
-        const { buffer, mimeType } = await prepareForDetection(imageBuffer);
-        const base64 = buffer.toString("base64");
-
-        const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model,
-            messages: [
-              {
-                role: "system",
-                content: DETECTION_SYSTEM_PROMPT,
-              },
-              {
-                role: "user",
-                content: [
-                  {
-                    type: "image_url",
-                    image_url: {
-                      url: `data:${mimeType};base64,${base64}`,
-                    },
+      const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: "system",
+              content: DETECTION_SYSTEM_PROMPT,
+            },
+            {
+              role: "user",
+              content: [
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: `data:${mimeType};base64,${base64}`,
                   },
-                  {
-                    type: "text",
-                    text: DETECTION_USER_PROMPT,
-                  },
-                ],
-              },
-            ],
-          }),
-          cache: "no-store",
-          signal: AbortSignal.timeout(180_000), // 3 min timeout
-        });
+                },
+                {
+                  type: "text",
+                  text: DETECTION_USER_PROMPT,
+                },
+              ],
+            },
+          ],
+        }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(180_000), // 3 min timeout
+      });
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`API ${response.status}: ${errorText}`);
-        }
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API ${response.status}: ${errorText}`);
+      }
 
-        const data = await response.json();
-        const content = (data?.choices?.[0]?.message?.content ?? "").trim();
-        const { faceBoxes, bodyBoxes } = parseDetectionResponse(content);
+      const data = await response.json();
+      const content = (data?.choices?.[0]?.message?.content ?? "").trim();
+      const { faceBoxes, bodyBoxes } = parseDetectionResponse(content);
 
+      // Check if detection found anything useful
+      const hasAnyDetection = faceBoxes.length > 0 || bodyBoxes.length > 0;
+
+      if (!hasAnyDetection && attempts === 0) {
+        // No face or body detected — retry once
+        retryCount.set(file.name, 1);
         updateDetectionImage(
           jobId,
           file.name,
-          "completed",
-          faceBoxes,
-          bodyBoxes
+          "failed",
+          [],
+          [],
+          `No face or body detected — retrying (attempt 1/1)`
         );
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        updateDetectionImage(jobId, file.name, "failed", [], [], message);
+        addToRetryQueue(jobId, file);
+        return false;
       }
+
+      updateDetectionImage(
+        jobId,
+        file.name,
+        "completed",
+        faceBoxes,
+        bodyBoxes
+      );
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      if (attempts === 0) {
+        // First attempt failed — retry once
+        retryCount.set(file.name, 1);
+        updateDetectionImage(
+          jobId,
+          file.name,
+          "failed",
+          [],
+          [],
+          `Detection failed — retrying (attempt 1/1): ${message}`
+        );
+        addToRetryQueue(jobId, file);
+        return false;
+      }
+
+      // Second attempt also failed — skip this image
+      updateDetectionImage(
+        jobId,
+        file.name,
+        "skipped",
+        [],
+        [],
+        `Detection failed permanently after retry: ${message}`
+      );
+      return false;
     }
   }
 
-  // Launch up to DETECTION_CONCURRENCY workers
+  /** Worker that processes images from a queue. */
+  async function worker(queue: File[]): Promise<void> {
+    while (queue.length > 0) {
+      const file = queue.shift()!;
+      updateDetectionImage(jobId, file.name, "processing");
+      await attemptDetection(file);
+    }
+  }
+
+  // Launch workers for primary queue
   await Promise.all(
     Array.from(
-      { length: Math.min(DETECTION_CONCURRENCY, imageFiles.length) },
-      () => detectOne()
+      { length: Math.min(DETECTION_CONCURRENCY, primaryQueue.length) },
+      () => worker(primaryQueue)
     )
   );
+
+  // Process retry queue
+  const retryQueue = getRetryQueue(jobId);
+  if (retryQueue && retryQueue.size > 0) {
+    const retryFiles = Array.from(retryQueue.values());
+    await Promise.all(
+      Array.from(
+        { length: Math.min(DETECTION_CONCURRENCY, retryFiles.length) },
+        () => worker(retryFiles)
+      )
+    );
+    retryQueue.clear();
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -186,6 +186,7 @@ export function useCropDetection({
     failed: 0,
   });
   const [detectionStatuses, setDetectionStatuses] = useState<Record<string, DetectionImageStatus>>({});
+  const [skippedImages, setSkippedImages] = useState<string[]>([]);
 
   // -----------------------------------------------------------------------
   // Set ruleset
@@ -198,40 +199,73 @@ export function useCropDetection({
   // Set detection results
   // -----------------------------------------------------------------------
   const setDetectionResults = useCallback((results: DetectionResult[]) => {
-    setState((prev) => ({
-      ...prev,
-      isDetecting: false,
-      detections: results,
-      detectionError: results.some((r) => r.error)
-        ? `${results.filter((r) => r.error).length} image(s) failed detection`
-        : null,
-    }));
+    // Track skipped images
+    const skipped = results
+      .filter((r) => r.error && (r.error.includes("permanently") || r.error.includes("skipped")))
+      .map((r) => r.imageName);
+    setSkippedImages(skipped);
+
+    setState((prev) => {
+      const hasErrors = results.some((r) => r.error);
+      const hasSkipped = skipped.length > 0;
+      let detectionError: string | null = null;
+
+      if (hasSkipped) {
+        detectionError = `${skipped.length} image(s) skipped after failed detection (will be omitted from crops): ${skipped.join(", ")}`;
+      } else if (hasErrors) {
+        detectionError = `${results.filter((r) => r.error).length} image(s) had detection issues`;
+      }
+
+      return {
+        ...prev,
+        isDetecting: false,
+        detections: results,
+        detectionError,
+      };
+    });
   }, []);
 
   // -----------------------------------------------------------------------
-  // Auto-assign crops
+  // Auto-assign crops (skips images that failed detection)
   // -----------------------------------------------------------------------
   const autoAssignCrops = useCallback(() => {
     setState((prev) => {
       if (prev.detections.length === 0) return prev;
       if (!prev.ruleset) return prev;
 
-      const cropTypes = allocateCropTypes(prev.detections, prev.ruleset.portraitRatio);
+      // Filter out detections that have errors (failed/skipped)
+      const validDetections = prev.detections.filter((d) => !d.error);
+      if (validDetections.length === 0) return prev;
 
-      const crops: ImageCrop[] = prev.detections.map((detection, i) => {
-        const type = cropTypes[i];
+      const cropTypes = allocateCropTypes(validDetections, prev.ruleset.portraitRatio);
+
+      // Build a set of skipped image names for quick lookup
+      const skippedNames = new Set(
+        prev.detections.filter((d) => d.error).map((d) => d.imageName)
+      );
+
+      // Build crops only for valid (non-skipped) detections
+      const crops: ImageCrop[] = [];
+      let validIndex = 0;
+
+      for (let i = 0; i < prev.detections.length; i++) {
+        const detection = prev.detections[i];
+        if (skippedNames.has(detection.imageName)) continue;
+
+        const type = cropTypes[validIndex];
         const padding = type === "face" ? FACE_CROP_PADDING : BODY_CROP_PADDING;
         const boxes = type === "face" ? detection.faceBoxes : detection.bodyBoxes;
         const cropRect = buildCropRectFromBestBox(boxes, padding);
 
-        return {
-          imageIndex: i,
-          imageName: imageNames[i] ?? detection.imageName ?? `image_${i}`,
+        crops.push({
+          imageIndex: detection.imageIndex,
+          imageName: imageNames[detection.imageIndex] ?? detection.imageName ?? `image_${detection.imageIndex}`,
           cropType: type,
           cropRect: cropRect ?? buildDefaultCrop(),
           autoDetected: cropRect !== null,
-        };
-      });
+        });
+        validIndex++;
+      }
 
       return { ...prev, crops };
     });
@@ -327,6 +361,7 @@ export function useCropDetection({
     setSelectedImageIndex(0);
     setDetectionProgress({ total: 0, queued: 0, processing: 0, completed: 0, failed: 0 });
     setDetectionStatuses({});
+    setSkippedImages([]);
   }, []);
 
   // -----------------------------------------------------------------------
@@ -379,6 +414,7 @@ export function useCropDetection({
     state,
     detectionProgress,
     detectionStatuses,
+    skippedImages,
     selectedImageIndex,
     setSelectedImageIndex,
     setRuleset,

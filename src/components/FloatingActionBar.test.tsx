@@ -117,8 +117,27 @@ describe("FloatingActionBar detect step", () => {
       />
     );
     expect(screen.getByText("2 detected")).toBeDefined();
-    expect(screen.getByText(/1 failed/)).toBeDefined();
+    expect(screen.getByText(/1 retrying/)).toBeDefined();
     expect(screen.getByRole("button", { name: "Abort detection" })).toBeDefined();
+  });
+
+  it("shows skipped count when images are permanently skipped", () => {
+    render(
+      <FloatingActionBar
+        step="detect"
+        imagesCount={5}
+        detectionProgress={{
+          total: 5,
+          queued: 0,
+          processing: 0,
+          completed: 3,
+          failed: 0,
+          skipped: 2,
+        }}
+        onAbortDetection={() => {}}
+      />
+    );
+    expect(screen.getByText(/2 skipped/)).toBeDefined();
   });
 
   it("shows progress percentage", () => {

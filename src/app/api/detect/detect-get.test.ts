@@ -160,7 +160,7 @@ describe("GET /api/detect", () => {
     store.deleteDetectionJob(jobId);
   });
 
-  it("isDetectionDone returns true with mixed completed and failed", async () => {
+  it("isDetectionDone returns false with failed images (needs retry)", async () => {
     const store = await import("@/lib/detect-store");
     const jobId = store.createDetectionJob(
       ["a.png", "b.jpg"],
@@ -170,6 +170,26 @@ describe("GET /api/detect", () => {
 
     store.updateDetectionImage(jobId, "a.png", "completed", [], []);
     store.updateDetectionImage(jobId, "b.jpg", "failed", [], [], "API error");
+
+    // Failed images (retryCount=0) need retry — not done yet
+    expect(store.isDetectionDone(jobId)).toBe(false);
+
+    store.deleteDetectionJob(jobId);
+  });
+
+  it("isDetectionDone returns true with mixed completed and skipped", async () => {
+    const store = await import("@/lib/detect-store");
+    const jobId = store.createDetectionJob(
+      ["a.png", "b.jpg"],
+      "http://localhost:8080",
+      "gpt-4o"
+    );
+
+    store.updateDetectionImage(jobId, "a.png", "completed", [], []);
+    const entry = store.getDetectionJob(jobId)!.images.get("b.jpg");
+    entry!.status = "skipped";
+    entry!.retryCount = 1;
+    entry!.error = "Detection failed permanently";
 
     expect(store.isDetectionDone(jobId)).toBe(true);
 
