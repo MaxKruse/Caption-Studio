@@ -54,7 +54,7 @@ export function CropEditor({
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
 
-  // Measure container
+  // Measure container — re-measure when image loads (scaledPreviewUrl changes)
   useEffect(() => {
     const updateSize = () => {
       if (containerRef.current) {
@@ -62,10 +62,16 @@ export function CropEditor({
         setContainerSize({ width: rect.width, height: rect.height });
       }
     };
-    updateSize();
+    // Measure after a frame to ensure layout is complete
+    const timer = requestAnimationFrame(() => {
+      updateSize();
+    });
     window.addEventListener("resize", updateSize);
-    return () => window.removeEventListener("resize", updateSize);
-  }, []);
+    return () => {
+      cancelAnimationFrame(timer);
+      window.removeEventListener("resize", updateSize);
+    };
+  }, [scaledPreviewUrl]);
 
   // Current image and crop
   const currentImage = images[selectedIndex];

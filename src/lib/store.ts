@@ -300,8 +300,9 @@ export function buildStatusMap(
     }
   > = {};
 
-  for (const [filename, entry] of job.images.entries()) {
-    statuses[filename] = {
+  for (const [, entry] of job.images.entries()) {
+    // Use original filename as key so frontend can match by uploaded image name
+    statuses[entry.originalFileName] = {
       status: entry.status,
       caption: entry.caption,
       error: entry.error,

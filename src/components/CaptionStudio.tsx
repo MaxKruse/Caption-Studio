@@ -10,6 +10,7 @@ import { AppHeader } from "./AppHeader";
 import { ConfigSection } from "./ConfigSection";
 import { CropEditor } from "./CropEditor";
 import { FailedImagesLog } from "./FailedImagesLog";
+import { ResultsGallery } from "./ResultsGallery";
 import { FloatingActionBar } from "./FloatingActionBar";
 import { ImagePreviewModal } from "./ImagePreviewModal";
 import { JobErrorMessage } from "./JobErrorMessage";
@@ -491,25 +492,12 @@ export default function CaptionStudio() {
         />
       )}
 
-      {/* Step 3+: Gallery after captioning */}
+      {/* Step 3+: Results gallery after captioning */}
       {showGallery && (
-        <UploadSection
+        <ResultsGallery
           images={imageUpload.images}
           imageStatuses={mergedImageStatuses}
-          dragOver={imageUpload.dragOver}
-          galleryOpen={true}
-          onGalleryToggle={() => {}}
-          clearAllConfirm={false}
-          onClearAllToggle={() => {}}
-          isProcessing={captionJob.isProcessing}
-          isUploading={false}
-          onDragOver={() => {}}
-          onDragLeave={() => {}}
-          onDrop={() => {}}
-          onFileChange={() => {}}
-          onRemoveImage={() => {}}
           onPreview={openPreview}
-          fileInputRef={imageUpload.fileInputRef}
         />
       )}
 
