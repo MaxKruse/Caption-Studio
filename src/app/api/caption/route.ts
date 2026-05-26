@@ -17,6 +17,7 @@ import {
   type ImageEntry,
 } from "@/lib/store";
 import { prepareForApi, type CropRect } from "@/lib/image-utils";
+import type { DualCropData } from "@/lib/store";
 import { normalizeServerUrl } from "@/lib/url-utils";
 import { resolveCaptionTypeId } from "@/components/CaptionStudioConstants";
 
@@ -276,6 +277,15 @@ export async function POST(request: NextRequest) {
       )
     : undefined;
 
+  // Check if cropData is dual format ({ face, body }) or legacy format ({ cropType, cropRect })
+  const isDualCrop = config.cropData && Object.values(config.cropData).some(
+    (v) => "face" in v && "body" in v && !("cropType" in v)
+  );
+
+  const dualCropData = isDualCrop
+    ? config.cropData as unknown as Record<string, DualCropData>
+    : undefined;
+
   const jobId = await createJob(
     decodedImages,
     config.serverUrl,
@@ -286,7 +296,8 @@ export async function POST(request: NextRequest) {
     config.triggerWord || "",
     config.subjectName || "",
     Math.min(Math.max(Number(config.parallelRequests) || 4, 1), 8),
-    cropData
+    !isDualCrop ? cropData : undefined,
+    dualCropData
   );
 
   // Start async processing (fire and forget)

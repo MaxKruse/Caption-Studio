@@ -5,6 +5,8 @@ import type { ImageFile } from "./CaptionStudioTypes";
 import type { BoundingBox, CropRuleset, DetectionResult, ImageCrop } from "./CaptionStudioCropTypes";
 import { CropOverlay } from "./CropOverlay";
 
+type ActiveCropTarget = "face" | "body";
+
 // ---------------------------------------------------------------------------
 // CropEditor — main crop editing interface
 // ---------------------------------------------------------------------------
@@ -25,10 +27,11 @@ export function CropEditor({
   detections: DetectionResult[];
   detectionError: string | null;
   onAutoAssign: () => void;
-  onUpdateCrop: (imageIndex: number, partial: Partial<ImageCrop>) => void;
+  onUpdateCrop: (imageIndex: number, cropTarget: "face" | "body", rect: Partial<{ x: number; y: number; width: number; height: number }>) => void;
   disabled?: boolean;
 }) {
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [activeCropTarget, setActiveCropTarget] = useState<ActiveCropTarget>("face");
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   // Original image dimensions (from the actual file, not the thumbnail)
@@ -63,6 +66,9 @@ export function CropEditor({
   const currentImage = images[selectedIndex];
   const currentCrop = crops.find((c) => c.imageIndex === selectedIndex);
   const currentDetection = detections.find((d) => d.imageIndex === selectedIndex);
+  const activeRect = currentCrop
+    ? activeCropTarget === "face" ? currentCrop.faceCrop : currentCrop.bodyCrop
+    : null;
 
   // Build combined bounding boxes for overlay (face + body)
   const boundingBoxes: BoundingBox[] = [];
@@ -97,23 +103,22 @@ export function CropEditor({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentImage?.name, currentImage?.file]);
 
-  // Derived values
-  const portraitCrops = crops.filter((c) => c.cropType === "portrait").length;
-  const bodyCrops = crops.filter((c) => c.cropType === "body").length;
+  // Derived values — now every image has both crops
+  const totalImages = crops.length;
 
   // Handlers
   const handleCropChange = useCallback(
-    (partial: Partial<ImageCrop>) => {
-      onUpdateCrop(selectedIndex, partial);
+    (rect: Partial<{ x: number; y: number; width: number; height: number }>) => {
+      onUpdateCrop(selectedIndex, activeCropTarget, rect);
     },
-    [selectedIndex, onUpdateCrop]
+    [selectedIndex, activeCropTarget, onUpdateCrop]
   );
 
-  const handleCropTypeChange = useCallback(
-    (type: "portrait" | "body") => {
-      onUpdateCrop(selectedIndex, { cropType: type });
+  const handleActiveCropChange = useCallback(
+    (target: "face" | "body") => {
+      setActiveCropTarget(target);
     },
-    [selectedIndex, onUpdateCrop]
+    []
   );
 
   if (!currentImage) return null;
@@ -126,9 +131,9 @@ export function CropEditor({
           3
         </div>
         <h2 className="text-sm font-semibold text-zinc-900">Crop Images</h2>
-        {ruleset && (
+        {crops.length > 0 && (
           <span className="text-xs text-zinc-400 ml-auto">
-            {portraitCrops} portrait / {bodyCrops} body
+            {totalImages} images × 2 crops
           </span>
         )}
       </div>
@@ -165,7 +170,7 @@ export function CropEditor({
         )}
 
         {/* Main editor area */}
-        {crops.length > 0 && currentCrop && (
+        {crops.length > 0 && currentCrop && activeRect && (
           <div className="flex flex-col lg:flex-row gap-4">
             {/* Image with crop overlay */}
             <div
@@ -191,8 +196,9 @@ export function CropEditor({
                   imageHeight={originalSize.height}
                   containerWidth={containerSize.width}
                   containerHeight={containerSize.height}
+                  activeCrop={activeCropTarget}
                   onChange={handleCropChange}
-                  onCropTypeChange={handleCropTypeChange}
+                  onActiveCropChange={handleActiveCropChange}
                   disabled={disabled}
                 />
               )}
@@ -207,44 +213,55 @@ export function CropEditor({
                 </p>
                 <div className="flex gap-1.5">
                   <span className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded-full ${
-                    currentCrop.cropType === "portrait"
+                    activeCropTarget === "face"
                       ? "bg-blue-50 text-blue-700"
                       : "bg-purple-50 text-purple-700"
                   }`}>
-                    {currentCrop.cropType}
+                    editing: {activeCropTarget}
                   </span>
-                  {currentCrop.autoDetected && (
-                    <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-zinc-100 text-zinc-500">
-                      auto
-                    </span>
-                  )}
                 </div>
               </div>
 
-              {/* Crop resolution display */}
+              {/* Face crop resolution */}
               {originalSize.width > 0 && (
                 <div className="rounded-lg border border-zinc-200 p-3 space-y-1">
-                  <p className="text-[10px] font-medium text-zinc-400">Crop Resolution</p>
+                  <p className="text-[10px] font-medium text-zinc-400">Face Crop</p>
                   <p className="text-sm font-semibold text-zinc-700 font-mono">
-                    {Math.round((currentCrop.cropRect.width / 1000) * originalSize.width)}
+                    {Math.round((currentCrop.faceCrop.width / 1000) * originalSize.width)}
                     <span className="text-zinc-400 mx-1">&times;</span>
-                    {Math.round((currentCrop.cropRect.height / 1000) * originalSize.height)}
+                    {Math.round((currentCrop.faceCrop.height / 1000) * originalSize.height)}
                     <span className="text-[10px] font-medium text-zinc-400 ml-1">px</span>
                   </p>
-                  <p className="text-[10px] text-zinc-400">
-                    from {originalSize.width} &times; {originalSize.height}
-                  </p>
+                  {currentCrop.faceAutoDetected && (
+                    <span className="text-[9px] text-zinc-400">auto-detected</span>
+                  )}
                 </div>
               )}
 
-              {/* Crop coordinates display */}
+              {/* Body crop resolution */}
+              {originalSize.width > 0 && (
+                <div className="rounded-lg border border-zinc-200 p-3 space-y-1">
+                  <p className="text-[10px] font-medium text-zinc-400">Body Crop</p>
+                  <p className="text-sm font-semibold text-zinc-700 font-mono">
+                    {Math.round((currentCrop.bodyCrop.width / 1000) * originalSize.width)}
+                    <span className="text-zinc-400 mx-1">&times;</span>
+                    {Math.round((currentCrop.bodyCrop.height / 1000) * originalSize.height)}
+                    <span className="text-[10px] font-medium text-zinc-400 ml-1">px</span>
+                  </p>
+                  {currentCrop.bodyAutoDetected && (
+                    <span className="text-[9px] text-zinc-400">auto-detected</span>
+                  )}
+                </div>
+              )}
+
+              {/* Active crop coordinates */}
               <div className="rounded-lg border border-zinc-200 p-3 space-y-1">
-                <p className="text-[10px] font-medium text-zinc-400">Crop (normalized)</p>
+                <p className="text-[10px] font-medium text-zinc-400">{activeCropTarget === "face" ? "Face" : "Body"} (normalized)</p>
                 <p className="text-[10px] text-zinc-500 font-mono">
-                  x: {Math.round(currentCrop.cropRect.x)} y: {Math.round(currentCrop.cropRect.y)}
+                  x: {Math.round(activeRect.x)} y: {Math.round(activeRect.y)}
                 </p>
                 <p className="text-[10px] text-zinc-500 font-mono">
-                  w: {Math.round(currentCrop.cropRect.width)} h: {Math.round(currentCrop.cropRect.height)}
+                  w: {Math.round(activeRect.width)} h: {Math.round(activeRect.height)}
                 </p>
               </div>
 
@@ -284,13 +301,14 @@ export function CropEditor({
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={img.preview} alt={img.name} className="w-full h-full object-cover" />
                   {crop && (
-                    <span className={`absolute bottom-0 inset-x-0 text-[7px] text-center py-0.5 font-medium ${
-                      crop.cropType === "portrait"
-                        ? "bg-blue-500/80 text-white"
-                        : "bg-purple-500/80 text-white"
-                    }`}>
-                      {crop.cropType === "portrait" ? "P" : "B"}
-                    </span>
+                    <div className="absolute bottom-0 inset-x-0 flex">
+                      <span className="flex-1 text-[7px] text-center py-0.5 font-medium bg-blue-500/80 text-white">
+                        F
+                      </span>
+                      <span className="flex-1 text-[7px] text-center py-0.5 font-medium bg-purple-500/80 text-white">
+                        B
+                      </span>
+                    </div>
                   )}
                 </button>
               );

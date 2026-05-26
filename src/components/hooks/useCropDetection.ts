@@ -3,7 +3,6 @@ import { CROP_RULESETS } from "../CaptionStudioCropConstants";
 import type {
   BoundingBox,
   CropState,
-  CropType,
   DetectionProgress,
   DetectionResult,
   ImageCrop,
@@ -29,72 +28,47 @@ function createEmptyState(): CropState {
 // Auto-assignment logic
 // ---------------------------------------------------------------------------
 
+/** Default padding factor for body crops (tight fit). */
+const BODY_CROP_PADDING = 0.05;
+/** Extra padding for face crops — LLMs return tight face boxes, so expand significantly. */
+const FACE_CROP_PADDING = 0.25;
+
 /**
- * Auto-assign portrait/body crops based on ruleset and detection results.
- * Images with larger face bounding boxes get priority for portrait crops.
+ * Build a crop rectangle from the best bounding box of a given category.
  */
-function computeAutoAssignments(
-  imageCount: number,
-  portraitCount: number,
-  detections: DetectionResult[]
-): { imageIndex: number; cropType: CropType }[] {
-  // Score each image by total face bounding box area (in 1000-normalized coords)
-  const scored: { imageIndex: number; totalArea: number; hasFaces: boolean }[] = [];
+function buildCropRectFromBestBox(
+  boxes: BoundingBox[],
+  paddingFactor: number
+): { x: number; y: number; width: number; height: number } | null {
+  if (boxes.length === 0) return null;
 
-  for (let i = 0; i < imageCount; i++) {
-    const detection = detections[i];
-    let totalArea = 0;
-    if (detection && detection.faceBoxes.length > 0) {
-      for (const bb of detection.faceBoxes) {
-        const w = bb.bbox_2d[2] - bb.bbox_2d[0];
-        const h = bb.bbox_2d[3] - bb.bbox_2d[1];
-        totalArea += w * h;
-      }
-    }
-    scored.push({
-      imageIndex: i,
-      totalArea,
-      hasFaces: detection?.faceBoxes.length > 0,
-    });
-  }
+  // Pick the box with the largest area
+  const largest = boxes.reduce((max, bb) => {
+    const area = (bb.bbox_2d[2] - bb.bbox_2d[0]) * (bb.bbox_2d[3] - bb.bbox_2d[1]);
+    const maxArea = (max.bbox_2d[2] - max.bbox_2d[0]) * (max.bbox_2d[3] - max.bbox_2d[1]);
+    return area > maxArea ? bb : max;
+  });
 
-  // Sort by face area (largest first) — images with bigger faces get portrait priority
-  scored.sort((a, b) => b.totalArea - a.totalArea);
-
-  // Assign portrait to top N, body to rest
-  const assignments = new Map<number, CropType>();
-  let portraitAssigned = 0;
-
-  for (const entry of scored) {
-    if (portraitAssigned < portraitCount) {
-      assignments.set(entry.imageIndex, "portrait");
-      portraitAssigned++;
-    } else {
-      assignments.set(entry.imageIndex, "body");
-    }
-  }
-
-  return Array.from(assignments.entries()).map(([imageIndex, cropType]) => ({
-    imageIndex,
-    cropType,
-  }));
+  return buildCropRectFromBox(largest, paddingFactor);
 }
 
 /**
  * Build a crop rectangle from a bounding box, centered on the box.
  * Free aspect ratio — the crop rect starts at the exact box size.
+ * paddingFactor: fraction of box size to expand on each side (0.05 = 5%, 0.25 = 25%).
  */
 function buildCropRectFromBox(
-  box: BoundingBox
+  box: BoundingBox,
+  paddingFactor: number
 ): { x: number; y: number; width: number; height: number } {
   const bx = box.bbox_2d[0];
   const by = box.bbox_2d[1];
   const bw = box.bbox_2d[2] - bx;
   const bh = box.bbox_2d[3] - by;
 
-  // Add a small padding (5% of box size) so the crop isn't tight on the edge
-  const paddingW = bw * 0.05;
-  const paddingH = bh * 0.05;
+  // Add padding so the crop isn't tight on the edge
+  const paddingW = bw * paddingFactor;
+  const paddingH = bh * paddingFactor;
 
   let cropX = bx - paddingW;
   let cropY = by - paddingH;
@@ -134,7 +108,6 @@ function buildDefaultCrop(): {
 // ---------------------------------------------------------------------------
 
 export function useCropDetection({
-  imageCount,
   imageNames,
 }: UseCropDetectionOptions): UseCropDetectionReturn {
   const [state, setState] = useState<CropState>(createEmptyState);
@@ -169,71 +142,55 @@ export function useCropDetection({
   }, []);
 
   // -----------------------------------------------------------------------
-  // Auto-assign crops based on ruleset and detections
+  // Auto-assign crops based on detections — creates BOTH face + body crops
   // -----------------------------------------------------------------------
   const autoAssignCrops = useCallback(() => {
     setState((prev) => {
-      if (!prev.ruleset || prev.detections.length === 0) return prev;
+      if (prev.detections.length === 0) return prev;
 
-      const portraitCount = Math.round(imageCount * prev.ruleset.portraitRatio);
-      const assignments = computeAutoAssignments(
-        imageCount,
-        portraitCount,
-        prev.detections
-      );
-
-      const crops: ImageCrop[] = assignments.map((a) => {
-        const detection = prev.detections[a.imageIndex];
-
-        let cropRect: { x: number; y: number; width: number; height: number };
-        let autoDetected = false;
-
-        if (a.cropType === "portrait" && detection?.faceBoxes.length) {
-          // Use the largest face bounding box
-          const largest = detection.faceBoxes.reduce((max, bb) => {
-            const area = (bb.bbox_2d[2] - bb.bbox_2d[0]) * (bb.bbox_2d[3] - bb.bbox_2d[1]);
-            const maxArea = (max.bbox_2d[2] - max.bbox_2d[0]) * (max.bbox_2d[3] - max.bbox_2d[1]);
-            return area > maxArea ? bb : max;
-          });
-          cropRect = buildCropRectFromBox(largest);
-          autoDetected = true;
-        } else if (a.cropType === "body" && detection?.bodyBoxes.length) {
-          // Use the largest body bounding box
-          const largest = detection.bodyBoxes.reduce((max, bb) => {
-            const area = (bb.bbox_2d[2] - bb.bbox_2d[0]) * (bb.bbox_2d[3] - bb.bbox_2d[1]);
-            const maxArea = (max.bbox_2d[2] - max.bbox_2d[0]) * (max.bbox_2d[3] - max.bbox_2d[1]);
-            return area > maxArea ? bb : max;
-          });
-          cropRect = buildCropRectFromBox(largest);
-          autoDetected = true;
-        } else {
-          // No detection — use full image
-          cropRect = buildDefaultCrop();
-        }
+      const crops: ImageCrop[] = prev.detections.map((detection, i) => {
+        const faceCrop = buildCropRectFromBestBox(detection.faceBoxes, FACE_CROP_PADDING);
+        const bodyCrop = buildCropRectFromBestBox(detection.bodyBoxes, BODY_CROP_PADDING);
 
         return {
-          imageIndex: a.imageIndex,
-          imageName: imageNames[a.imageIndex] ?? detection?.imageName ?? `image_${a.imageIndex}`,
-          cropType: a.cropType,
-          cropRect,
-          autoDetected,
+          imageIndex: i,
+          imageName: imageNames[i] ?? detection.imageName ?? `image_${i}`,
+          faceCrop: faceCrop ?? buildDefaultCrop(),
+          bodyCrop: bodyCrop ?? buildDefaultCrop(),
+          faceAutoDetected: faceCrop !== null,
+          bodyAutoDetected: bodyCrop !== null,
         };
       });
 
       return { ...prev, crops };
     });
-  }, [imageCount, imageNames]);
+  }, [imageNames]);
 
   // -----------------------------------------------------------------------
-  // Update crop for a single image
+  // Update crop for a single image (face or body crop)
   // -----------------------------------------------------------------------
-  const updateCrop = useCallback((imageIndex: number, partial: Partial<ImageCrop>) => {
+  const updateCrop = useCallback((imageIndex: number, cropTarget: "face" | "body", partial: Partial<{ x: number; y: number; width: number; height: number }>) => {
     setState((prev) => {
       const cropIndex = prev.crops.findIndex((c) => c.imageIndex === imageIndex);
       if (cropIndex === -1) return prev;
 
+      const existing = prev.crops[cropIndex];
       const updatedCrops = [...prev.crops];
-      updatedCrops[cropIndex] = { ...updatedCrops[cropIndex], ...partial, autoDetected: false };
+
+      if (cropTarget === "face") {
+        updatedCrops[cropIndex] = {
+          ...existing,
+          faceCrop: { ...existing.faceCrop, ...partial },
+          faceAutoDetected: false,
+        };
+      } else {
+        updatedCrops[cropIndex] = {
+          ...existing,
+          bodyCrop: { ...existing.bodyCrop, ...partial },
+          bodyAutoDetected: false,
+        };
+      }
+
       return { ...prev, crops: updatedCrops };
     });
   }, []);

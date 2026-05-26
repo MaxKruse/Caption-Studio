@@ -193,13 +193,13 @@ function useCaptionActions({
 
     try {
       const formData = new FormData();
-      // Build crop data map (filename -> crop config)
-      const cropDataMap: Record<string, { cropType: string; cropRect: { x: number; y: number; width: number; height: number } }> = {};
+      // Build crop data map (filename -> { face: CropRect, body: CropRect })
+      const cropDataMap: Record<string, { face: { x: number; y: number; width: number; height: number }; body: { x: number; y: number; width: number; height: number } }> = {};
       if (cropData && cropData.length > 0) {
         for (const crop of cropData) {
           cropDataMap[crop.imageName] = {
-            cropType: crop.cropType,
-            cropRect: crop.cropRect,
+            face: crop.faceCrop,
+            body: crop.bodyCrop,
           };
         }
       }

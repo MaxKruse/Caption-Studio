@@ -44,17 +44,26 @@ export interface DetectionResult {
 export type CropType = "portrait" | "body";
 
 /**
+ * Crop rectangle in 1000-normalized coordinates (same as OpenAI bounding boxes).
+ */
+export type CropRect = { x: number; y: number; width: number; height: number };
+
+/**
  * Crop configuration for a single image.
+ * Every image has BOTH a face crop and a body crop.
  * Coordinates are 1000-normalized (same as OpenAI bounding boxes).
  */
 export interface ImageCrop {
   imageIndex: number;
   imageName: string;
-  cropType: CropType;
-  /** Crop rectangle in 1000-normalized coordinates. */
-  cropRect: { x: number; y: number; width: number; height: number };
-  /** Whether this crop was auto-detected (true) or manually adjusted (false). */
-  autoDetected: boolean;
+  /** Face/portrait crop rectangle. If no face detected, defaults to full image. */
+  faceCrop: CropRect;
+  /** Body/full-body crop rectangle. If no body detected, defaults to full image. */
+  bodyCrop: CropRect;
+  /** Whether the face crop was auto-detected (true) or manually adjusted (false). */
+  faceAutoDetected: boolean;
+  /** Whether the body crop was auto-detected (true) or manually adjusted (false). */
+  bodyAutoDetected: boolean;
 }
 
 /**
@@ -120,8 +129,8 @@ export interface UseCropDetectionReturn {
   setRuleset: (ruleset: CropRuleset) => void;
   /** Set detection results from API response. */
   setDetectionResults: (results: DetectionResult[]) => void;
-  /** Update crop for a specific image. */
-  updateCrop: (imageIndex: number, crop: Partial<ImageCrop>) => void;
+  /** Update crop for a specific image (face or body crop). */
+  updateCrop: (imageIndex: number, cropTarget: "face" | "body", rect: Partial<CropRect>) => void;
   /** Apply auto-assignment based on current ruleset and detections. */
   autoAssignCrops: () => void;
   /** Reset all crop state. */

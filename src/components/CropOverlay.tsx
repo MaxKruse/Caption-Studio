@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useRef } from "react";
-import type { BoundingBox, ImageCrop } from "./CaptionStudioCropTypes";
+import type { BoundingBox, CropRect, ImageCrop } from "./CaptionStudioCropTypes";
 
 // ---------------------------------------------------------------------------
 // CropOverlay — interactive crop rectangle on an image
-// Free aspect ratio — no lock
+// Shows both face and body crops; user edits the active one
 // ---------------------------------------------------------------------------
 
 interface CropOverlayProps {
@@ -15,8 +15,10 @@ interface CropOverlayProps {
   imageHeight: number; // actual image pixel height
   containerWidth: number;  // displayed container width
   containerHeight: number; // displayed container height
-  onChange: (crop: Partial<ImageCrop>) => void;
-  onCropTypeChange: (type: "portrait" | "body") => void;
+  /** Which crop is currently being edited */
+  activeCrop: "face" | "body";
+  onChange: (rect: Partial<CropRect>) => void;
+  onActiveCropChange: (target: "face" | "body") => void;
   disabled?: boolean;
 }
 
@@ -28,11 +30,13 @@ export function CropOverlay({
   containerWidth,
   containerHeight,
   onChange,
-  onCropTypeChange,
+  onActiveCropChange,
+  activeCrop,
   disabled,
 }: CropOverlayProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{ type: "move" | "resize" | "snap"; startX: number; startY: number; origCrop: typeof crop.cropRect } | null>(null);
+  type ResizeMode = "left" | "right" | "top" | "bottom" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
+  const dragRef = useRef<{ type: "move" | "resize" | "snap"; startX: number; startY: number; origCrop: CropRect; resizeMode?: ResizeMode } | null>(null);
 
   // Scale factor: 1000-normalized → container pixels
   const scaleX = containerWidth / 1000;
@@ -41,37 +45,53 @@ export function CropOverlay({
   // Convert 1000-normalized to container pixels
   const toPixel = (val: number, isX: boolean) => val * (isX ? scaleX : scaleY);
 
+  // Active and inactive crop rects
+  const activeRect = activeCrop === "face" ? crop.faceCrop : crop.bodyCrop;
+  const inactiveRect = activeCrop === "face" ? crop.bodyCrop : crop.faceCrop;
+
   // Compute actual cropped resolution (in real image pixels)
   const cropResolution = imageWidth > 0 && imageHeight > 0
     ? {
-        width: Math.round((crop.cropRect.width / 1000) * imageWidth),
-        height: Math.round((crop.cropRect.height / 1000) * imageHeight),
+        width: Math.round((activeRect.width / 1000) * imageWidth),
+        height: Math.round((activeRect.height / 1000) * imageHeight),
       }
     : null;
 
-  // Crop rect in container pixels
-  const cropPixel = {
-    x: toPixel(crop.cropRect.x, true),
-    y: toPixel(crop.cropRect.y, false),
-    w: toPixel(crop.cropRect.width, true),
-    h: toPixel(crop.cropRect.height, false),
+  // Active crop rect in container pixels
+  const activePixel = {
+    x: toPixel(activeRect.x, true),
+    y: toPixel(activeRect.y, false),
+    w: toPixel(activeRect.width, true),
+    h: toPixel(activeRect.height, false),
+  };
+
+  // Inactive crop rect in container pixels
+  const inactivePixel = {
+    x: toPixel(inactiveRect.x, true),
+    y: toPixel(inactiveRect.y, false),
+    w: toPixel(inactiveRect.width, true),
+    h: toPixel(inactiveRect.height, false),
   };
 
   // Handle mouse/touch interactions
   const handlePointerDown = useCallback(
-    (e: React.PointerEvent, type: "move" | "resize" | "snap", snapBox?: BoundingBox) => {
+    (e: React.PointerEvent, type: "move" | "resize" | "snap", resizeModeOrSnapBox?: ResizeMode | BoundingBox) => {
       if (disabled) return;
       e.preventDefault();
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
 
-      if (type === "snap" && snapBox) {
-        // Snap crop to bounding box (with small padding)
+      if (type === "snap" && resizeModeOrSnapBox && typeof resizeModeOrSnapBox !== "string") {
+        // Snap crop to bounding box (with padding based on box type)
+        const snapBox = resizeModeOrSnapBox;
         const bx = snapBox.bbox_2d[0];
         const by = snapBox.bbox_2d[1];
         const bw = snapBox.bbox_2d[2] - bx;
         const bh = snapBox.bbox_2d[3] - by;
-        const padW = bw * 0.05;
-        const padH = bh * 0.05;
+        // Face boxes get wider padding (25%) since LLMs return tight face boxes
+        // Body boxes get tight padding (5%)
+        const paddingFactor = snapBox.label === "face" ? 0.25 : 0.05;
+        const padW = bw * paddingFactor;
+        const padH = bh * paddingFactor;
 
         let newX = bx - padW;
         let newY = by - padH;
@@ -84,7 +104,7 @@ export function CropOverlay({
         newW = Math.min(newW, 1000 - newX);
         newH = Math.min(newH, 1000 - newY);
 
-        onChange({ cropRect: { x: newX, y: newY, width: newW, height: newH }, autoDetected: false });
+        onChange({ x: newX, y: newY, width: newW, height: newH });
         return;
       }
 
@@ -92,10 +112,11 @@ export function CropOverlay({
         type,
         startX: e.clientX,
         startY: e.clientY,
-        origCrop: { ...crop.cropRect },
+        origCrop: { ...activeRect },
+        resizeMode: type === "resize" && typeof resizeModeOrSnapBox === "string" ? resizeModeOrSnapBox : undefined,
       };
     },
-    [disabled, crop, onChange]
+    [disabled, activeRect, onChange]
   );
 
   const handlePointerMove = useCallback(
@@ -108,27 +129,69 @@ export function CropOverlay({
       const orig = dragRef.current.origCrop;
       const toNorm = (pixelVal: number, isX: boolean) => pixelVal / (isX ? scaleX : scaleY);
 
+      const mode = dragRef.current.resizeMode;
+
       if (dragRef.current.type === "move") {
         let newX = orig.x + toNorm(dx, true);
         let newY = orig.y + toNorm(dy, false);
         // Clamp
         newX = Math.max(0, Math.min(newX, 1000 - orig.width));
         newY = Math.max(0, Math.min(newY, 1000 - orig.height));
-        onChange({ cropRect: { ...orig, x: newX, y: newY }, autoDetected: false });
-      } else if (dragRef.current.type === "resize") {
-        // Free aspect ratio — no lock
-        let newW = orig.width + toNorm(dx, true);
-        let newH = orig.height + toNorm(dy, false);
+        onChange({ ...orig, x: newX, y: newY });
+      } else if (dragRef.current.type === "resize" && mode) {
+        const dX = toNorm(dx, true);
+        const dY = toNorm(dy, false);
+        let newX = orig.x;
+        let newY = orig.y;
+        let newW = orig.width;
+        let newH = orig.height;
+
+        // Per-corner resize math
+        switch (mode) {
+          case "left":
+            newW = orig.width - dX;
+            newX = orig.x + dX;
+            break;
+          case "right":
+            newW = orig.width + dX;
+            break;
+          case "top":
+            newH = orig.height - dY;
+            newY = orig.y + dY;
+            break;
+          case "bottom":
+            newH = orig.height + dY;
+            break;
+          case "top-left":
+            newW = orig.width - dX;
+            newH = orig.height - dY;
+            newX = orig.x + dX;
+            newY = orig.y + dY;
+            break;
+          case "top-right":
+            newW = orig.width + dX;
+            newH = orig.height - dY;
+            newY = orig.y + dY;
+            break;
+          case "bottom-left":
+            newW = orig.width - dX;
+            newH = orig.height + dY;
+            newX = orig.x + dX;
+            break;
+          case "bottom-right":
+            newW = orig.width + dX;
+            newH = orig.height + dY;
+            break;
+        }
+
         // Minimum size
-        newW = Math.max(30, Math.min(newW, 1000));
-        newH = Math.max(30, Math.min(newH, 1000));
-        // Center-shift on resize
-        let newX = orig.x + (orig.width - newW) / 2;
-        let newY = orig.y + (orig.height - newH) / 2;
+        newW = Math.max(30, newW);
+        newH = Math.max(30, newH);
+
         // Clamp to bounds
         newX = Math.max(0, Math.min(newX, 1000 - newW));
         newY = Math.max(0, Math.min(newY, 1000 - newH));
-        onChange({ cropRect: { x: newX, y: newY, width: newW, height: newH }, autoDetected: false });
+        onChange({ x: newX, y: newY, width: newW, height: newH });
       }
     },
     [disabled, onChange, scaleX, scaleY]
@@ -176,33 +239,49 @@ export function CropOverlay({
         );
       })}
 
-      {/* Crop overlay */}
+      {/* Inactive crop (dimmed overlay) */}
+      <div
+        className="absolute pointer-events-none"
+        style={{
+          left: inactivePixel.x,
+          top: inactivePixel.y,
+          width: inactivePixel.w,
+          height: inactivePixel.h,
+        }}
+      >
+        <div className="absolute inset-0 border-2 border-purple-400/40 rounded" />
+        <div className="absolute -top-3 left-0 text-[8px] font-medium text-purple-400/60 bg-zinc-900/60 px-1 rounded">
+          {activeCrop === "face" ? "body" : "face"}
+        </div>
+      </div>
+
+      {/* Active crop overlay */}
       <div
         className="absolute border-2 border-blue-400 rounded cursor-move"
         style={{
-          left: cropPixel.x,
-          top: cropPixel.y,
-          width: cropPixel.w,
-          height: cropPixel.h,
+          left: activePixel.x,
+          top: activePixel.y,
+          width: activePixel.w,
+          height: activePixel.h,
         }}
         onPointerDown={(e) => handlePointerDown(e, "move")}
       >
         {/* Crop type label + resolution tooltip */}
         <div className="absolute -top-5 left-0 flex items-center gap-1">
           <button
-            onClick={(e) => { e.stopPropagation(); onCropTypeChange("portrait"); }}
+            onClick={(e) => { e.stopPropagation(); onActiveCropChange("face"); }}
             className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${
-              crop.cropType === "portrait"
+              activeCrop === "face"
                 ? "bg-blue-500 text-white"
                 : "bg-zinc-800/80 text-zinc-300 hover:text-white"
             }`}
           >
-            portrait
+            face
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); onCropTypeChange("body"); }}
+            onClick={(e) => { e.stopPropagation(); onActiveCropChange("body"); }}
             className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${
-              crop.cropType === "body"
+              activeCrop === "body"
                 ? "bg-blue-500 text-white"
                 : "bg-zinc-800/80 text-zinc-300 hover:text-white"
             }`}
@@ -227,7 +306,7 @@ export function CropOverlay({
             left: -handleSize / 2,
             cursor: "nwse-resize",
           }}
-          onPointerDown={(e) => { e.stopPropagation(); handlePointerDown(e, "resize"); }}
+          onPointerDown={(e) => { e.stopPropagation(); handlePointerDown(e, "resize", "top-left" as const); }}
         />
         {/* Top-right */}
         <div
@@ -239,7 +318,7 @@ export function CropOverlay({
             right: -handleSize / 2,
             cursor: "nesw-resize",
           }}
-          onPointerDown={(e) => { e.stopPropagation(); handlePointerDown(e, "resize"); }}
+          onPointerDown={(e) => { e.stopPropagation(); handlePointerDown(e, "resize", "top-right" as const); }}
         />
         {/* Bottom-left */}
         <div
@@ -251,7 +330,7 @@ export function CropOverlay({
             left: -handleSize / 2,
             cursor: "nesw-resize",
           }}
-          onPointerDown={(e) => { e.stopPropagation(); handlePointerDown(e, "resize"); }}
+          onPointerDown={(e) => { e.stopPropagation(); handlePointerDown(e, "resize", "bottom-left" as const); }}
         />
         {/* Bottom-right */}
         <div
@@ -263,7 +342,7 @@ export function CropOverlay({
             right: -handleSize / 2,
             cursor: "nwse-resize",
           }}
-          onPointerDown={(e) => { e.stopPropagation(); handlePointerDown(e, "resize"); }}
+          onPointerDown={(e) => { e.stopPropagation(); handlePointerDown(e, "resize", "bottom-right" as const); }}
         />
 
         {/* Grid lines (rule of thirds) */}

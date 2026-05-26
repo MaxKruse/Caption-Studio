@@ -16,9 +16,10 @@ export interface ImageCropData {
 }
 
 export interface ImageEntry {
-  name: string;
-  data: Buffer;          // cropped image data (or original if no crop)
-  originalData: Buffer;  // always the original uncropped data
+  name: string;              // display name (may be prefixed: face_orig.jpg)
+  originalFileName: string;  // original uploaded filename (for grouping in ZIP)
+  data: Buffer;              // cropped image data (or original if no crop)
+  originalData: Buffer;      // always the original uncropped data
   status: "queued" | "processing" | "completed" | "failed";
   caption?: string;
   error?: string;
@@ -57,7 +58,7 @@ function generateId(): string {
  * Apply a crop to an image buffer. Returns cropped buffer.
  * cropRect is in 1000-normalized coordinates.
  */
-async function applyCropToBuffer(
+export async function applyCropToBuffer(
   imageBuffer: Buffer,
   cropRect: { x: number; y: number; width: number; height: number }
 ): Promise<Buffer> {
@@ -78,7 +79,24 @@ async function applyCropToBuffer(
     .toBuffer();
 }
 
-/** Create a new job and return its ID. Images are cropped at creation time. */
+/**
+ * Build a prefixed filename: "face_orig.jpg" or "body_orig.jpg".
+ */
+function buildPrefixedName(prefix: "face" | "body", originalName: string): string {
+  const ext = originalName.includes(".") ? `.${originalName.split(".").pop()}` : "";
+  const base = originalName.includes(".") ? originalName.replace(/\.[^.]+$/, "") : originalName;
+  return `${prefix}_${base}${ext}`;
+}
+
+/** Extended crop data with both face and body crops. */
+export interface DualCropData {
+  face: { x: number; y: number; width: number; height: number };
+  body: { x: number; y: number; width: number; height: number };
+}
+
+/** Create a new job and return its ID. Images are cropped at creation time.
+ * If dualCropData is provided, creates two entries per image (face_ and body_ prefixed).
+ */
 export async function createJob(
   images: { name: string; data: Buffer }[],
   serverUrl: string,
@@ -89,28 +107,63 @@ export async function createJob(
   triggerWord: string,
   subjectName: string,
   parallelRequests: number,
-  cropData?: Record<string, ImageCropData>
+  cropData?: Record<string, ImageCropData>,
+  dualCropData?: Record<string, DualCropData>
 ): Promise<string> {
   const id = generateId();
   const imageMap = new Map<string, ImageEntry>();
 
   for (const img of images) {
-    const cropConfig = cropData?.[img.name];
-    let croppedData: Buffer;
+    if (dualCropData && dualCropData[img.name]) {
+      // Dual crop mode: create face_ and body_ entries
+      const dual = dualCropData[img.name];
 
-    if (cropConfig?.cropRect) {
-      croppedData = await applyCropToBuffer(img.data, cropConfig.cropRect);
+      const faceCropped = await applyCropToBuffer(img.data, dual.face);
+      const bodyCropped = await applyCropToBuffer(img.data, dual.body);
+
+      const faceName = buildPrefixedName("face", img.name);
+      const bodyName = buildPrefixedName("body", img.name);
+
+      imageMap.set(faceName, {
+        name: faceName,
+        originalFileName: img.name,
+        data: faceCropped,
+        originalData: img.data,
+        status: "queued",
+        crop: { cropType: "portrait", cropRect: dual.face },
+      });
+
+      imageMap.set(bodyName, {
+        name: bodyName,
+        originalFileName: img.name,
+        data: bodyCropped,
+        originalData: img.data,
+        status: "queued",
+        crop: { cropType: "body", cropRect: dual.body },
+      });
+    } else if (cropData?.[img.name]) {
+      // Legacy single crop mode
+      const cropConfig = cropData[img.name];
+      const croppedData = await applyCropToBuffer(img.data, cropConfig.cropRect);
+
+      imageMap.set(img.name, {
+        name: img.name,
+        originalFileName: img.name,
+        data: croppedData,
+        originalData: img.data,
+        status: "queued",
+        crop: cropConfig,
+      });
     } else {
-      croppedData = img.data;
+      // No crop — use original
+      imageMap.set(img.name, {
+        name: img.name,
+        originalFileName: img.name,
+        data: img.data,
+        originalData: img.data,
+        status: "queued",
+      });
     }
-
-    imageMap.set(img.name, {
-      name: img.name,
-      data: croppedData,
-      originalData: img.data,
-      status: "queued",
-      crop: cropConfig,
-    });
   }
 
   const abortController = new AbortController();
