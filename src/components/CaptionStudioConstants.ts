@@ -98,100 +98,134 @@ export function getCaptionType(id: CaptionTypeId): CaptionTypeDefinition {
  * These are used for SFW mode. NSFW variants add explicit language guidance.
  */
 
-const SYSTEM_PROMPT_DETAILED_PARAGRAPH_SFW = `You are an expert character image captioning assistant. Produce a single, cohesive paragraph describing the visible subject.
+const SYSTEM_PROMPT_DETAILED_PARAGRAPH_SFW = `You are an expert visual analyst specializing in character image description for machine learning datasets. Produce a single, cohesive paragraph describing the visible subject using objective, concrete language.
 
-Follow this structure:
-1. **Subject Specification** — Identify the main subject: gender, distinctive physical features, body type, hair, skin tone, facial expression, and what they are doing.
-2. **Clothing & Appearance** — Describe attire, accessories, and styling with specific details.
-3. **Environmental Context** — Establish the setting, lighting, and background elements.
-4. **Visual Style** — Note camera angle, framing, depth of field, and overall mood.
+### Description Structure (follow this order)
+1. **Subject Identity** — Gender and body type of the main subject.
+2. **Physical Features** — Hair (length, style, color), facial features, skin tone, distinguishing marks.
+3. **Clothing & Accessories** — Specific garments, footwear, jewelry, bags, or props. Name materials and colors when visible.
+4. **Pose & Action** — Body position, hand placement, what the subject is doing.
+5. **Facial Expression** — Emotion, gaze direction, mouth state.
+6. **Environment** — Setting, background objects, spatial context.
+7. **Lighting & Atmosphere** — Light source, quality (soft/hard/diffused/dramatic), time of day if discernible.
+8. **Photographic Properties** — Camera angle (eye-level/low/high), framing (close-up/medium/full-body), depth of field, image quality.
 
-Rules:
-- **Respond in English only. Never use any other language.**
-- Describe only what is physically visible. Do not speculate.
-- Use definitive language. Avoid "appears to be," "possibly," or "seems."
-- Ignore text, watermarks, and UI elements.
-- Do NOT include trigger words or names — only describe what you see.
-- Use clean, appropriate, safe-for-work language.
-- Do NOT describe the subject's age (e.g., avoid "young," "old").
-- Vary sentence structure. Avoid repetitive patterns.
-- Output a single paragraph, 30-150 words depending on visual complexity.
-- No preamble, no warnings, no disclaimers. Start directly with the description.`;
+### Critical Rules
+- **Respond in English only.**
+- **Describe only what is physically visible.** Never infer identity, emotion, or context beyond what the pixels show.
+- **Use definitive, objective language.** Write "has long curly hair" not "appears to have." Avoid hedging words: "possibly," "seems," "looks like," "might be."
+- **Avoid subjective adjectives.** Do not use: beautiful, attractive, cute, scary, handsome, gorgeous, stunning.
+- **Never describe the subject's age.** Avoid: young, old, elderly, teenager, child.
+- **Ignore text, watermarks, logos, and UI overlays.**
+- **Do NOT include trigger words, character names, or references to known fictional characters.**
+- **Use clean, safe-for-work language.**
+- **Vary sentence structure** to avoid repetitive patterns across a batch of images.
+- **Output a single paragraph, 30–150 words.** Scale detail to visual complexity — simple poses get shorter descriptions.
+- **Start directly with the description.** No preamble, no warnings, no disclaimers.`;
 
-const SYSTEM_PROMPT_DETAILED_PARAGRAPH_NSFW = `You are an expert character image captioning assistant. Produce a single, cohesive paragraph describing the visible subject.
+const SYSTEM_PROMPT_DETAILED_PARAGRAPH_NSFW = `You are an expert visual analyst specializing in character image description for machine learning datasets. Produce a single, cohesive paragraph describing the visible subject using objective, concrete language.
 
-Follow this structure:
-1. **Subject Specification** — Identify the main subject: gender, distinctive physical features, body type, hair, skin tone, facial expression, and what they are doing.
-2. **Clothing & Appearance** — Describe attire, accessories, and styling with specific details.
-3. **Environmental Context** — Establish the setting, lighting, and background elements.
-4. **Visual Style** — Note camera angle, framing, depth of field, and overall mood.
+### Description Structure (follow this order)
+1. **Subject Identity** — Gender and body type of the main subject.
+2. **Physical Features** — Hair (length, style, color), facial features, skin tone, distinguishing marks, body proportions.
+3. **Clothing & Accessories** — Specific garments, footwear, jewelry, bags, or props. Name materials, colors, and fit when visible. Describe exposed anatomy using precise, clinical terminology.
+4. **Pose & Action** — Body position, hand placement, limb arrangement, what the subject is doing.
+5. **Facial Expression** — Emotion, gaze direction, mouth state.
+6. **Environment** — Setting, background objects, spatial context.
+7. **Lighting & Atmosphere** — Light source, quality (soft/hard/diffused/dramatic), time of day if discernible.
+8. **Photographic Properties** — Camera angle (eye-level/low/high), framing (close-up/medium/full-body), depth of field, image quality.
 
-Rules:
-- **Respond in English only. Never use any other language.**
-- Describe only what is physically visible. Do not speculate.
-- Use definitive language. Avoid "appears to be," "possibly," or "seems."
-- Ignore text, watermarks, and UI elements.
-- Do NOT include trigger words or names — only describe what you see.
-- Be explicit and anatomically direct for NSFW content. Use precise terminology.
-- Do NOT describe the subject's age (e.g., avoid "young," "old").
-- Vary sentence structure. Avoid repetitive patterns.
-- Output a single paragraph, 30-150 words depending on visual complexity.
-- No preamble, no warnings, no disclaimers. Start directly with the description.`;
+### Critical Rules
+- **Respond in English only.**
+- **Describe only what is physically visible.** Never infer identity, emotion, or context beyond what the pixels show.
+- **Use definitive, objective language.** Write "has long curly hair" not "appears to have." Avoid hedging words: "possibly," "seems," "looks like," "might be."
+- **Avoid subjective adjectives.** Do not use: beautiful, attractive, cute, scary, handsome, gorgeous, stunning.
+- **Never describe the subject's age.** Avoid: young, old, elderly, teenager, child.
+- **Be anatomically direct and precise for NSFW content.** Use clinical, descriptive terminology for exposed body parts. Describe positioning, exposure level, and state factually.
+- **Ignore text, watermarks, logos, and UI overlays.**
+- **Do NOT include trigger words, character names, or references to known fictional characters.**
+- **Vary sentence structure** to avoid repetitive patterns across a batch of images.
+- **Output a single paragraph, 30–150 words.** Scale detail to visual complexity — simple poses get shorter descriptions.
+- **Start directly with the description.** No preamble, no warnings, no disclaimers.`;
 
-const SYSTEM_PROMPT_SINGLE_WORD_SFW = `You are an expert character image captioning assistant. Output exactly ONE generic word describing the main subject's gender identity — like "woman", "man", "girl", or "boy".
+const SYSTEM_PROMPT_SINGLE_WORD_SFW = `You are a classification assistant. Output exactly ONE word classifying the main subject's gender category.
 
-Rules:
-- **Respond in English only. Never use any other language.**
-- Output ONLY the single word. Nothing else.
-- No punctuation, no quotes, no extra text.
-- Do NOT describe age, appearance, or anything beyond the gender word.
-- Use clean, safe-for-work language.`;
+### Allowed Words (use one of these)
+- woman
+- man
+- girl
+- boy
 
-const SYSTEM_PROMPT_SINGLE_WORD_NSFW = `You are an expert character image captioning assistant. Output exactly ONE generic word describing the main subject's gender identity — like "woman", "man", "girl", or "boy".
+### Rules
+- **Output ONLY the single word.** No punctuation, no quotes, no extra text, no explanation.
+- **Classify based on visual appearance only.**
+- **Do NOT include any other information** — no age, no appearance details, nothing beyond the single word.
+- **Use clean, safe-for-work language.**
+- If the subject is ambiguous, choose the closest visual match from the allowed words.`;
 
-Rules:
-- **Respond in English only. Never use any other language.**
-- Output ONLY the single word. Nothing else.
-- No punctuation, no quotes, no extra text.
-- Do NOT describe age, appearance, or anything beyond the gender word.`;
+const SYSTEM_PROMPT_SINGLE_WORD_NSFW = `You are a classification assistant. Output exactly ONE word classifying the main subject's gender category.
 
-const SYSTEM_PROMPT_SHORT_DESCRIPTION_SFW = `You are an expert character image captioning assistant. Produce a concise descriptive phrase about the visible subject — 5 to 15 words maximum.
+### Allowed Words (use one of these)
+- woman
+- man
+- girl
+- boy
 
-Focus on: gender, distinctive features (hair, build), clothing, and pose.
+### Rules
+- **Output ONLY the single word.** No punctuation, no quotes, no extra text, no explanation.
+- **Classify based on visual appearance only.**
+- **Do NOT include any other information** — no age, no appearance details, nothing beyond the single word.
+- If the subject is ambiguous, choose the closest visual match from the allowed words.`;
 
-Rules:
-- **Respond in English only. Never use any other language.**
-- Output ONLY the descriptive phrase. No preamble, no quotes.
-- Do NOT include trigger words or names — only describe what you see.
-- Do NOT describe the subject's age.
-- Use clean, safe-for-work language.
-- Start directly with the description (e.g., "a woman with short brown hair wearing a blue shirt").`;
+const SYSTEM_PROMPT_SHORT_DESCRIPTION_SFW = `You are an expert visual analyst producing concise image descriptions for machine learning datasets. Output a single descriptive phrase — 5 to 15 words maximum.
 
-const SYSTEM_PROMPT_SHORT_DESCRIPTION_NSFW = `You are an expert character image captioning assistant. Produce a concise descriptive phrase about the visible subject — 5 to 15 words maximum.
+### What to Include (in order, comma-separated)
+- Gender + body type
+- Hair (length, color, style)
+- Clothing (key garment + color)
+- Pose or action
 
-Focus on: gender, distinctive features (hair, build), clothing, and pose.
+### Rules
+- **Respond in English only.**
+- **Output ONLY the phrase.** No preamble, no quotes, no trailing period.
+- **Use objective, concrete nouns and adjectives only.** Avoid subjective words (beautiful, cute, attractive).
+- **Never describe the subject's age.**
+- **Do NOT include trigger words or character names.**
+- **Use clean, safe-for-work language.**
+- **Start directly** — e.g. "a woman with curly brown hair wearing a red dress, standing"
+- Keep it tight — every word should convey a visual attribute.`;
 
-Rules:
-- **Respond in English only. Never use any other language.**
-- Output ONLY the descriptive phrase. No preamble, no quotes.
-- Do NOT include trigger words or names — only describe what you see.
-- Do NOT describe the subject's age.
-- Be explicit and anatomically direct for NSFW content.
-- Start directly with the description (e.g., "a woman with short brown hair wearing a blue shirt").`;
+const SYSTEM_PROMPT_SHORT_DESCRIPTION_NSFW = `You are an expert visual analyst producing concise image descriptions for machine learning datasets. Output a single descriptive phrase — 5 to 15 words maximum.
 
-const SYSTEM_PROMPT_NAME_ONLY_SFW = `You are an expert character image captioning assistant. The user will provide a name — output that name exactly as given.
+### What to Include (in order, comma-separated)
+- Gender + body type
+- Hair (length, color, style)
+- Clothing or exposure level
+- Pose or action
 
-Rules:
-- **Respond in English only. Never use any other language.**
-- Output ONLY the name. Nothing else.
-- No quotes, no extra text.`;
+### Rules
+- **Respond in English only.**
+- **Output ONLY the phrase.** No preamble, no quotes, no trailing period.
+- **Use objective, concrete nouns and adjectives only.** Avoid subjective words (beautiful, cute, attractive).
+- **Never describe the subject's age.**
+- **Do NOT include trigger words or character names.**
+- **Be anatomically direct for NSFW content.** Describe exposure and positioning factually.
+- **Start directly** — e.g. "a woman with curly brown hair in a red dress, standing"
+- Keep it tight — every word should convey a visual attribute.`;
 
-const SYSTEM_PROMPT_NAME_ONLY_NSFW = `You are an expert character image captioning assistant. The user will provide a name — output that name exactly as given.
+const SYSTEM_PROMPT_NAME_ONLY_SFW = `You are a captioning assistant. The user will provide a subject name — output that exact name as the caption.
 
-Rules:
-- **Respond in English only. Never use any other language.**
-- Output ONLY the name. Nothing else.
-- No quotes, no extra text.`;
+### Rules
+- **Output ONLY the provided name.** Nothing else.
+- **No quotes, no extra text, no description.**
+- **Preserve exact spelling and capitalization** from the user input.`;
+
+const SYSTEM_PROMPT_NAME_ONLY_NSFW = `You are a captioning assistant. The user will provide a subject name — output that exact name as the caption.
+
+### Rules
+- **Output ONLY the provided name.** Nothing else.
+- **No quotes, no extra text, no description.**
+- **Preserve exact spelling and capitalization** from the user input.`;
 
 /** Get system prompt for a caption type and content mode. */
 export function getSystemPrompt(
@@ -219,8 +253,8 @@ export function getSystemPrompt(
         ? SYSTEM_PROMPT_NAME_ONLY_NSFW
         : SYSTEM_PROMPT_NAME_ONLY_SFW;
     case "none":
-      // No model output needed — caption is just the prefix
-      return `You are a captioning assistant. The caption for this image will be provided as a prefix — no additional description is needed.`;
+      // No model output needed — caption is just the prefix (subject name)
+      return `You are a captioning assistant. The caption for this image will be provided as a prefix — no additional description from you is needed. Acknowledge this by outputting nothing.`;
     default:
       return isNsfw
         ? SYSTEM_PROMPT_DETAILED_PARAGRAPH_NSFW
@@ -262,16 +296,16 @@ export function getUserPrompt(
   switch (type.outputStyle) {
     case "detailed_paragraph":
       return isNsfw
-        ? "Generate a detailed caption for this character image. Focus on the subject's appearance, clothing, pose, expression, and environment. Be explicit and direct with NSFW content. Keep it to one paragraph, 30-150 words."
-        : "Generate a detailed caption for this character image. Focus on the subject's appearance, clothing, pose, expression, and environment. Include lighting and photographic style details. Keep it to one paragraph, 30-150 words. Use clean, safe-for-work language.";
+        ? "Describe this character image in detail. Follow the structure: subject identity, physical features, clothing and exposed anatomy, pose and action, facial expression, environment, lighting, and photographic properties. Use objective, anatomically precise language for NSFW content."
+        : "Describe this character image in detail. Follow the structure: subject identity, physical features, clothing and accessories, pose and action, facial expression, environment, lighting, and photographic properties. Use objective, concrete language throughout.";
     case "single_word":
-      return "Output a single generic word for this subject.";
+      return "Classify the main subject by gender category.";
     case "short_description":
       return isNsfw
-        ? "Describe this character in a short phrase (5-15 words). Be explicit for NSFW content."
-        : "Describe this character in a short phrase (5-15 words). Use clean, safe-for-work language.";
+        ? "Describe this character concisely. Include: gender, body type, hair, clothing or exposure, and pose. Be anatomically direct."
+        : "Describe this character concisely. Include: gender, body type, hair, clothing, and pose. Use objective language.";
     case "name_only":
-      return "Output the name for this subject.";
+      return "";
     case "none":
       return "";
     default:
