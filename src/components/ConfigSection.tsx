@@ -1,7 +1,7 @@
 "use client";
 
-import { ModelInfo, CAPTION_TYPES, CaptionTypeId, CROP_RULESETS, CropRuleset } from "./CaptionStudioTypes";
-import { ModeToggle } from "./ModeToggle";
+import type { CropRuleset, ModelInfo, PresetId } from "./CaptionStudioTypes";
+import { CAPTION_PRESETS, CROP_RULESETS } from "./CaptionStudioTypes";
 
 export function ConfigSection({
   serverUrl,
@@ -12,24 +12,19 @@ export function ConfigSection({
   modelLoading,
   modelError,
   onFetchModels,
+  presetId,
+  onPresetChange,
+  presetLabel,
   systemPrompt,
   onSystemPromptChange,
   userPrompt,
   onUserPromptChange,
-  captionTypeId,
-  onCaptionTypeIdChange,
   triggerWord,
   onTriggerWordChange,
-  subjectName,
-  onSubjectNameChange,
   needsTrigger,
-  needsName,
   triggerRequired,
-  nameRequired,
   parallelRequests,
   onParallelRequestsChange,
-  contentMode,
-  onContentModeChange,
   selectedRuleset,
   onRulesetChange,
   isProcessing,
@@ -42,22 +37,17 @@ export function ConfigSection({
   modelLoading: boolean;
   modelError: string;
   onFetchModels: () => void;
-  contentMode: "sfw" | "nsfw";
-  onContentModeChange: (mode: "sfw" | "nsfw") => void;
-  captionTypeId: CaptionTypeId;
-  onCaptionTypeIdChange: (id: CaptionTypeId) => void;
+  presetId: PresetId;
+  onPresetChange: (id: PresetId) => void;
+  presetLabel: string;
   systemPrompt: string;
   onSystemPromptChange: (value: string) => void;
   userPrompt: string;
   onUserPromptChange: (value: string) => void;
   triggerWord: string;
   onTriggerWordChange: (value: string) => void;
-  subjectName: string;
-  onSubjectNameChange: (value: string) => void;
   needsTrigger: boolean;
-  needsName: boolean;
   triggerRequired: boolean;
-  nameRequired: boolean;
   parallelRequests: number;
   onParallelRequestsChange: (value: number) => void;
   selectedRuleset: CropRuleset | null;
@@ -73,7 +63,7 @@ export function ConfigSection({
         </div>
         <h2 className="text-sm font-semibold text-zinc-900">Configure</h2>
         <p className="text-xs text-zinc-400 ml-auto hidden sm:block">
-          Set up the API connection and caption style
+          Set up the API connection and caption preset
         </p>
       </div>
 
@@ -129,55 +119,47 @@ export function ConfigSection({
           )}
         </div>
 
-        {/* Caption Style */}
+        {/* Preset */}
         <div className="space-y-3">
           <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-widest">
-            Caption Style
+            Caption Preset
           </h3>
-
-          <ModeToggle
-            mode={contentMode}
-            onModeChange={onContentModeChange}
-            disabled={isProcessing}
-          />
 
           <div>
             <label className="block text-xs text-zinc-400 mb-1">
-              Caption Type
+              Preset
             </label>
             <select
-              value={captionTypeId}
-              onChange={(e) => onCaptionTypeIdChange(e.target.value as CaptionTypeId)}
+              value={presetId}
+              onChange={(e) => onPresetChange(e.target.value as PresetId)}
               disabled={isProcessing}
               className="w-full px-3 py-2 text-sm border border-zinc-300 rounded bg-white text-zinc-900 focus:outline-none focus:border-zinc-500 appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {CAPTION_TYPES.map((type) => (
-                <option key={type.id} value={type.id}>
-                  {type.label}
+              {CAPTION_PRESETS.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.label}
                 </option>
               ))}
             </select>
             <p className="text-[11px] text-zinc-400 mt-1">
-              Select the caption style for character training datasets
+              {CAPTION_PRESETS.find((p) => p.id === presetId)?.description ?? ""}
             </p>
           </div>
 
-          {/* Conditional fields: trigger word */}
+          {/* Trigger word (activation token) */}
           {needsTrigger && (
             <div>
               <label className="block text-xs text-zinc-400 mb-1">
-                Trigger Word
-                {triggerRequired && (
-                  <span className="normal-case font-normal ml-1 text-zinc-500">
-                    — required
-                  </span>
-                )}
+                Activation Token
+                <span className="normal-case font-normal ml-1 text-zinc-500">
+                  — required
+                </span>
               </label>
               <input
                 type="text"
                 value={triggerWord}
                 onChange={(e) => onTriggerWordChange(e.target.value)}
-                placeholder='e.g. "skx" or a custom trigger'
+                placeholder='e.g. "emixu" or a custom token'
                 className={`w-full px-3 py-2 text-sm border rounded bg-white text-zinc-900 placeholder-zinc-400 focus:outline-none focus:border-zinc-500 transition-colors ${
                   triggerRequired
                     ? "border-zinc-500 ring-1 ring-zinc-400"
@@ -185,41 +167,13 @@ export function ConfigSection({
                 }`}
               />
               <p className="text-[11px] text-zinc-400 mt-1">
-                A unique token prepended to each caption — avoid words with common meanings
-              </p>
-            </div>
-          )}
-
-          {/* Conditional fields: subject name */}
-          {needsName && (
-            <div>
-              <label className="block text-xs text-zinc-400 mb-1">
-                Subject Name
-                {nameRequired && (
-                  <span className="normal-case font-normal ml-1 text-zinc-500">
-                    — required
-                  </span>
-                )}
-              </label>
-              <input
-                type="text"
-                value={subjectName}
-                onChange={(e) => onSubjectNameChange(e.target.value)}
-                placeholder='e.g. "Sarah" or "John"'
-                className={`w-full px-3 py-2 text-sm border rounded bg-white text-zinc-900 placeholder-zinc-400 focus:outline-none focus:border-zinc-500 transition-colors ${
-                  nameRequired
-                    ? "border-zinc-500 ring-1 ring-zinc-400"
-                    : "border-zinc-300"
-                }`}
-              />
-              <p className="text-[11px] text-zinc-400 mt-1">
-                The character&apos;s name — use something the model recognizes as a name
+                Unique token prepended to each caption — invent a non-word token per character
               </p>
             </div>
           )}
         </div>
 
-        {/* Prompts */}
+        {/* Prompts (editable) */}
         <div className="space-y-3">
           <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-widest">
             Prompts
@@ -240,6 +194,9 @@ export function ConfigSection({
           <div>
             <label className="block text-xs text-zinc-400 mb-1">
               User Prompt
+              <span className="normal-case font-normal ml-1 text-zinc-500">
+                ({presetLabel})
+              </span>
             </label>
             <textarea
               value={userPrompt}
@@ -247,6 +204,9 @@ export function ConfigSection({
               rows={3}
               className="w-full px-3 py-2 text-sm border border-zinc-300 rounded bg-white text-zinc-900 focus:outline-none focus:border-zinc-500 resize-y font-mono leading-relaxed"
             />
+            <p className="text-[11px] text-zinc-400 mt-1">
+              <code>{`{trigger}`}</code> is replaced with the activation token at runtime
+            </p>
           </div>
         </div>
 

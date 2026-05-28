@@ -1,17 +1,12 @@
 // ---------------------------------------------------------------------------
-// Re-exports (backward compatibility)
+// Re-exports
 // ---------------------------------------------------------------------------
 
 export * from "./CaptionStudioConstants";
+export * from "./CaptionStudioPresets";
 export * from "./CaptionStudioUtils";
 export * from "./CaptionStudioCropConstants";
 export * from "./CaptionStudioCropTypes";
-
-// ---------------------------------------------------------------------------
-// Re-export CaptionTypeId for convenience
-// ---------------------------------------------------------------------------
-
-export type { CaptionTypeId } from "./CaptionStudioConstants";
 
 // ---------------------------------------------------------------------------
 // Types

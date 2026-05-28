@@ -19,7 +19,6 @@ import {
 import { prepareForApi, type CropRect } from "@/lib/image-utils";
 
 import { normalizeServerUrl } from "@/lib/url-utils";
-import { resolveCaptionTypeId } from "@/components/CaptionStudioConstants";
 
 // ---------------------------------------------------------------------------
 // Job config shape — parsed from either FormData or JSON
@@ -30,9 +29,9 @@ interface JobConfig {
   model: string;
   systemPrompt: string;
   userPrompt: string;
-  captionTypeId: string;
+  presetId: string;
+  presetZipName: string;
   triggerWord: string;
-  subjectName: string;
   parallelRequests: number;
   imageNames: string[];
   cropData?: Record<string, { cropType: string; cropRect: CropRect }>;
@@ -47,9 +46,9 @@ function parseJobConfigFromFormData(formData: FormData): JobConfig | null {
     model: string;
     systemPrompt?: string;
     userPrompt?: string;
-    captionTypeId?: string;
+    presetId?: string;
+    presetZipName?: string;
     triggerWord?: string;
-    subjectName?: string;
     parallelRequests?: number;
     imageNames: string[];
     cropData?: Record<string, { cropType: string; cropRect: CropRect }>;
@@ -66,9 +65,9 @@ function parseJobConfigFromFormData(formData: FormData): JobConfig | null {
     model: config.model,
     systemPrompt: config.systemPrompt ?? "",
     userPrompt: config.userPrompt ?? "",
-    captionTypeId: resolveCaptionTypeId(config.captionTypeId ?? "detailed"),
+    presetId: config.presetId ?? "",
+    presetZipName: config.presetZipName ?? "",
     triggerWord: config.triggerWord ?? "",
-    subjectName: config.subjectName ?? "",
     parallelRequests: config.parallelRequests ?? 4,
     imageNames: config.imageNames,
     cropData: config.cropData as JobConfig["cropData"],
@@ -81,9 +80,9 @@ function parseJobConfigFromBody(rest: Record<string, unknown>): JobConfig {
     model: (rest.model as string) ?? "",
     systemPrompt: (rest.systemPrompt as string) ?? "",
     userPrompt: (rest.userPrompt as string) ?? "",
-    captionTypeId: resolveCaptionTypeId((rest.captionTypeId as string) ?? "detailed"),
+    presetId: (rest.presetId as string) ?? "",
+    presetZipName: (rest.presetZipName as string) ?? "",
     triggerWord: (rest.triggerWord as string) ?? "",
-    subjectName: (rest.subjectName as string) ?? "",
     parallelRequests: (rest.parallelRequests as number) ?? 4,
     imageNames: [],
     cropData: rest.cropData as JobConfig["cropData"],
@@ -96,76 +95,22 @@ function parseJobConfigFromBody(rest: Record<string, unknown>): JobConfig {
 
 /**
  * Build the user prompt text that gets sent to the vision API.
- * Prepends trigger/name based on caption type.
+ * Replaces {trigger} placeholder with the actual trigger word.
  */
 function buildPromptText(job: CaptionJob): string {
-  const parts: string[] = [];
+  const userPrompt = job.userPrompt.trim();
+  if (!userPrompt) return "";
 
-  // Build prefix based on caption type
-  const prefix = buildCaptionPrefix(job);
-  if (prefix) {
-    parts.push(prefix);
-  }
-
-  // Add user prompt (the actual instruction to the model)
-  if (job.userPrompt.trim()) {
-    parts.push(job.userPrompt.trim());
-  }
-
-  return parts.join(" ");
+  // Replace {trigger} placeholder with the actual trigger word
+  return userPrompt.replace(/{trigger}/g, job.triggerWord.trim());
 }
 
 /**
- * Build the caption prefix (trigger/name) based on caption type.
- * This is prepended to the model's output when saving the caption.
+ * Build the final caption — just the model output.
+ * The system prompt instructs the model to include the activation token.
  */
-function buildCaptionPrefix(job: CaptionJob): string {
-  const trigger = job.triggerWord.trim();
-  const name = job.subjectName.trim();
-
-  switch (job.captionTypeId) {
-    case "detailed":
-    case "short":
-      // No prefix
-      return "";
-
-    case "detailed_with_trigger":
-    case "short_with_trigger":
-      // Trigger only
-      return trigger || "";
-
-    case "name":
-      // Just the name
-      return name || "";
-
-    default:
-      return "";
-  }
-}
-
-/**
- * Build the final display caption from prefix + model output.
- * For "strict_crop_trigger" and "name_only", the prefix IS the caption.
- */
-function buildFinalCaption(job: CaptionJob, modelOutput: string): string {
-  const prefix = buildCaptionPrefix(job);
-
-  // For types where the prefix IS the entire caption
-  if (job.captionTypeId === "name") {
-    return job.subjectName.trim() || "";
-  }
-
-  // For types where model output is combined with prefix
-  const trimmedOutput = modelOutput.trim();
-  if (!prefix) {
-    return trimmedOutput;
-  }
-  if (!trimmedOutput) {
-    return prefix;
-  }
-
-  // For trigger-based types: "trigger, model_output"
-  return `${prefix}, ${trimmedOutput}`;
+function buildFinalCaption(_job: CaptionJob, modelOutput: string): string {
+  return modelOutput.trim();
 }
 
 function buildApiMessages(
@@ -283,11 +228,11 @@ export async function POST(request: NextRequest) {
     config.model,
     config.systemPrompt || "",
     config.userPrompt || "",
-    resolveCaptionTypeId(config.captionTypeId || "detailed"),
     config.triggerWord || "",
-    config.subjectName || "",
     Math.min(Math.max(Number(config.parallelRequests) || 4, 1), 8),
     cropData,
+    config.presetId || "",
+    config.presetZipName || "",
   );
 
   // Start async processing (fire and forget)
@@ -463,21 +408,6 @@ async function captionImage(
     console.log(`[Caption] ${filename}`);
     if (job.systemPrompt.trim()) console.log(`  System: ${job.systemPrompt.trim()}`);
     if (userText) console.log(`  User:   ${userText}`);
-
-    // For caption types that don't need model output, skip API call
-    if (job.captionTypeId === "name") {
-      const finalCaption = buildFinalCaption(job, "");
-      updateImageStatus(
-        jobId,
-        filename,
-        "completed",
-        finalCaption,
-        undefined,
-        promptText,
-        undefined
-      );
-      return;
-    }
 
     // Call the API
     const response = await fetchWithTimeout(

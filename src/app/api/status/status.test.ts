@@ -45,10 +45,11 @@ describe("GET /api/status", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     const { GET } = await import("./route");
@@ -76,10 +77,11 @@ describe("GET /api/status", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     const { GET } = await import("./route");
@@ -107,10 +109,11 @@ describe("GET /api/status", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     // Simulate processing: one completed, one failed, one still processing
@@ -145,10 +148,11 @@ describe("GET /api/status", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     const { GET } = await import("./route");
@@ -173,10 +177,11 @@ describe("GET /api/status", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(
@@ -211,10 +216,11 @@ describe("GET /api/status", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(
@@ -248,10 +254,11 @@ describe("GET /api/status", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(
@@ -283,10 +290,11 @@ describe("GET /api/status", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(

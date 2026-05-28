@@ -30,7 +30,7 @@ describe("CaptionStudio rendering", () => {
     expect(header?.textContent).toContain("caption");
   });
 
-  it("renders the caption type selector options", () => {
+  it("renders the preset selector", () => {
     render(<CaptionStudio />);
     const select = document.querySelector('select');
     expect(select).toBeDefined();
@@ -63,23 +63,23 @@ describe("CaptionStudio rendering", () => {
     const labels = Array.from(document.querySelectorAll("label")).map(
       (el) => el.textContent
     );
-    expect(labels).toContain("User Prompt");
+    expect(labels.some((l) => l?.includes("User Prompt"))).toBe(true);
   });
 
-  it("renders the caption type selector", () => {
+  it("renders the preset selector label", () => {
     render(<CaptionStudio />);
     const labels = Array.from(document.querySelectorAll("label")).map(
       (el) => el.textContent
     );
-    expect(labels).toContain("Caption Type");
+    expect(labels).toContain("Preset");
   });
 
-  it("renders the subject name input (default caption type needs name)", () => {
+  it("renders the activation token input (Flux1-Dev needs trigger)", () => {
     render(<CaptionStudio />);
     const labels = Array.from(document.querySelectorAll("label")).map(
       (el) => el.textContent
     );
-    expect(labels.some((l) => l.includes("Subject Name"))).toBe(true);
+    expect(labels.some((l) => l?.includes("Activation Token"))).toBe(true);
   });
 
   it("renders the parallel requests selector", () => {
@@ -153,11 +153,11 @@ describe("API Configuration", () => {
     expect(input?.value).toBe("http://localhost:8080");
   });
 
-  it("renders default system prompt (name type, outputStyle none)", () => {
+  it("renders default system prompt (Flux1-Dev preset)", () => {
     render(<CaptionStudio />);
     const textareas = document.querySelectorAll("textarea");
     const systemPromptValue = textareas[0]?.value;
-    expect(systemPromptValue).toContain("provided as a prefix");
+    expect(systemPromptValue).toContain("Flux.1-Dev");
   });
 });
 
@@ -194,12 +194,12 @@ describe("Options", () => {
     expect(headings).toContain("API Connection");
   });
 
-  it("renders the Caption Style subsection header", () => {
+  it("renders the Caption Preset subsection header", () => {
     render(<CaptionStudio />);
     const headings = Array.from(
       document.querySelectorAll("h3")
     ).map((h) => h.textContent);
-    expect(headings).toContain("Caption Style");
+    expect(headings).toContain("Caption Preset");
   });
 });
 
@@ -273,18 +273,19 @@ describe("Default prompt text", () => {
     vi.stubGlobal("fetch", vi.fn());
   });
 
-  it("system prompt is the prefix-only prompt", () => {
+  it("system prompt is the Flux1-Dev prompt", () => {
     render(<CaptionStudio />);
     const textareas = document.querySelectorAll("textarea");
     const systemPromptValue = textareas[0]?.value;
-    expect(systemPromptValue).toContain("captioning assistant");
+    expect(systemPromptValue).toContain("Flux.1-Dev");
+    expect(systemPromptValue).toContain("activation token");
   });
 
-  it("user prompt textarea is empty for name type", () => {
+  it("user prompt contains the {trigger} placeholder", () => {
     render(<CaptionStudio />);
     const textareas = document.querySelectorAll("textarea");
     const userPromptValue = textareas[1]?.value;
-    expect(userPromptValue).toBe("");
+    expect(userPromptValue).toContain("{trigger}");
   });
 });
 

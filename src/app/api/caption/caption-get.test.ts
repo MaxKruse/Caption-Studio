@@ -41,10 +41,11 @@ describe("GET /api/caption", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     const { GET } = await import("./route");
@@ -70,10 +71,11 @@ describe("GET /api/caption", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     const { GET } = await import("./route");
@@ -102,10 +104,11 @@ describe("GET /api/caption", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     const { GET } = await import("./route");
@@ -138,10 +141,11 @@ describe("GET /api/caption", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     // Initially not done
@@ -167,10 +171,11 @@ describe("GET /api/caption", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "a.png", "completed", "cat");
@@ -188,10 +193,11 @@ describe("GET /api/caption", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "test.png", "completed", "a cat");
@@ -225,10 +231,11 @@ describe("GET /api/caption", () => {
       "llama3",
       "You are helpful",
       "describe this",
-      "generic_single",
       "",
-      "",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(
@@ -270,10 +277,11 @@ describe("GET /api/caption", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(
@@ -316,10 +324,11 @@ describe("GET /api/caption", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "test.png", "completed", "a cat");

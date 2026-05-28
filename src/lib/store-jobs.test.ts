@@ -27,10 +27,11 @@ describe("createJob", () => {
       "llama3",
       "system prompt",
       "describe this",
-      "generic_single",
-      "",
-      "",
-      4
+      "emixu",
+      4,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     expect(jobId).toBeDefined();
@@ -60,15 +61,16 @@ describe("createJob", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
-      "",
-      "Batch01",
-      2
+      "emixu",
+      2,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     const job = store.getJob(jobId);
     expect(job?.images.size).toBe(3);
-    expect(job?.subjectName).toBe("Batch01");
+    expect(job?.triggerWord).toBe("emixu");
     expect(job?.parallelRequests).toBe(2);
 
     // All images start as queued
@@ -88,10 +90,11 @@ describe("createJob", () => {
       "gpt-4o",
       "You are helpful",
       "User prompt text",
-      "generic_single",
-      "",
-      "MyBatch",
-      8
+      "krusechar1",
+      8,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     const job = store.getJob(jobId);
@@ -99,8 +102,9 @@ describe("createJob", () => {
     expect(job?.model).toBe("gpt-4o");
     expect(job?.systemPrompt).toBe("You are helpful");
     expect(job?.userPrompt).toBe("User prompt text");
-    expect(job?.captionTypeId).toBe("generic_single");
-    expect(job?.subjectName).toBe("MyBatch");
+    expect(job?.triggerWord).toBe("krusechar1");
+    expect(job?.presetId).toBe("flux1-dev");
+    expect(job?.presetName).toBe("Flux1-Dev");
     expect(job?.parallelRequests).toBe(8);
     expect(job?.createdAt).toBeGreaterThan(0);
 
@@ -112,11 +116,13 @@ describe("createJob", () => {
 
     const id1 = await store.createJob(
       [{ name: "a.png", data: Buffer.from("a") }],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost", "model", "", "prompt", "tok", 1,
+      undefined, "flux1-dev", "Flux1-Dev",
     );
     const id2 = await store.createJob(
       [{ name: "b.png", data: Buffer.from("b") }],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost", "model", "", "prompt", "tok", 1,
+      undefined, "flux1-dev", "Flux1-Dev",
     );
 
     expect(id1).not.toBe(id2);
@@ -129,7 +135,8 @@ describe("createJob", () => {
 
     const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost", "model", "", "prompt", "tok", 1,
+      undefined, "flux1-dev", "Flux1-Dev",
     );
 
     const job = store.getJob(jobId);
@@ -154,7 +161,8 @@ describe("getJob", () => {
 
     const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost", "model", "", "prompt", "tok", 1,
+      undefined, "flux1-dev", "Flux1-Dev",
     );
 
     const job = store.getJob(jobId);
@@ -193,7 +201,8 @@ describe("deleteJob", () => {
 
     const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost", "model", "", "prompt", "tok", 1,
+      undefined, "flux1-dev", "Flux1-Dev",
     );
 
     expect(store.getJob(jobId)).toBeDefined();

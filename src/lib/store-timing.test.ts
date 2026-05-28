@@ -23,7 +23,15 @@ describe("updateImageStatus timing", () => {
 
     const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost",
+      "model",
+      "",
+      "prompt",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     const before = Date.now();
@@ -43,7 +51,15 @@ describe("updateImageStatus timing", () => {
 
     const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost",
+      "model",
+      "",
+      "prompt",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "test.png", "processing");
@@ -64,7 +80,15 @@ describe("updateImageStatus timing", () => {
 
     const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost",
+      "model",
+      "",
+      "prompt",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "test.png", "processing");
@@ -84,7 +108,15 @@ describe("updateImageStatus timing", () => {
 
     const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost",
+      "model",
+      "",
+      "prompt",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "test.png", "processing");
@@ -104,7 +136,15 @@ describe("updateImageStatus timing", () => {
 
     const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost",
+      "model",
+      "",
+      "prompt",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     // Skip processing, go straight to completed
@@ -121,7 +161,15 @@ describe("updateImageStatus timing", () => {
 
     const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost",
+      "model",
+      "",
+      "prompt",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "test.png", "processing");
@@ -157,7 +205,15 @@ describe("getProgress timing estimates", () => {
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },
       ],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost",
+      "model",
+      "",
+      "prompt",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     // All queued, none finished yet
@@ -177,7 +233,15 @@ describe("getProgress timing estimates", () => {
         { name: "b.png", data: Buffer.from("b") },
         { name: "c.png", data: Buffer.from("c") },
       ],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost",
+      "model",
+      "",
+      "prompt",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "a.png", "processing");
@@ -201,7 +265,15 @@ describe("getProgress timing estimates", () => {
         { name: "b.png", data: Buffer.from("b") },
         { name: "c.png", data: Buffer.from("c") },
       ],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost",
+      "model",
+      "",
+      "prompt",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "a.png", "processing");
@@ -226,7 +298,15 @@ describe("getProgress timing estimates", () => {
         { name: "b.png", data: Buffer.from("b") },
         { name: "c.png", data: Buffer.from("c") },
       ],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost",
+      "model",
+      "",
+      "prompt",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     // First image: ~30ms
@@ -255,7 +335,15 @@ describe("getProgress timing estimates", () => {
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },
       ],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost",
+      "model",
+      "",
+      "prompt",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "a.png", "processing");
@@ -277,7 +365,15 @@ describe("getProgress timing estimates", () => {
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },
       ],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost",
+      "model",
+      "",
+      "prompt",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "a.png", "processing");

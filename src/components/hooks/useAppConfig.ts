@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
-  CaptionTypeId,
   ContentMode,
+  PresetId,
   ToastState,
 } from "../CaptionStudioTypes";
 import {
-  CAPTION_TYPES,
-  getSystemPrompt,
-  getUserPrompt,
+  CAPTION_PRESETS,
+  getPreset,
   TOAST_DURATION,
 } from "../CaptionStudioTypes";
 
@@ -23,25 +22,27 @@ export interface UseAppConfigResult {
   selectedModel: string;
   setSelectedModel: (id: string) => void;
 
-  // Content mode
+  // Content mode (used by detection, not captioning)
   contentMode: ContentMode;
   setContentMode: (mode: ContentMode) => void;
 
-  // Caption type
-  captionTypeId: CaptionTypeId;
-  setCaptionTypeId: (id: CaptionTypeId) => void;
+  // Preset
+  presetId: PresetId;
+  setPresetId: (id: PresetId) => void;
+  presetLabel: string;
+  presetZipName: string;
+  presetNeedsTrigger: boolean;
 
-  // Prompts
+  // Prompts (initialized from preset, editable by user)
   systemPrompt: string;
   setSystemPrompt: (value: string) => void;
   userPrompt: string;
   setUserPrompt: (value: string) => void;
 
-  // Caption fields (conditional based on caption type)
+  // Trigger word (activation token)
   triggerWord: string;
   setTriggerWord: (value: string) => void;
-  subjectName: string;
-  setSubjectName: (value: string) => void;
+  triggerRequired: boolean;
 
   // Options
   parallelRequests: number;
@@ -51,13 +52,6 @@ export interface UseAppConfigResult {
   toast: ToastState;
   showToast: (message: string) => void;
   hideToast: () => void;
-
-  // Derived values
-  captionTypeLabel: string;
-  needsTrigger: boolean;
-  needsName: boolean;
-  triggerRequired: boolean;
-  nameRequired: boolean;
 }
 
 export function useAppConfig(): UseAppConfigResult {
@@ -66,41 +60,37 @@ export function useAppConfig(): UseAppConfigResult {
   );
   const [selectedModel, setSelectedModel] = useState("");
 
+  // Content mode — used by detection pipeline, defaults to sfw
   const [contentMode, setContentMode] = useState<ContentMode>("sfw");
 
-  // Caption type — defaults to "name" (subject name only)
-  const [captionTypeId, setCaptionTypeId] = useState<CaptionTypeId>("name");
+  // Preset — defaults to first available
+  const [presetId, setPresetIdState] = useState<PresetId>(
+    CAPTION_PRESETS[0]?.id ?? "flux1-dev"
+  );
 
-  // Prompts — initialized from caption type + mode
+  // Prompts — initialized from preset, user can edit
   const [systemPrompt, setSystemPrompt] = useState(() =>
-    getSystemPrompt("name", "sfw")
+    getPreset(CAPTION_PRESETS[0]?.id ?? "flux1-dev").systemPrompt
   );
   const [userPrompt, setUserPrompt] = useState(() =>
-    getUserPrompt("name", "sfw")
+    getPreset(CAPTION_PRESETS[0]?.id ?? "flux1-dev").userPromptTemplate
   );
 
-  // Caption fields
+  // Trigger word (activation token)
   const [triggerWord, setTriggerWord] = useState("");
-  const [subjectName, setSubjectName] = useState("");
 
   const [parallelRequests, setParallelRequests] = useState(4);
 
   const [toast, setToast] = useState<ToastState>({ message: "", visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Update prompts when caption type changes
-  const handleCaptionTypeChange = useCallback((id: CaptionTypeId) => {
-    setCaptionTypeId(id);
-    setSystemPrompt(getSystemPrompt(id, contentMode));
-    setUserPrompt(getUserPrompt(id, contentMode));
-  }, [contentMode]);
-
-  // Update prompts when content mode changes
-  const handleContentModeChange = useCallback((mode: ContentMode) => {
-    setContentMode(mode);
-    setSystemPrompt(getSystemPrompt(captionTypeId, mode));
-    setUserPrompt(getUserPrompt(captionTypeId, mode));
-  }, [captionTypeId]);
+  // Update prompts when preset changes
+  const setPresetId = useCallback((id: PresetId) => {
+    setPresetIdState(id);
+    const preset = getPreset(id);
+    setSystemPrompt(preset.systemPrompt);
+    setUserPrompt(preset.userPromptTemplate);
+  }, []);
 
   const showToast = useCallback((message: string) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -121,13 +111,12 @@ export function useAppConfig(): UseAppConfigResult {
     };
   }, []);
 
-  // Derived values from caption type definition
-  const captionType = CAPTION_TYPES.find((t) => t.id === captionTypeId) ?? CAPTION_TYPES[0];
-  const captionTypeLabel = captionType.label;
-  const needsTrigger = captionType.needsTrigger;
-  const needsName = captionType.needsName;
-  const triggerRequired = needsTrigger && !triggerWord.trim();
-  const nameRequired = needsName && !subjectName.trim();
+  // Derived values from preset definition
+  const preset = getPreset(presetId);
+  const presetLabel = preset.label;
+  const presetZipName = preset.zipName;
+  const presetNeedsTrigger = preset.needsTrigger;
+  const triggerRequired = presetNeedsTrigger && !triggerWord.trim();
 
   return {
     serverUrl,
@@ -135,26 +124,23 @@ export function useAppConfig(): UseAppConfigResult {
     selectedModel,
     setSelectedModel: useCallback((id: string) => setSelectedModel(id), []),
     contentMode,
-    setContentMode: handleContentModeChange,
-    captionTypeId,
-    setCaptionTypeId: handleCaptionTypeChange,
+    setContentMode,
+    presetId,
+    setPresetId,
+    presetLabel,
+    presetZipName,
+    presetNeedsTrigger,
     systemPrompt,
     setSystemPrompt,
     userPrompt,
     setUserPrompt,
     triggerWord,
     setTriggerWord,
-    subjectName,
-    setSubjectName,
+    triggerRequired,
     parallelRequests,
     setParallelRequests,
     toast,
     showToast,
     hideToast,
-    captionTypeLabel,
-    needsTrigger,
-    needsName,
-    triggerRequired,
-    nameRequired,
   };
 }

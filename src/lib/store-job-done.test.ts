@@ -28,7 +28,15 @@ describe("isJobDone", () => {
 
     const jobId = await store.createJob(
       [{ name: "test.png", data: Buffer.from("fake") }],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost",
+      "model",
+      "",
+      "prompt",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     expect(store.isJobDone(jobId)).toBe(false);
@@ -44,7 +52,15 @@ describe("isJobDone", () => {
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },
       ],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost",
+      "model",
+      "",
+      "prompt",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "a.png", "completed", "done");
@@ -61,7 +77,15 @@ describe("isJobDone", () => {
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },
       ],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost",
+      "model",
+      "",
+      "prompt",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "a.png", "completed", "done");
@@ -80,7 +104,15 @@ describe("isJobDone", () => {
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },
       ],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost",
+      "model",
+      "",
+      "prompt",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "a.png", "failed", undefined, "err");
@@ -100,7 +132,15 @@ describe("isJobDone", () => {
         { name: "b.png", data: Buffer.from("b") },
         { name: "c.png", data: Buffer.from("c") },
       ],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost",
+      "model",
+      "",
+      "prompt",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "a.png", "completed", "ok");
@@ -121,7 +161,15 @@ describe("isJobDone", () => {
         { name: "b.png", data: Buffer.from("b") },
         { name: "c.png", data: Buffer.from("c") },
       ],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost",
+      "model",
+      "",
+      "prompt",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "a.png", "completed", "ok");

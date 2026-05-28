@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  CaptionTypeId,
   ImageFile,
   ImageStatus,
   ProgressState,
+  PresetId,
 } from "../CaptionStudioTypes";
 import type { ImageCrop } from "../CaptionStudioCropTypes";
 
@@ -17,9 +17,9 @@ export interface UseCaptionJobOptions {
   serverUrl: string;
   systemPrompt: string;
   userPrompt: string;
-  captionTypeId: CaptionTypeId;
+  presetId: PresetId;
+  presetZipName: string;
   triggerWord: string;
-  subjectName: string;
   parallelRequests: number;
   showToast: (message: string) => void;
   onDownloadComplete: () => void;
@@ -43,9 +43,9 @@ interface ActionsHookOptions {
   serverUrl: string;
   systemPrompt: string;
   userPrompt: string;
-  captionTypeId: CaptionTypeId;
+  presetId: PresetId;
+  presetZipName: string;
   triggerWord: string;
-  subjectName: string;
   parallelRequests: number;
   jobId: string | null;
   eventSourceRef: React.MutableRefObject<EventSource | null>;
@@ -140,9 +140,9 @@ function useCaptionActions({
   serverUrl,
   systemPrompt,
   userPrompt,
-  captionTypeId,
+  presetId,
+  presetZipName,
   triggerWord,
-  subjectName,
   parallelRequests,
   jobId,
   eventSourceRef,
@@ -172,18 +172,10 @@ function useCaptionActions({
       setJobError("Enter a server URL");
       return;
     }
-    // Validate required fields based on caption type
-    if (captionTypeId === "detailed_with_trigger" || captionTypeId === "short_with_trigger") {
-      if (!triggerWord.trim()) {
-        setJobError("Enter a Trigger Word");
-        return;
-      }
-    }
-    if (captionTypeId === "name") {
-      if (!subjectName.trim()) {
-        setJobError("Enter a Subject Name");
-        return;
-      }
+    // Validate trigger word if preset requires it
+    if (presetId === "flux1-dev" && !triggerWord.trim()) {
+      setJobError("Enter an activation token (trigger word)");
+      return;
     }
 
     eventSourceRef.current?.close();
@@ -209,9 +201,9 @@ function useCaptionActions({
         model: selectedModel,
         systemPrompt,
         userPrompt,
-        captionTypeId,
+        presetId,
+        presetZipName,
         triggerWord: triggerWord.trim(),
-        subjectName: subjectName.trim(),
         parallelRequests,
         imageNames: images.map((img) => img.name),
         cropData: Object.keys(cropDataMap).length > 0 ? cropDataMap : undefined,
@@ -262,9 +254,9 @@ function useCaptionActions({
     serverUrl,
     systemPrompt,
     userPrompt,
-    captionTypeId,
+    presetId,
+    presetZipName,
     triggerWord,
-    subjectName,
     parallelRequests,
     showToast,
     eventSourceRef,
@@ -299,10 +291,8 @@ function useCaptionActions({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const safeName = subjectName.trim() || triggerWord.trim() || "Untitled";
-      a.download = `Captions${safeName}.zip`;
-      document.body.appendChild(a);
       a.click();
+      document.body.appendChild(a);
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
@@ -326,7 +316,7 @@ function useCaptionActions({
     } finally {
       setIsDownloading(false);
     }
-  }, [jobId, subjectName, triggerWord, showToast, onDownloadComplete, setJobError, setJobId, setImageStatuses, setProgress, setIsDownloading]);
+  }, [jobId, showToast, onDownloadComplete, setJobError, setJobId, setImageStatuses, setProgress, setIsDownloading]);
 
   // Reset job state (called by clearAll)
   const reset = useCallback(() => {

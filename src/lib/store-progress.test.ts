@@ -40,7 +40,15 @@ describe("getProgress", () => {
         { name: "b.png", data: Buffer.from("b") },
         { name: "c.png", data: Buffer.from("c") },
       ],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost",
+      "model",
+      "",
+      "prompt",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     const progress = store.getProgress(jobId);
@@ -66,7 +74,15 @@ describe("getProgress", () => {
         { name: "d.png", data: Buffer.from("d") },
         { name: "e.png", data: Buffer.from("e") },
       ],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost",
+      "model",
+      "",
+      "prompt",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     // 2 completed, 1 processing, 1 failed, 1 queued
@@ -96,7 +112,15 @@ describe("getProgress", () => {
         { name: "a.png", data: Buffer.from("a") },
         { name: "b.png", data: Buffer.from("b") },
       ],
-      "http://localhost", "model", "", "prompt", "generic_single", "", "", 1
+      "http://localhost",
+      "model",
+      "",
+      "prompt",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "a.png", "completed", "ok");

@@ -50,10 +50,11 @@ describe("POST /api/download", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "MyBatch",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "test.png", "completed", "a cat");
@@ -71,7 +72,7 @@ describe("POST /api/download", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toBe("application/zip");
     expect(res.headers.get("Content-Disposition")).toContain(
-      'filename="CaptionsMyBatch.zip"'
+      'filename="Flux1-Dev_Untitled.zip"'
     );
   });
 
@@ -87,10 +88,11 @@ describe("POST /api/download", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "photo1.png", "completed", "a cat");
@@ -131,10 +133,11 @@ describe("POST /api/download", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "", // empty subjectName
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     const { POST } = await import("./route");
@@ -148,7 +151,7 @@ describe("POST /api/download", () => {
     const res = await POST(req);
 
     expect(res.headers.get("Content-Disposition")).toContain(
-      'filename="CaptionsUntitled.zip"'
+      'filename="Flux1-Dev_Untitled.zip"'
     );
   });
 
@@ -164,10 +167,11 @@ describe("POST /api/download", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "my-photo.png", "completed", "caption 1");
@@ -202,10 +206,11 @@ describe("POST /api/download", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(
@@ -245,10 +250,11 @@ describe("POST /api/download", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     expect(store.getJob(jobId)).toBeDefined();
@@ -279,10 +285,11 @@ describe("POST /api/download", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "1.png", "completed", "caption for png");
@@ -322,10 +329,11 @@ describe("POST /api/download", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "photo.png", "completed", "cap png");
@@ -397,7 +405,13 @@ describe("POST /api/download", () => {
       ],
       "http://localhost:8080",
       "llama3",
-      "", "describe", "generic_single", "", "", 1
+      "",
+      "describe",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "1.png", "completed", "cap 1png");
@@ -445,7 +459,13 @@ describe("POST /api/download", () => {
       ],
       "http://localhost:8080",
       "llama3",
-      "", "describe", "generic_single", "", "", 1
+      "",
+      "describe",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "x.png", "completed", "cap png");
@@ -489,7 +509,13 @@ describe("POST /api/download", () => {
       ],
       "http://localhost:8080",
       "llama3",
-      "", "describe", "generic_single", "", "", 1
+      "",
+      "describe",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "unique-a.png", "completed", "cap ua");
@@ -539,7 +565,13 @@ describe("POST /api/download", () => {
       ],
       "http://localhost:8080",
       "llama3",
-      "", "describe", "generic_single", "", "", 1
+      "",
+      "describe",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     for (const [name, cap] of Object.entries({
@@ -588,7 +620,13 @@ describe("POST /api/download", () => {
       ],
       "http://localhost:8080",
       "llama3",
-      "", "describe", "generic_single", "", "", 1
+      "",
+      "describe",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     for (const name of ["a.png", "a.jpg", "b.png", "b.jpg", "c.png", "c.jpg"]) {
@@ -641,7 +679,13 @@ describe("POST /api/download", () => {
       ],
       "http://localhost:8080",
       "llama3",
-      "", "describe", "generic_single", "", "", 1
+      "",
+      "describe",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     for (const name of [
@@ -700,7 +744,13 @@ describe("POST /api/download", () => {
       ],
       "http://localhost:8080",
       "llama3",
-      "", "describe", "generic_single", "", "", 1
+      "",
+      "describe",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     for (const name of [
@@ -748,7 +798,13 @@ describe("POST /api/download", () => {
       ],
       "http://localhost:8080",
       "llama3",
-      "", "describe", "generic_single", "", "", 1
+      "",
+      "describe",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(jobId, "my.photo.png", "completed", "cap png");
@@ -787,7 +843,13 @@ describe("POST /api/download", () => {
       ],
       "http://localhost:8080",
       "llama3",
-      "", "describe", "generic_single", "", "", 1
+      "",
+      "describe",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     for (const name of ["a.png", "a.jpg", "a.webp", "b.png", "b.jpg", "c.png"]) {
@@ -835,7 +897,13 @@ describe("POST /api/download", () => {
       ],
       "http://localhost:8080",
       "llama3",
-      "", "describe", "generic_single", "", "", 1
+      "",
+      "describe",
+      "",
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     for (const name of ["x.png", "x.jpg", "x.webp", "x.gif", "y.png", "y.jpg"]) {
@@ -873,10 +941,11 @@ describe("POST /api/download", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     store.updateImageStatus(

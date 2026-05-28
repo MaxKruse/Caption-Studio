@@ -36,10 +36,11 @@ describe("captionImage behavior", () => {
       "llama3",
       "",
       "describe",
-      "generic_single",
       "",
-      "",
-      1
+      1,
+      undefined,
+      "flux1-dev",
+      "Flux1-Dev",
     );
 
     // Simulate what captionImage does — extracting content and reasoning_content
