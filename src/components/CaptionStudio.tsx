@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import type { ImageFile, ImageStatus, WorkflowStep } from "./CaptionStudioTypes";
 import type { CropRuleset, DetectionResult, ImageCrop } from "./CaptionStudioCropTypes";
@@ -33,6 +33,7 @@ import { usePreviewKeyboardNav } from "./hooks/usePreviewKeyboardNav";
 export default function CaptionStudio() {
   // -- App configuration state --
   const config = useAppConfig();
+  const { showToast } = config;
 
   // -- Model fetching --
   const { models, modelLoading, modelError, fetchModels } =
@@ -76,11 +77,6 @@ export default function CaptionStudio() {
   const [isDetecting, setIsDetecting] = useState(false);
   const [detectionError, setDetectionError] = useState<string | null>(null);
 
-  // Ref-based guard: prevents duplicate detection starts when user clicks
-  // rapidly before React re-renders and disables the button.
-  // Refs update synchronously — unlike state, which batches asynchronously.
-  const isDetectingRef = useRef(false);
-
   // -- Caption job --
   const captionJob = useCaptionJob({
     images: imageUpload.images,
@@ -105,18 +101,14 @@ export default function CaptionStudio() {
     setWorkflowStep("configure");
     cropDetection.reset();
     setIsDetecting(false);
-    isDetectingRef.current = false;
     setDetectionError(null);
   }, [cropDetection]);
 
   // -- Detection handler --
   const handleDetect = useCallback(async () => {
-    // Ref-based guard: blocks duplicate calls before React re-renders
-    if (isDetectingRef.current) return;
-    isDetectingRef.current = true;
+    if (isDetecting) return;
 
     if (!cropRuleset || imageUpload.images.length === 0 || !selectedModel) {
-      isDetectingRef.current = false;
       return;
     }
 
@@ -145,7 +137,6 @@ export default function CaptionStudio() {
       if (!res.ok) {
         setDetectionError(data.error || "Detection failed");
         setIsDetecting(false);
-        isDetectingRef.current = false;
         setWorkflowStep("upload");
         return;
       }
@@ -197,9 +188,8 @@ export default function CaptionStudio() {
               `All ${imageUpload.images.length} image(s) failed detection. Please try different images or a different model.`
             );
             setIsDetecting(false);
-            isDetectingRef.current = false;
             setWorkflowStep("upload");
-            config.showToast("All images failed detection — please try again");
+            showToast("All images failed detection — please try again");
             return;
           }
 
@@ -214,7 +204,6 @@ export default function CaptionStudio() {
           // Move to crop step
           setWorkflowStep("crop");
           setIsDetecting(false);
-          isDetectingRef.current = false;
         }
       };
 
@@ -223,24 +212,20 @@ export default function CaptionStudio() {
         sseHandlers.onError();
         setDetectionError("Detection connection lost");
         setIsDetecting(false);
-        isDetectingRef.current = false;
         setWorkflowStep("upload");
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : "Detection failed";
       setDetectionError(message);
-      config.showToast(message);
+      showToast(message);
       setIsDetecting(false);
-      isDetectingRef.current = false;
       setWorkflowStep("upload");
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cropRuleset, imageUpload.images, selectedModel, config.serverUrl, config.contentMode, config.showToast, cropDetection]);
+  }, [isDetecting, cropRuleset, imageUpload.images, selectedModel, config.serverUrl, config.contentMode, showToast, cropDetection]);
 
   // -- Abort detection handler --
   const handleAbortDetection = useCallback(() => {
     setIsDetecting(false);
-    isDetectingRef.current = false;
     setWorkflowStep("upload");
   }, []);
 
