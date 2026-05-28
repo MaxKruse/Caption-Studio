@@ -31,6 +31,8 @@ interface DetectRequest {
   serverUrl: string;
   model: string;
   contentMode: "sfw" | "nsfw";
+  /** Max concurrent detection requests (defaults to DETECTION_CONCURRENCY). */
+  parallelRequests?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -64,6 +66,7 @@ export async function POST(request: NextRequest) {
   }
 
   const contentMode = config.contentMode ?? "nsfw";
+  const parallelRequests = config.parallelRequests ?? DETECTION_CONCURRENCY;
 
   // Create detection job in store
   const imageNames = imageFiles.map((f) => f.name);
@@ -74,7 +77,7 @@ export async function POST(request: NextRequest) {
   );
 
   // Start async processing (fire and forget)
-  void processDetectionJob(jobId, config.serverUrl, config.model, imageFiles, contentMode);
+  void processDetectionJob(jobId, config.serverUrl, config.model, imageFiles, contentMode, parallelRequests);
 
   return Response.json({ jobId });
 }
@@ -158,7 +161,8 @@ async function processDetectionJob(
   serverUrl: string,
   model: string,
   imageFiles: File[],
-  contentMode: "sfw" | "nsfw"
+  contentMode: "sfw" | "nsfw",
+  parallelRequests: number
 ): Promise<void> {
   const baseUrl = normalizeServerUrl(serverUrl);
   const { systemPrompt, userPrompt } = getDetectionPrompts(contentMode);
@@ -283,7 +287,7 @@ async function processDetectionJob(
   // Launch workers for primary queue
   await Promise.all(
     Array.from(
-      { length: Math.min(DETECTION_CONCURRENCY, primaryQueue.length) },
+      { length: Math.min(parallelRequests, primaryQueue.length) },
       () => worker(primaryQueue)
     )
   );
@@ -294,7 +298,7 @@ async function processDetectionJob(
     const retryFiles = Array.from(retryQueue.values());
     await Promise.all(
       Array.from(
-        { length: Math.min(DETECTION_CONCURRENCY, retryFiles.length) },
+        { length: Math.min(parallelRequests, retryFiles.length) },
         () => worker(retryFiles)
       )
     );
