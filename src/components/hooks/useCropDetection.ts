@@ -39,7 +39,7 @@ const BODY_CROP_PADDING = 0;
 /**
  * Build a crop rectangle from the best bounding box of a given category.
  */
-function buildCropRectFromBestBox(
+export function buildCropRectFromBestBox(
   boxes: BoundingBox[],
   paddingFactor: number
 ): { x: number; y: number; width: number; height: number } | null {
@@ -97,7 +97,7 @@ export function allocateCropTypes(
 /**
  * Build a crop rectangle from a bounding box with padding.
  */
-function buildCropRectFromBox(
+export function buildCropRectFromBox(
   box: BoundingBox,
   paddingFactor: number
 ): { x: number; y: number; width: number; height: number } {
@@ -125,7 +125,7 @@ function buildCropRectFromBox(
 /**
  * Build a default full-image crop (when no detection available).
  */
-function buildDefaultCrop(): { x: number; y: number; width: number; height: number } {
+export function buildDefaultCrop(): { x: number; y: number; width: number; height: number } {
   const margin = 20;
   return { x: margin, y: margin, width: 1000 - margin * 2, height: 1000 - margin * 2 };
 }
@@ -249,7 +249,7 @@ export function useCropDetection({
       let detectionError: string | null = null;
 
       if (hasSkipped) {
-        detectionError = `${skipped.length} image(s) skipped after failed detection (will be omitted from crops): ${skipped.join(", ")}`;
+        detectionError = `${skipped.length} image(s) failed detection — set their crop boxes manually: ${skipped.join(", ")}`;
       } else if (hasErrors) {
         detectionError = `${results.filter((r) => r.error).length} image(s) had detection issues`;
       }
@@ -269,7 +269,7 @@ export function useCropDetection({
   }, []);
 
   // -----------------------------------------------------------------------
-  // Auto-assign crops (skips images that failed detection)
+  // Auto-assign crops (includes failed-detection images with default crop)
   // -----------------------------------------------------------------------
   const autoAssignCrops = useCallback(() => {
     setState((prev) => {
@@ -278,22 +278,35 @@ export function useCropDetection({
 
       // Filter out detections that have errors (failed/skipped)
       const validDetections = prev.detections.filter((d) => !d.error);
-      if (validDetections.length === 0) return prev;
 
-      const cropTypes = allocateCropTypes(validDetections, prev.ruleset.portraitRatio);
+      // Allocate crop types for valid detections
+      const cropTypes = validDetections.length > 0
+        ? allocateCropTypes(validDetections, prev.ruleset.portraitRatio)
+        : [];
 
       // Build a set of skipped image names for quick lookup
       const skippedNames = new Set(
         prev.detections.filter((d) => d.error).map((d) => d.imageName)
       );
 
-      // Build crops only for valid (non-skipped) detections
+      // Build crops for ALL images — failed detections get a default full-image crop
       const crops: ImageCrop[] = [];
       let validIndex = 0;
 
       for (let i = 0; i < prev.detections.length; i++) {
         const detection = prev.detections[i];
-        if (skippedNames.has(detection.imageName)) continue;
+
+        if (skippedNames.has(detection.imageName)) {
+          // Failed detection — assign default full-image crop so user can manually adjust
+          crops.push({
+            imageIndex: detection.imageIndex,
+            imageName: imageNames[detection.imageIndex] ?? detection.imageName ?? `image_${detection.imageIndex}`,
+            cropType: "face",
+            cropRect: buildDefaultCrop(),
+            autoDetected: false,
+          });
+          continue;
+        }
 
         const type = cropTypes[validIndex];
         const padding = type === "face" ? FACE_CROP_PADDING : BODY_CROP_PADDING;

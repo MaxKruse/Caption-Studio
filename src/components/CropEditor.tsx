@@ -476,21 +476,21 @@ export function CropEditor({
             </div>
           )}
 
-          {/* Skipped image warning */}
+          {/* Failed detection warning — shows when selected image needs manual crop */}
           {isCurrentSkipped && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-800 flex items-start gap-2">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 flex items-start gap-2">
               <svg className="w-4 h-4 shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
               </svg>
               <div>
-                <p className="font-semibold">{currentImage?.name} was skipped</p>
-                <p className="mt-0.5">This image failed detection and will be omitted from crops and captioning.</p>
+                <p className="font-semibold">{currentImage?.name} — detection failed</p>
+                <p className="mt-0.5">Draw a crop box manually for this image.</p>
               </div>
             </div>
           )}
 
           {/* Main editor area — always visible when crops exist */}
-          {crops.length > 0 && displayCrop && !isCurrentSkipped && (
+          {crops.length > 0 && displayCrop && (
             <CropEditorView
               image={displayImage!}
               crop={displayCrop}
@@ -499,16 +499,6 @@ export function CropEditor({
               onSetCropType={handleToggleCropType}
               disabled={disabled}
             />
-          )}
-          {crops.length > 0 && isCurrentSkipped && (
-            <div className="flex items-center justify-center min-h-[300px] bg-zinc-100 rounded-lg border-2 border-dashed border-zinc-200">
-              <div className="text-center space-y-2">
-                <svg className="w-8 h-8 mx-auto text-zinc-300" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                </svg>
-                <p className="text-xs text-zinc-400">This image was skipped — select another image to edit</p>
-              </div>
-            </div>
           )}
 
           {/* Thumbnail strip */}
@@ -528,22 +518,16 @@ export function CropEditor({
                       key={img.name}
                       onClick={() => onSelectImage(i)}
                       className={`relative aspect-square rounded-lg overflow-hidden border-2 transition-all ${
-                        isSkipped
-                          ? "border-red-200 opacity-50"
-                          : isSelected
-                            ? "border-zinc-900 ring-2 ring-zinc-300"
+                        isSelected
+                          ? "border-zinc-900 ring-2 ring-zinc-300"
+                          : isSkipped
+                            ? "border-amber-300"
                             : "border-zinc-200 hover:border-zinc-400"
                       }`}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={img.preview} alt={img.name} className="w-full h-full object-cover" />
-                      {isSkipped ? (
-                        <div className="absolute inset-0 flex items-center justify-center bg-red-100/60 pointer-events-none">
-                          <span className="px-1.5 py-0.5 text-[9px] font-bold rounded shadow-sm bg-red-500 text-white">
-                            SKIP
-                          </span>
-                        </div>
-                      ) : crop ? (
+                      {crop ? (
                         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                           <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded shadow-sm ${
                             crop.cropType === "face"
@@ -552,6 +536,11 @@ export function CropEditor({
                           }`}>
                             {crop.cropType === "face" ? "F" : "B"}
                           </span>
+                          {isSkipped && (
+                            <span className="absolute bottom-0.5 right-0.5 text-[7px] font-bold px-0.5 rounded bg-amber-500 text-white">
+                              !
+                            </span>
+                          )}
                         </div>
                       ) : null}
                     </button>

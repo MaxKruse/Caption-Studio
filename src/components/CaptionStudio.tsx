@@ -193,7 +193,7 @@ export default function CaptionStudio() {
           const skippedCount = results.filter((r) => r.error && (r.error.includes("permanently") || r.error.includes("skipped"))).length;
           if (skippedCount > 0) {
             setDetectionError(
-              `${skippedCount} image(s) skipped after failed detection and will be omitted from crops. ${hasValidCrops ? "Proceeding with remaining images." : ""}`
+              `${skippedCount} image(s) failed detection — set their crop boxes manually in the editor below.`
             );
           }
 

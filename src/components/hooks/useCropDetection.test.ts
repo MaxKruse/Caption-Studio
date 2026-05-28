@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import type { BoundingBox } from "../CaptionStudioCropTypes";
-import { allocateCropTypes, computeBoxQuality } from "./useCropDetection";
+import {
+  allocateCropTypes,
+  computeBoxQuality,
+  buildCropRectFromBox,
+  buildCropRectFromBestBox,
+  buildDefaultCrop,
+} from "./useCropDetection";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -388,5 +394,304 @@ describe("allocateCropTypes — mixed confidence", () => {
     // Sorted: img0(-0.15), img3(-0.45), img1(-0.70), img2(-0.70)
     // Top 2 → face: img0 (striking face) and img3 (visible face)
     expect(result).toEqual(["face", "body", "body", "face"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildDefaultCrop
+// ---------------------------------------------------------------------------
+
+describe("buildDefaultCrop", () => {
+  it("returns a crop with 20px margin on all sides", () => {
+    const result = buildDefaultCrop();
+    expect(result).toEqual({
+      x: 20,
+      y: 20,
+      width: 960,
+      height: 960,
+    });
+  });
+
+  it("crop fits within 1000x1000 canvas", () => {
+    const result = buildDefaultCrop();
+    expect(result.x + result.width).toBeLessThanOrEqual(1000);
+    expect(result.y + result.height).toBeLessThanOrEqual(1000);
+  });
+
+  it("crop has positive dimensions", () => {
+    const result = buildDefaultCrop();
+    expect(result.width).toBeGreaterThan(0);
+    expect(result.height).toBeGreaterThan(0);
+  });
+
+  it("returns consistent result on repeated calls", () => {
+    const a = buildDefaultCrop();
+    const b = buildDefaultCrop();
+    expect(a).toEqual(b);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildCropRectFromBox
+// ---------------------------------------------------------------------------
+
+describe("buildCropRectFromBox", () => {
+  it("creates crop rect from box with zero padding", () => {
+    const box: BoundingBox = {
+      bbox_2d: [100, 200, 400, 500] as [number, number, number, number],
+      label: "face",
+      confidence: 0.85,
+    };
+    const result = buildCropRectFromBox(box, 0);
+    // box: x=100, y=200, w=300, h=300
+    expect(result).toEqual({ x: 100, y: 200, width: 300, height: 300 });
+  });
+
+  it("applies 25% padding for face crops", () => {
+    const box: BoundingBox = {
+      bbox_2d: [100, 200, 400, 500] as [number, number, number, number],
+      label: "face",
+      confidence: 0.85,
+    };
+    const result = buildCropRectFromBox(box, 0.25);
+    // box: x=100, y=200, w=300, h=300
+    // paddingW = 300 * 0.25 = 75, paddingH = 300 * 0.25 = 75
+    // cropX = 100 - 75 = 25, cropY = 200 - 75 = 125
+    // cropWidth = 300 + 75*2 = 450, cropHeight = 300 + 75*2 = 450
+    expect(result).toEqual({ x: 25, y: 125, width: 450, height: 450 });
+  });
+
+  it("clamps crop to 0 when padding extends beyond left edge", () => {
+    const box: BoundingBox = {
+      bbox_2d: [10, 200, 110, 500] as [number, number, number, number],
+      label: "face",
+      confidence: 0.85,
+    };
+    const result = buildCropRectFromBox(box, 0.25);
+    // box: x=10, y=200, w=100, h=300
+    // paddingW = 100 * 0.25 = 25
+    // cropX = 10 - 25 = -15 → clamped to 0, cropWidth += -15 → 100+50-15 = 135
+    expect(result.x).toBe(0);
+    expect(result.width).toBe(135);
+  });
+
+  it("clamps crop to 0 when padding extends beyond top edge", () => {
+    const box: BoundingBox = {
+      bbox_2d: [200, 10, 500, 110] as [number, number, number, number],
+      label: "face",
+      confidence: 0.85,
+    };
+    const result = buildCropRectFromBox(box, 0.25);
+    // box: x=200, y=10, w=300, h=100
+    // paddingH = 100 * 0.25 = 25
+    // cropY = 10 - 25 = -15 → clamped to 0, cropHeight += -15 → 100+50-15 = 135
+    expect(result.y).toBe(0);
+    expect(result.height).toBe(135);
+  });
+
+  it("clamps crop width when padding extends beyond right edge (1000)", () => {
+    const box: BoundingBox = {
+      bbox_2d: [800, 200, 990, 500] as [number, number, number, number],
+      label: "face",
+      confidence: 0.85,
+    };
+    const result = buildCropRectFromBox(box, 0.25);
+    // box: x=800, y=200, w=190, h=300
+    // paddingW = 190 * 0.25 = 47.5
+    // cropX = 800 - 47.5 = 752.5
+    // cropWidth = 190 + 95 = 285
+    // cropX + cropWidth = 752.5 + 285 = 1037.5 > 1000 → cropWidth = 1000 - 752.5 = 247.5
+    expect(result.x + result.width).toBeLessThanOrEqual(1000);
+  });
+
+  it("clamps crop height when padding extends beyond bottom edge (1000)", () => {
+    const box: BoundingBox = {
+      bbox_2d: [200, 800, 500, 990] as [number, number, number, number],
+      label: "face",
+      confidence: 0.85,
+    };
+    const result = buildCropRectFromBox(box, 0.25);
+    expect(result.y + result.height).toBeLessThanOrEqual(1000);
+  });
+
+  it("handles box at origin (0,0)", () => {
+    const box: BoundingBox = {
+      bbox_2d: [0, 0, 100, 100] as [number, number, number, number],
+      label: "face",
+      confidence: 0.85,
+    };
+    const result = buildCropRectFromBox(box, 0.25);
+    // box: x=0, y=0, w=100, h=100
+    // paddingW = 100 * 0.25 = 25
+    // cropX = 0 - 25 = -25 → clamped to 0, cropWidth += -25 → 150 + (-25) = 125
+    // cropY = 0 - 25 = -25 → clamped to 0, cropHeight += -25 → 150 + (-25) = 125
+    expect(result.x).toBe(0);
+    expect(result.y).toBe(0);
+    expect(result.width).toBe(125);
+    expect(result.height).toBe(125);
+  });
+
+  it("handles box at far corner (near 1000)", () => {
+    const box: BoundingBox = {
+      bbox_2d: [900, 900, 1000, 1000] as [number, number, number, number],
+      label: "face",
+      confidence: 0.85,
+    };
+    const result = buildCropRectFromBox(box, 0.25);
+    // box: x=900, y=900, w=100, h=100
+    // paddingW = 25
+    // cropX = 900 - 25 = 875
+    // cropWidth = 100 + 50 = 150
+    // cropX + cropWidth = 875 + 150 = 1025 > 1000 → cropWidth = 1000 - 875 = 125
+    expect(result.x).toBe(875);
+    expect(result.width).toBe(125);
+    expect(result.y).toBe(875);
+    expect(result.height).toBe(125);
+  });
+
+  it("handles full-image box with zero padding", () => {
+    const box: BoundingBox = {
+      bbox_2d: [0, 0, 1000, 1000] as [number, number, number, number],
+      label: "body",
+      confidence: 0.5,
+    };
+    const result = buildCropRectFromBox(box, 0);
+    expect(result).toEqual({ x: 0, y: 0, width: 1000, height: 1000 });
+  });
+
+  it("handles tiny box with large padding", () => {
+    const box: BoundingBox = {
+      bbox_2d: [495, 495, 505, 505] as [number, number, number, number],
+      label: "face",
+      confidence: 0.9,
+    };
+    const result = buildCropRectFromBox(box, 0.25);
+    // box: x=495, y=495, w=10, h=10
+    // paddingW = 10 * 0.25 = 2.5
+    // cropX = 495 - 2.5 = 492.5
+    // cropWidth = 10 + 5 = 15
+    expect(result.x).toBeCloseTo(492.5);
+    expect(result.width).toBeCloseTo(15);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildCropRectFromBestBox
+// ---------------------------------------------------------------------------
+
+describe("buildCropRectFromBestBox", () => {
+  it("returns null for empty array", () => {
+    expect(buildCropRectFromBestBox([], 0.25)).toBeNull();
+  });
+
+  it("selects the largest box by area", () => {
+    const boxes: BoundingBox[] = [
+      { bbox_2d: [100, 100, 200, 200] as [number, number, number, number], label: "face", confidence: 0.9 }, // area = 10000
+      { bbox_2d: [300, 300, 600, 600] as [number, number, number, number], label: "face", confidence: 0.5 }, // area = 90000
+    ];
+    const result = buildCropRectFromBestBox(boxes, 0);
+    // Should pick the second box (larger area)
+    expect(result).toEqual({ x: 300, y: 300, width: 300, height: 300 });
+  });
+
+  it("selects the box with largest area regardless of confidence", () => {
+    const boxes: BoundingBox[] = [
+      { bbox_2d: [100, 100, 150, 150] as [number, number, number, number], label: "face", confidence: 0.99 }, // area = 2500
+      { bbox_2d: [200, 200, 400, 500] as [number, number, number, number], label: "face", confidence: 0.3 }, // area = 90000
+    ];
+    const result = buildCropRectFromBestBox(boxes, 0);
+    // Should pick the second box (larger area, lower confidence)
+    expect(result).toEqual({ x: 200, y: 200, width: 200, height: 300 });
+  });
+
+  it("uses single box when only one provided", () => {
+    const boxes: BoundingBox[] = [
+      { bbox_2d: [100, 200, 400, 500] as [number, number, number, number], label: "face", confidence: 0.85 },
+    ];
+    const result = buildCropRectFromBestBox(boxes, 0.25);
+    // box: x=100, y=200, w=300, h=300
+    // paddingW = 75, paddingH = 75
+    // cropX = 25, cropY = 125, cropWidth = 450, cropHeight = 450
+    expect(result).toEqual({ x: 25, y: 125, width: 450, height: 450 });
+  });
+
+  it("handles boxes with same area (picks first)", () => {
+    const boxes: BoundingBox[] = [
+      { bbox_2d: [100, 100, 200, 200] as [number, number, number, number], label: "face", confidence: 0.8 }, // area = 10000
+      { bbox_2d: [300, 300, 400, 400] as [number, number, number, number], label: "face", confidence: 0.9 }, // area = 10000
+    ];
+    const result = buildCropRectFromBestBox(boxes, 0);
+    // First box wins (same area, reduce keeps first max)
+    expect(result).toEqual({ x: 100, y: 100, width: 100, height: 100 });
+  });
+
+  it("applies padding factor to selected box", () => {
+    const boxes: BoundingBox[] = [
+      { bbox_2d: [400, 400, 600, 600] as [number, number, number, number], label: "face", confidence: 0.8 },
+    ];
+    const result = buildCropRectFromBestBox(boxes, 0.25);
+    // box: x=400, y=400, w=200, h=200
+    // paddingW = 50, paddingH = 50
+    // cropX = 350, cropY = 350, cropWidth = 300, cropHeight = 300
+    expect(result).toEqual({ x: 350, y: 350, width: 300, height: 300 });
+  });
+
+  it("handles body boxes (zero padding)", () => {
+    const boxes: BoundingBox[] = [
+      { bbox_2d: [100, 100, 500, 900] as [number, number, number, number], label: "body", confidence: 0.85 },
+    ];
+    const result = buildCropRectFromBestBox(boxes, 0);
+    expect(result).toEqual({ x: 100, y: 100, width: 400, height: 800 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// allocateCropTypes — empty input
+// ---------------------------------------------------------------------------
+
+describe("allocateCropTypes — empty input", () => {
+  it("returns empty array for empty detections", () => {
+    const result = allocateCropTypes([], 0.5);
+    expect(result).toEqual([]);
+  });
+
+  it("returns empty array with zero ratio", () => {
+    const result = allocateCropTypes([], 0);
+    expect(result).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeBoxQuality — additional edge cases
+// ---------------------------------------------------------------------------
+
+describe("computeBoxQuality — edge cases", () => {
+  it("returns 0 when all boxes have 0 confidence", () => {
+    const boxes = [
+      { bbox_2d: [100, 100, 200, 200] as [number, number, number, number], label: "face", confidence: 0 },
+    ];
+    expect(computeBoxQuality(boxes)).toBe(0);
+  });
+
+  it("returns 1 when any box has 1.0 confidence", () => {
+    const boxes = [
+      { bbox_2d: [100, 100, 200, 200] as [number, number, number, number], label: "face", confidence: 0.3 },
+      { bbox_2d: [300, 300, 400, 400] as [number, number, number, number], label: "face", confidence: 1.0 },
+    ];
+    expect(computeBoxQuality(boxes)).toBe(1.0);
+  });
+
+  it("ignores box label — uses confidence only", () => {
+    const boxes = [
+      { bbox_2d: [100, 100, 200, 200] as [number, number, number, number], label: "body", confidence: 0.9 },
+    ];
+    expect(computeBoxQuality(boxes)).toBe(0.9);
+  });
+
+  it("handles very small confidence values", () => {
+    const boxes = [
+      { bbox_2d: [100, 100, 200, 200] as [number, number, number, number], label: "face", confidence: 0.01 },
+    ];
+    expect(computeBoxQuality(boxes)).toBe(0.01);
   });
 });
