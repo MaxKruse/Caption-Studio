@@ -159,7 +159,7 @@ export function ConfigSection({
                 type="text"
                 value={triggerWord}
                 onChange={(e) => onTriggerWordChange(e.target.value)}
-                placeholder='e.g. "emixu" or a custom token'
+                placeholder='e.g. "margot_robbie" or a custom token'
                 className={`w-full px-3 py-2 text-sm border rounded bg-white text-zinc-900 placeholder-zinc-400 focus:outline-none focus:border-zinc-500 transition-colors ${
                   triggerRequired
                     ? "border-zinc-500 ring-1 ring-zinc-400"

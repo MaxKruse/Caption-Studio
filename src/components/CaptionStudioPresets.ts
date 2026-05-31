@@ -33,9 +33,11 @@ Output a single line, 10-40 words, natural English.
 You receive a unique activation token and an image of a single character.
 
 RULES:
-- Start the caption with the given activation token.
+- Start the caption with the given activation token, followed by a comma and "a".
+  Format: "{trigger}, a [woman/man/person] with ..."
 - Do NOT use real names or known fictional characters.
 - Describe ONLY:
+  - gender (woman, man, person)
   - hair color, length, and basic style
   - eye color
   - distinctive features (elf ears, scars, tattoos)
@@ -49,10 +51,10 @@ RULES:
 - Avoid age words (young, old, teenager, child).
 
 EXAMPLES:
-token=emixu → 'emixu woman with long straight brown hair, blue eyes and elf ears, wearing gold armor and a purple dress, neutral expression'
-token=krusechar1 → 'krusechar1 man with short dark hair and brown eyes, wearing a black hoodie and headphones, neutral expression'`,
+token=emma_stone → 'emma_stone, a woman with long straight brown hair, blue eyes and elf ears, wearing gold armor and a purple dress, neutral expression'
+token=tom_cruise → 'tom_cruise, a man with short dark hair and brown eyes, wearing a black hoodie and headphones, neutral expression'`,
     userPromptTemplate: `Generate a short training caption for this character image.
-Use this activation token at the start: {trigger}
+Start with the activation token, a comma, and "a": "{trigger}, a [woman/man/person] with ..."
 Describe only the character's appearance and controllable attributes.`,
   },
   {
@@ -67,7 +69,8 @@ Your job: For each input image, produce a single-line caption that (1) always in
 
 GLOBAL PRINCIPLES:
 - Write one caption per image, on a single line (no line breaks).
-- Always include the provided trigger token as the very first token, followed by a comma.
+- Always include the provided trigger token as the very first token, followed by a comma and "a".
+  Format: "{trigger}, a [woman/man/person] ..."
 - Captions must be descriptive, concise, and structured, not long prose paragraphs.
 - Describe what is actually visible: framing, pose, expression, physical traits, clothing, accessories, location, lighting, and background.
 - Focus on identity and appearance, not story or internal thoughts.
@@ -75,17 +78,17 @@ GLOBAL PRINCIPLES:
 - Avoid rare, flowery, or metaphorical language.
 
 CAPTION STRUCTURE (adapt each element to what is visible):
-  [TRIGGER], [framing], [pose / action], [facial expression], [stable physical traits], [clothing short], [accessories], [location], [lighting], [background]
+  [TRIGGER], a [woman/man/person], [framing], [pose / action], [facial expression], [stable physical traits], [clothing short], [accessories], [location], [lighting], [background]
 
 DETAILS:
-1. [TRIGGER] — Always the first token, followed by a comma. Example: maxi_krs_char, close-up portrait, ...
+1. [TRIGGER] — Always the first token, followed by a comma and "a". Example: margot_robbie, a woman, close-up portrait, ...
 2. [framing] — How much of the character is visible: close-up portrait, medium shot, half body, full body, from behind, etc.
 3. [pose / action] — What the character is doing: facing camera, in profile, sitting, walking, leaning, crossed arms, etc.
 4. [facial expression] — Short and direct: neutral expression, slight smile, big smile, laughing, serious, surprised, etc.
 5. [stable physical traits] — Critical for character identity. Be explicit and consistent across all images:
    - Hair: color, length, style (short wavy dark-brown hair, long straight blonde hair, curly black hair)
    - Eyes: color (green eyes, blue eyes, brown eyes, hazel eyes)
-   - Age / build: young adult, middle-aged, slim build, athletic build
+   - Build: slim build, athletic build, etc.
    - Skin tone if relevant
    Use the SAME wording for these traits across all images of the same character.
 6. [clothing short] — Short and factual, matched to this image: white t-shirt, black hoodie, blue jeans, red dress. Describe only what is visible.
@@ -111,13 +114,13 @@ CONSISTENCY ACROSS DATASET:
 VARIATION ACROSS IMAGES:
 - Framing, pose, expression, clothing, environment, and lighting should reflect what is actually in each image.
 
-EXAMPLES (trigger = maxi_krs_char):
-1. maxi_krs_char, close-up portrait, facing camera, slight smile, short wavy dark-brown hair, green eyes, light freckles, young adult slim build, casual black t-shirt, no accessories, indoors, soft diffused lighting, blurred office background
-2. maxi_krs_char, half body shot, standing, looking to the left, neutral expression, short wavy dark-brown hair, green eyes, light freckles, young adult slim build, blue denim jacket over white t-shirt, no accessories, outdoors in a city street, overcast daylight, blurred buildings in the background
-3. maxi_krs_char, full body shot, walking forward, smiling, short wavy dark-brown hair, green eyes, light freckles, young adult slim build, red hoodie and black jeans, sneakers, no accessories, in a park, natural daylight, trees and grass in the background`,
+EXAMPLES (trigger = margot_robbie):
+1. margot_robbie, a woman, close-up portrait, facing camera, slight smile, long wavy blonde hair, green eyes, slim build, casual black t-shirt, no accessories, indoors, soft diffused lighting, blurred office background
+2. margot_robbie, a woman, half body shot, standing, looking to the left, neutral expression, long wavy blonde hair, green eyes, slim build, blue denim jacket over white t-shirt, no accessories, outdoors in a city street, overcast daylight, blurred buildings in the background
+3. margot_robbie, a woman, full body shot, walking forward, smiling, long wavy blonde hair, green eyes, slim build, red hoodie and black jeans, sneakers, no accessories, in a park, natural daylight, trees and grass in the background`,
     userPromptTemplate: `Generate a training caption for this character image.
 Use this trigger token as the very first token: {trigger}
-Follow the caption structure: trigger, framing, pose, expression, physical traits, clothing, accessories, location, lighting, background.
+Follow the caption structure: "{trigger}, a [woman/man/person], framing, pose, expression, physical traits, clothing, accessories, location, lighting, background."
 Output exactly one line of caption text, nothing else.`,
   },
 ];
