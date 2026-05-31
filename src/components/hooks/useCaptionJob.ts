@@ -5,6 +5,7 @@ import {
   ProgressState,
   PresetId,
 } from "../CaptionStudioTypes";
+import { getPreset } from "../CaptionStudioPresets";
 import type { ImageCrop } from "../CaptionStudioCropTypes";
 
 // ---------------------------------------------------------------------------
@@ -173,7 +174,7 @@ function useCaptionActions({
       return;
     }
     // Validate trigger word if preset requires it
-    if (presetId === "flux1-dev" && !triggerWord.trim()) {
+    if (getPreset(presetId).needsTrigger && !triggerWord.trim()) {
       setJobError("Enter an activation token (trigger word)");
       return;
     }

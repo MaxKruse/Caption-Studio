@@ -399,7 +399,10 @@ export default function CaptionStudio() {
     cropDetection.hasCrops &&
     cropDetection.rulesetValid &&
     !isDetecting &&
-    !captionJob.isProcessing;
+    !captionJob.isProcessing &&
+    !!selectedModel &&
+    !!config.serverUrl.trim() &&
+    !config.triggerRequired;
 
   const jobDone = !!captionJob.jobId && !captionJob.isProcessing;
 
