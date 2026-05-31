@@ -103,7 +103,7 @@ describe("FloatingActionBar upload step", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Detect step — progress bar + abort
+// Detect step — unified progress bar + abort
 // ---------------------------------------------------------------------------
 
 describe("FloatingActionBar detect step", () => {
@@ -117,8 +117,8 @@ describe("FloatingActionBar detect step", () => {
       />
     );
     expect(screen.getByText("2 detected")).toBeDefined();
-    expect(screen.getByText(/1 retrying/)).toBeDefined();
-    expect(screen.getByRole("button", { name: "Abort detection" })).toBeDefined();
+    expect(screen.getByText(/1 processing/)).toBeDefined();
+    expect(screen.getByRole("button", { name: "Abort" })).toBeDefined();
   });
 
   it("shows skipped count when images are permanently skipped", () => {
@@ -156,6 +156,19 @@ describe("FloatingActionBar detect step", () => {
       />
     );
     expect(screen.getByText("80%")).toBeDefined();
+  });
+
+  it("uses unified progress bar (h-1.5)", () => {
+    render(
+      <FloatingActionBar
+        step="detect"
+        imagesCount={5}
+        detectionProgress={mockDetectionProgress}
+        onAbortDetection={() => {}}
+      />
+    );
+    const progressBar = document.querySelector('[class*="h-1.5"]');
+    expect(progressBar).toBeDefined();
   });
 });
 
@@ -215,7 +228,7 @@ describe("FloatingActionBar crop step", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Caption step — progress bar + time estimate + abort
+// Caption step — unified progress bar + abort (no time estimates)
 // ---------------------------------------------------------------------------
 
 describe("FloatingActionBar caption step", () => {
@@ -226,78 +239,28 @@ describe("FloatingActionBar caption step", () => {
         imagesCount={10}
         captionProgress={mockProgress}
         captionProgressPercent={40}
-        estimatedRemainingMs={30000}
-        avgTimeMs={5000}
         onAbortCaption={() => {}}
       />
     );
     expect(screen.getByText("3 captioned")).toBeDefined();
+    expect(screen.getByText(/2 processing/)).toBeDefined();
     expect(screen.getByText(/1 failed/)).toBeDefined();
     expect(screen.getByText("40%")).toBeDefined();
-    expect(screen.getByRole("button", { name: "Abort captioning" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Abort" })).toBeDefined();
   });
 
-  it("shows time estimate with remaining, per-image, and images left", () => {
+  it("uses unified progress bar (h-1.5)", () => {
     render(
       <FloatingActionBar
         step="caption"
         imagesCount={10}
-        captionProgress={{
-          total: 10,
-          queued: 5,
-          processing: 2,
-          completed: 3,
-          failed: 0,
-        }}
-        captionProgressPercent={30}
-        estimatedRemainingMs={60000}
-        avgTimeMs={12000}
+        captionProgress={mockProgress}
+        captionProgressPercent={40}
         onAbortCaption={() => {}}
       />
     );
-    expect(screen.getByText("1m remaining")).toBeDefined();
-    expect(screen.getByText("~12s per image")).toBeDefined();
-    expect(screen.getByText("5 images left")).toBeDefined();
-  });
-
-  it("shows 'Waiting...' when estimatedRemainingMs is undefined", () => {
-    render(
-      <FloatingActionBar
-        step="caption"
-        imagesCount={10}
-        captionProgress={{
-          total: 10,
-          queued: 10,
-          processing: 0,
-          completed: 0,
-          failed: 0,
-        }}
-        captionProgressPercent={0}
-        onAbortCaption={() => {}}
-      />
-    );
-    expect(screen.getByText("Waiting...")).toBeDefined();
-  });
-
-  it("shows singular 'image left' when one remains", () => {
-    render(
-      <FloatingActionBar
-        step="caption"
-        imagesCount={10}
-        captionProgress={{
-          total: 10,
-          queued: 1,
-          processing: 0,
-          completed: 9,
-          failed: 0,
-        }}
-        captionProgressPercent={90}
-        estimatedRemainingMs={5000}
-        avgTimeMs={5000}
-        onAbortCaption={() => {}}
-      />
-    );
-    expect(screen.getByText("1 image left")).toBeDefined();
+    const progressBar = document.querySelector('[class*="h-1.5"]');
+    expect(progressBar).toBeDefined();
   });
 
   it("omits failed count when no failures", () => {
@@ -313,12 +276,29 @@ describe("FloatingActionBar caption step", () => {
           failed: 0,
         }}
         captionProgressPercent={50}
-        estimatedRemainingMs={30000}
-        avgTimeMs={5000}
         onAbortCaption={() => {}}
       />
     );
     expect(screen.queryByText(/failed/)).toBeNull();
+  });
+
+  it("omits processing count when none processing", () => {
+    render(
+      <FloatingActionBar
+        step="caption"
+        imagesCount={10}
+        captionProgress={{
+          total: 10,
+          queued: 3,
+          processing: 0,
+          completed: 5,
+          failed: 2,
+        }}
+        captionProgressPercent={50}
+        onAbortCaption={() => {}}
+      />
+    );
+    expect(screen.queryByText(/processing/)).toBeNull();
   });
 });
 

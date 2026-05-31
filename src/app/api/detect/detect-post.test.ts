@@ -15,9 +15,10 @@ describe("detection concurrency", () => {
     vi.restoreAllMocks();
   });
 
-  it("DETECTION_CONCURRENCY constant is hardcoded to 3 (should use config instead)", async () => {
-    // This test documents the current bug: DETECTION_CONCURRENCY is hardcoded
-    // to 3, ignoring the user's parallelRequests setting.
+  it("DETECTION_CONCURRENCY constant defaults to 3 (used as fallback)", async () => {
+    // DETECTION_CONCURRENCY is 3 — it serves as a fallback when parallelRequests
+    // is not provided in the config. The frontend (CaptionStudio.tsx handleDetect)
+    // now properly passes parallelRequests from user config.
     const constants = await import("@/components/CaptionStudioCropConstants");
     expect(constants.DETECTION_CONCURRENCY).toBe(3);
   });

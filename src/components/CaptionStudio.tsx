@@ -122,6 +122,7 @@ export default function CaptionStudio() {
         serverUrl: config.serverUrl.trim(),
         model: selectedModel,
         contentMode: config.contentMode,
+        parallelRequests: config.parallelRequests,
       }));
       for (const img of imageUpload.images) {
         formData.append("images", img.file);
@@ -532,9 +533,10 @@ export default function CaptionStudio() {
 
       {/* Detection error */}
       {(displayStep === "detect" || displayStep === "crop") && detectionError && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-          {detectionError}
-        </div>
+        <JobErrorMessage
+          message={detectionError}
+          onDismiss={() => setDetectionError(null)}
+        />
       )}
 
       {/* Step 2.5: Crop Editor */}
@@ -572,13 +574,9 @@ export default function CaptionStudio() {
       <FloatingActionBar
         step={actionBarStep}
         imagesCount={imageUpload.images.length}
-        images={imageUpload.images}
         detectionProgress={cropDetection.detectionProgress}
-        detectionStatuses={cropDetection.detectionStatuses}
         captionProgress={captionJob.progress}
         captionProgressPercent={progressPercent}
-        estimatedRemainingMs={captionJob.progress.estimatedRemainingMs}
-        avgTimeMs={captionJob.progress.avgTimeMs}
         onDetect={handleDetect}
         onAbortDetection={handleAbortDetection}
         onProceedToCaption={canProceedToCaption ? handleProceedFromCrop : undefined}
