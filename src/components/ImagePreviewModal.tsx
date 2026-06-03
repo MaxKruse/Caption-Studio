@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ImageFile, ImageStatus } from "./CaptionStudioTypes";
 
@@ -49,12 +49,20 @@ export function ImagePreviewModal({
   const [showPrompt, setShowPrompt] = useState(false);
   const [showReasoning, setShowReasoning] = useState(false);
 
-  // Use the original file for full-quality preview in the modal
-  const fullQualitySrc = useMemo(() => URL.createObjectURL(img.file), [img.file]);
+  // Load the original file as a data URL to avoid blob URL lifecycle issues
+  // (blob URLs get revoked by effect cleanup, especially under Strict Mode)
+  const [fullQualitySrc, setFullQualitySrc] = useState<string | null>(null);
+  const loadingRef = useRef(true);
 
   useEffect(() => {
-    return () => URL.revokeObjectURL(fullQualitySrc);
-  }, [fullQualitySrc]);
+    loadingRef.current = true;
+    const reader = new FileReader();
+    reader.onload = () => {
+      loadingRef.current = false;
+      setFullQualitySrc(reader.result as string);
+    };
+    reader.readAsDataURL(img.file);
+  }, [img.file]);
 
   return (
     <div
@@ -95,12 +103,18 @@ export function ImagePreviewModal({
             </button>
           )}
 
-          {/* eslint-disable-next-line @next/next/no-img-element -- user-uploaded file via ObjectURL, not static asset */}
-          <img
-            src={fullQualitySrc}
-            alt={img.name}
-            className="max-h-[66vh] w-full object-contain"
-          />
+          {fullQualitySrc ? (
+            /* eslint-disable-next-line @next/next/no-img-element -- user-uploaded file via data URL */
+            <img
+              src={fullQualitySrc}
+              alt={img.name}
+              className="max-h-[66vh] w-full object-contain"
+            />
+          ) : (
+            <div className="max-h-[66vh] w-full flex items-center justify-center py-20">
+              <div className="w-8 h-8 skeleton rounded-full" />
+            </div>
+          )}
 
           {/* Next button */}
           {hasNext && (

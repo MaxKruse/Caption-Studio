@@ -6,13 +6,18 @@ import type {
   ToastState,
 } from "../CaptionStudioTypes";
 import {
-  CAPTION_PRESETS,
   getPreset,
   TOAST_DURATION,
 } from "../CaptionStudioTypes";
+import { useStudioStore } from "@/store/studioStore";
 
 // ---------------------------------------------------------------------------
-// useAppConfig — manages all configuration state for the caption studio
+// useAppConfig — thin wrapper around studioStore config + local toast state
+//
+// Reads/writes all config from the Zustand store (persisted to localStorage).
+// Toast remains local (not persisted).
+//
+// Return type is unchanged for backward compatibility with existing consumers.
 // ---------------------------------------------------------------------------
 
 export interface UseAppConfigResult {
@@ -22,7 +27,7 @@ export interface UseAppConfigResult {
   selectedModel: string;
   setSelectedModel: (id: string) => void;
 
-  // Content mode (used by detection, not captioning)
+  // Content mode
   contentMode: ContentMode;
   setContentMode: (mode: ContentMode) => void;
 
@@ -33,13 +38,13 @@ export interface UseAppConfigResult {
   presetZipName: string;
   presetNeedsTrigger: boolean;
 
-  // Prompts (initialized from preset, editable by user)
+  // Prompts
   systemPrompt: string;
   setSystemPrompt: (value: string) => void;
   userPrompt: string;
   setUserPrompt: (value: string) => void;
 
-  // Trigger word (activation token)
+  // Trigger word
   triggerWord: string;
   setTriggerWord: (value: string) => void;
   triggerRequired: boolean;
@@ -48,49 +53,43 @@ export interface UseAppConfigResult {
   parallelRequests: number;
   setParallelRequests: (value: number) => void;
 
-  // Toast
+  // Toast (local only)
   toast: ToastState;
   showToast: (message: string) => void;
   hideToast: () => void;
 }
 
 export function useAppConfig(): UseAppConfigResult {
-  const [serverUrl, setServerUrl] = useState(
-    process.env.NEXT_PUBLIC_CAPTION_API_URL || "http://localhost:8080"
-  );
-  const [selectedModel, setSelectedModel] = useState("");
+  // -- Read from store --
+  const serverUrl = useStudioStore((s) => s.config.serverUrl);
+  const selectedModel = useStudioStore((s) => s.config.selectedModel);
+  const contentMode = useStudioStore((s) => s.config.contentMode);
+  const presetId = useStudioStore((s) => s.config.presetId);
+  const systemPrompt = useStudioStore((s) => s.config.systemPrompt);
+  const userPrompt = useStudioStore((s) => s.config.userPrompt);
+  const triggerWord = useStudioStore((s) => s.config.triggerWord);
+  const parallelRequests = useStudioStore((s) => s.config.parallelRequests);
 
-  // Content mode — used by detection pipeline, defaults to sfw
-  const [contentMode, setContentMode] = useState<ContentMode>("sfw");
+  // -- Store setters --
+  const setServerUrl = useStudioStore((s) => s.setServerUrl);
+  const setSelectedModel = useStudioStore((s) => s.setSelectedModel);
+  const setContentMode = useStudioStore((s) => s.setContentMode);
+  const setPresetId = useStudioStore((s) => s.setPresetId);
+  const setSystemPrompt = useStudioStore((s) => s.setSystemPrompt);
+  const setUserPrompt = useStudioStore((s) => s.setUserPrompt);
+  const setTriggerWord = useStudioStore((s) => s.setTriggerWord);
+  const setParallelRequests = useStudioStore((s) => s.setParallelRequests);
 
-  // Preset — defaults to first available
-  const [presetId, setPresetIdState] = useState<PresetId>(
-    CAPTION_PRESETS[0]?.id ?? "flux1-dev"
-  );
+  // -- Derived from preset --
+  const preset = getPreset(presetId);
+  const presetLabel = preset.label;
+  const presetZipName = preset.zipName;
+  const presetNeedsTrigger = preset.needsTrigger;
+  const triggerRequired = presetNeedsTrigger && !triggerWord.trim();
 
-  // Prompts — initialized from preset, user can edit
-  const [systemPrompt, setSystemPrompt] = useState(() =>
-    getPreset(CAPTION_PRESETS[0]?.id ?? "flux1-dev").systemPrompt
-  );
-  const [userPrompt, setUserPrompt] = useState(() =>
-    getPreset(CAPTION_PRESETS[0]?.id ?? "flux1-dev").userPromptTemplate
-  );
-
-  // Trigger word (activation token)
-  const [triggerWord, setTriggerWord] = useState("");
-
-  const [parallelRequests, setParallelRequests] = useState(4);
-
+  // -- Toast (local, not persisted) --
   const [toast, setToast] = useState<ToastState>({ message: "", visible: false });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Update prompts when preset changes
-  const setPresetId = useCallback((id: PresetId) => {
-    setPresetIdState(id);
-    const preset = getPreset(id);
-    setSystemPrompt(preset.systemPrompt);
-    setUserPrompt(preset.userPromptTemplate);
-  }, []);
 
   const showToast = useCallback((message: string) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -111,18 +110,11 @@ export function useAppConfig(): UseAppConfigResult {
     };
   }, []);
 
-  // Derived values from preset definition
-  const preset = getPreset(presetId);
-  const presetLabel = preset.label;
-  const presetZipName = preset.zipName;
-  const presetNeedsTrigger = preset.needsTrigger;
-  const triggerRequired = presetNeedsTrigger && !triggerWord.trim();
-
   return {
     serverUrl,
     setServerUrl,
     selectedModel,
-    setSelectedModel: useCallback((id: string) => setSelectedModel(id), []),
+    setSelectedModel,
     contentMode,
     setContentMode,
     presetId,

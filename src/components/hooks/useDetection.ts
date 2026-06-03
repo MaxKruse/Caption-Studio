@@ -4,16 +4,17 @@ import { useCallback, useRef, useState } from "react";
 import type { ImageFile, WorkflowStep } from "../CaptionStudioTypes";
 import type { CropRuleset, DetectionResult } from "../CaptionStudioCropTypes";
 import type { UseCropDetectionReturn } from "../CaptionStudioCropTypes";
+import { useStudioStore } from "@/store/studioStore";
 
 // ---------------------------------------------------------------------------
 // Detection workflow hook
+//
+// Reads config (serverUrl, contentMode, parallelRequests) from store.
+// Receives images, cropRuleset, cropDetection, showToast, onStepChange as props.
 // ---------------------------------------------------------------------------
 
 export function useDetection({
   images,
-  serverUrl,
-  contentMode,
-  parallelRequests,
   selectedModel,
   cropRuleset,
   cropDetection,
@@ -21,15 +22,16 @@ export function useDetection({
   onStepChange,
 }: {
   images: ImageFile[];
-  serverUrl: string;
-  contentMode: "sfw" | "nsfw";
-  parallelRequests: number;
   selectedModel: string;
   cropRuleset: CropRuleset | null;
   cropDetection: UseCropDetectionReturn;
   showToast: (message: string) => void;
   onStepChange: (step: WorkflowStep) => void;
 }) {
+  // -- Read config from store --
+  const serverUrl = useStudioStore((s) => s.config.serverUrl);
+  const contentMode = useStudioStore((s) => s.config.contentMode);
+  const parallelRequests = useStudioStore((s) => s.config.parallelRequests);
   const [isDetecting, setIsDetecting] = useState(false);
   const [detectionError, setDetectionError] = useState<string | null>(null);
 

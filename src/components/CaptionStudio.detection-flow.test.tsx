@@ -32,11 +32,7 @@ const makeBodyBox = (confidence = 0.30): BoundingBox => ({
 });
 
 const makeHookOptions = (count = 2): UseCropDetectionOptions => ({
-  imageCount: count,
   imageNames: Array.from({ length: count }, (_, i) => `img${i}.png`),
-  serverUrl: "http://localhost:8080",
-  selectedModel: "gpt-4o",
-  showToast: () => {},
 });
 
 const makeDetectionResults = (count = 2): DetectionResult[] =>

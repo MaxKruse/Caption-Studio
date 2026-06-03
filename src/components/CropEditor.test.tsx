@@ -121,6 +121,9 @@ function renderCropEditor({
       selectedIndex={selectedIndex}
       disabled={disabled}
       skippedImageNames={skippedImageNames}
+      canProceedToCaption={true}
+      onProceedToCaption={vi.fn()}
+      onBackToUpload={vi.fn()}
     />
   );
 
@@ -433,6 +436,9 @@ describe("CropEditor — ruleset validation", () => {
         onResetCrop={vi.fn()}
         onSelectImage={vi.fn()}
         selectedIndex={0}
+        canProceedToCaption={false}
+        onProceedToCaption={vi.fn()}
+        onBackToUpload={vi.fn()}
       />
     );
 

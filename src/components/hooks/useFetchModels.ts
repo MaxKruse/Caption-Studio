@@ -3,12 +3,16 @@
 import { useCallback, useEffect, useState } from "react";
 
 import type { ModelInfo } from "../CaptionStudioTypes";
+import { useStudioStore } from "@/store/studioStore";
 
 /**
  * Fetches available vision models from the configured server on mount.
+ * Reads serverUrl directly from the Zustand store.
  * Manages loading, error, and model list state internally.
  */
-export function useFetchModels(serverUrl: string) {
+export function useFetchModels() {
+  const serverUrl = useStudioStore((s) => s.config.serverUrl);
+
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [modelLoading, setModelLoading] = useState(false);
   const [modelError, setModelError] = useState("");
@@ -43,7 +47,6 @@ export function useFetchModels(serverUrl: string) {
   }, [serverUrl]);
 
   // Fetch models on mount and whenever serverUrl changes
-  // doFetch is memoized via useCallback, so its identity is stable across renders
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch; setState fires after await
     void fetchModels();

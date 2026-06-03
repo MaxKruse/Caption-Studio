@@ -6,7 +6,9 @@ import {
   type ImageFile,
   type ImageStatus,
 } from "./CaptionStudioTypes";
+import type { DetectionProgress } from "./CaptionStudioCropTypes";
 import { StatusBadge } from "./ImagePreviewModal";
+import { EmptyStateHero } from "./EmptyStateHero";
 
 // ---------------------------------------------------------------------------
 // ImageCard - single image thumbnail with status
@@ -26,7 +28,7 @@ function ImageCard({
   onPreview: (img: ImageFile) => void;
 }) {
   return (
-    <div className="relative group border border-zinc-200 rounded overflow-hidden bg-white">
+    <div className="relative group border border-zinc-200 rounded overflow-hidden bg-white card-lift">
       <button
         onClick={() => onPreview(img)}
         className="w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 cursor-pointer hover:opacity-90 transition-opacity"
@@ -106,6 +108,13 @@ export function UploadSection({
   onRemoveImage,
   onPreview,
   fileInputRef,
+  isDetecting,
+  canDetect,
+  onDetect,
+  onAbortDetection,
+  detectionProgress,
+  detectionError,
+  onDismissDetectionError,
 }: {
   images: ImageFile[];
   imageStatuses: Record<string, ImageStatus>;
@@ -123,9 +132,16 @@ export function UploadSection({
   onRemoveImage: (name: string) => void;
   onPreview: (img: ImageFile) => void;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
+  isDetecting: boolean;
+  canDetect: boolean;
+  onDetect: () => void;
+  onAbortDetection: () => void;
+  detectionProgress: DetectionProgress;
+  detectionError: string | null;
+  onDismissDetectionError: () => void;
 }) {
   return (
-    <section className="rounded-xl border border-zinc-200 overflow-hidden">
+    <section className="animate-fade-in rounded-xl border border-zinc-200 overflow-hidden">
       <div className="flex items-center gap-3 px-5 py-3 bg-zinc-50 border-b border-zinc-200">
         <div className="w-6 h-6 rounded-full bg-zinc-900 text-zinc-100 flex items-center justify-center text-xs font-medium">
           2
@@ -138,70 +154,68 @@ export function UploadSection({
         )}
       </div>
 
-      <div className="p-5 space-y-4">
-        {/* Drop zone */}
-        <div
+      {/* Hidden file input — always mounted so the ref is never null */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept=".png,.jpg,.jpeg,.webp,.gif"
+        onChange={onFileChange}
+        className="hidden"
+      />
+
+      {images.length === 0 ? (
+        /* Empty state — large inviting upload area */
+        <EmptyStateHero
           onClick={() => fileInputRef.current?.click()}
+          dragOver={dragOver}
+          isProcessing={isProcessing}
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
           onDrop={onDrop}
-          className={`relative flex flex-col items-center justify-center gap-2 px-6 py-8 border-2 border-dashed rounded cursor-pointer transition-colors ${
-            dragOver
-              ? "border-zinc-500 bg-zinc-100"
-              : "border-zinc-300 hover:border-zinc-400"
-          } ${isProcessing ? "pointer-events-none opacity-50" : ""}`}
-        >
-          <div className="flex flex-col items-center justify-center gap-2">
-            {isUploading ? (
-              <>
-                <svg
-                  className="w-8 h-8 text-zinc-400 animate-spin"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={1.5}
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"
-                  />
-                </svg>
-                <span className="text-sm text-zinc-500">Processing images...</span>
-              </>
-            ) : (
-              <>
-                <svg
-                  className="w-8 h-8 text-zinc-400"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={1.5}
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.338-2.32A3 3 0 0121 12v7.5a3 3 0 01-3 3H6.75z"
-                  />
-                </svg>
-                <span className="text-sm text-zinc-500">
-                  Click to upload or drag &amp; drop
-                </span>
-                <span className="text-xs text-zinc-400">
-                  PNG, JPG, JPEG, WebP, GIF
-                </span>
-              </>
-            )}
+        />
+      ) : (
+        <div className="p-5 space-y-4">
+          {/* Drop zone — compact when images exist */}
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onDrop={onDrop}
+            className={`relative flex flex-col items-center justify-center gap-2 px-6 py-6 border-2 border-dashed rounded cursor-pointer transition-colors ${
+              dragOver
+                ? "border-zinc-500 bg-zinc-100"
+                : "border-zinc-300 hover:border-zinc-400"
+            } ${isProcessing ? "pointer-events-none opacity-50" : ""}`}
+          >
+            <div className="flex flex-col items-center justify-center gap-2">
+              {isUploading ? (
+                <>
+                  <div className="w-8 h-8 skeleton rounded-full" />
+                  <span className="text-sm text-zinc-500">Processing images...</span>
+                </>
+              ) : (
+                <>
+                  <svg
+                    className="w-7 h-7 text-zinc-400"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={1.5}
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.338-2.32A3 3 0 0121 12v7.5a3 3 0 01-3 3H6.75z"
+                    />
+                  </svg>
+                  <span className="text-sm text-zinc-500">
+                    Drop more images or click to browse
+                  </span>
+                </>
+              )}
+            </div>
           </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept=".png,.jpg,.jpeg,.webp,.gif"
-            onChange={onFileChange}
-            className="hidden"
-          />
-        </div>
 
         {/* Image count guidance */}
         {images.length > 0 && (
@@ -328,7 +342,99 @@ export function UploadSection({
             )}
           </div>
         )}
+
+        {/* Detection error */}
+        {detectionError && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 flex items-start gap-2">
+            <svg className="w-4 h-4 shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+            </svg>
+            <div className="flex-1">
+              <span>{detectionError}</span>
+            </div>
+            <button
+              onClick={onDismissDetectionError}
+              className="shrink-0 text-amber-600 hover:text-amber-800"
+              aria-label="Dismiss"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
+
+        {/* Detection progress */}
+        {isDetecting && detectionProgress && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs text-zinc-500">
+                <span className="space-x-2">
+                  <span>{detectionProgress.completed} detected</span>
+                  {detectionProgress.processing > 0 && (
+                    <span className="text-zinc-400">
+                      &middot; {detectionProgress.processing} processing
+                    </span>
+                  )}
+                  {(detectionProgress.skipped ?? 0) > 0 && (
+                    <span className="text-red-500">
+                      &middot; {detectionProgress.skipped} skipped
+                    </span>
+                  )}
+                </span>
+              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-zinc-500 shrink-0">
+                  {detectionProgress.total > 0
+                    ? Math.round(((detectionProgress.completed + detectionProgress.failed) / detectionProgress.total) * 100)
+                    : 0}%
+                </span>
+                <button
+                  onClick={onAbortDetection}
+                  className="shrink-0 px-2 py-1 text-[11px] font-medium rounded-md bg-zinc-200 text-zinc-600 hover:bg-zinc-300 hover:text-zinc-800 transition-colors flex items-center gap-1"
+                  aria-label="Abort"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  Abort
+                </button>
+              </div>
+            </div>
+            <div className="h-1.5 bg-zinc-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-zinc-700 transition-all duration-400 ease-out rounded-full"
+                style={{
+                  width: `${detectionProgress.total > 0
+                    ? ((detectionProgress.completed + detectionProgress.failed) / detectionProgress.total) * 100
+                    : 0}%`
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Detect button — shown when images uploaded and not detecting */}
+        {images.length > 0 && !isDetecting && (
+          <div className="flex items-center gap-3 pt-2">
+            <button
+              onClick={onDetect}
+              disabled={!canDetect}
+              className={`shrink-0 px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2 ${
+                canDetect
+                  ? "bg-zinc-900 text-zinc-100 hover:bg-zinc-800 shadow-sm"
+                  : "bg-zinc-200 text-zinc-400 cursor-not-allowed"
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+              </svg>
+              Detect Faces &amp; Bodies ({images.length} image{images.length !== 1 ? "s" : ""})
+            </button>
+          </div>
+        )}
       </div>
+      )}
     </section>
   );
 }

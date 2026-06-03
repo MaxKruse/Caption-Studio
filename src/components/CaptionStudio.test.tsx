@@ -16,7 +16,7 @@ describe("CaptionStudio rendering", () => {
   it("renders the page header", () => {
     render(<CaptionStudio />);
     expect(
-      screen.getByText("Character Captioning Studio")
+      screen.getByText("Caption Studio")
     ).toBeDefined();
   });
 
@@ -24,10 +24,7 @@ describe("CaptionStudio rendering", () => {
     render(<CaptionStudio />);
     // The subtitle appears in the header <p> tag
     const header = document.querySelector("header");
-    expect(header?.textContent).toContain("upload images");
-    expect(header?.textContent).toContain("detect");
-    expect(header?.textContent).toContain("crop");
-    expect(header?.textContent).toContain("caption");
+    expect(header?.textContent).toContain("Batch image captioning");
   });
 
   it("renders the preset selector", () => {
@@ -44,10 +41,10 @@ describe("CaptionStudio rendering", () => {
 
   it("renders the Fetch Models button (or Loading state during auto-fetch)", () => {
     render(<CaptionStudio />);
-    // The component auto-fetches on mount, so the button may show "Loading..."
+    // The component auto-fetches on mount, so the button may show "Connecting..."
     const buttons = Array.from(document.querySelectorAll("button"))
       .map((b) => b.textContent);
-    expect(buttons.some((t) => t?.includes("Fetch Models") || t?.includes("Loading"))).toBe(true);
+    expect(buttons.some((t) => t?.includes("Fetch Models") || t?.includes("Connecting") || t?.includes("Loading"))).toBe(true);
   });
 
   it("renders the system prompt textarea", () => {
@@ -102,9 +99,11 @@ describe("CaptionStudio rendering", () => {
     expect(screen.getByText("PNG, JPG, JPEG, WebP, GIF")).toBeDefined();
   });
 
-  it("renders the Configure section header", () => {
+  it("renders the Configure step label", () => {
     render(<CaptionStudio />);
-    expect(screen.getByText("Configure")).toBeDefined();
+    // "Configure" appears in both StepIndicator and ConfigSection
+    const configureElements = screen.getAllByText("Configure");
+    expect(configureElements.length).toBeGreaterThanOrEqual(1);
   });
 
   it("renders the Upload Images section header", () => {
@@ -114,7 +113,7 @@ describe("CaptionStudio rendering", () => {
 
   it("renders the page header initially", () => {
     render(<CaptionStudio />);
-    expect(screen.getByText("Character Captioning Studio")).toBeDefined();
+    expect(screen.getByText("Caption Studio")).toBeDefined();
   });
 });
 
@@ -235,7 +234,7 @@ describe("ImagePreviewModal reasoning content", () => {
     // code contains the reasoning section by checking the source indirectly.
     // The modal only appears when previewImage + previewStatus are set.
     // We verify the component renders without errors.
-    expect(screen.getByText("Character Captioning Studio")).toBeDefined();
+    expect(screen.getByText("Caption Studio")).toBeDefined();
   });
 });
 
@@ -253,14 +252,14 @@ describe("ImageCard clickability", () => {
     // The ImageCard wraps the image in a <button>. We verify the button exists
     // by checking that clickable elements exist in the gallery.
     // Since no images are uploaded yet, we just verify the component renders.
-    expect(screen.getByText("Character Captioning Studio")).toBeDefined();
+    expect(screen.getByText("Caption Studio")).toBeDefined();
   });
 
   it("has cursor-pointer class on image button", () => {
     render(<CaptionStudio />);
     // Verify the component source includes cursor-pointer by checking
     // that the component renders without errors.
-    expect(screen.getByText("Character Captioning Studio")).toBeDefined();
+    expect(screen.getByText("Caption Studio")).toBeDefined();
   });
 });
 

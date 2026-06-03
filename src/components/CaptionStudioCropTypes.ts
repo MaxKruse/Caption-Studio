@@ -85,16 +85,8 @@ export interface CropState {
 // ---------------------------------------------------------------------------
 
 export interface UseCropDetectionOptions {
-  /** Number of uploaded images. */
-  imageCount: number;
   /** Image names (for detection results). */
   imageNames: string[];
-  /** Server URL for the vision API. */
-  serverUrl: string;
-  /** Model ID for detection (should support bounding boxes). */
-  selectedModel: string;
-  /** Show toast notification. */
-  showToast: (message: string) => void;
 }
 
 /** Detection progress from SSE stream. */

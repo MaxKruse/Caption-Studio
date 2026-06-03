@@ -1,6 +1,7 @@
 "use client";
 
-import type { CropRuleset, ModelInfo, PresetId } from "./CaptionStudioTypes";
+import { useState } from "react";
+import type { CropRuleset, ModelInfo, PresetId, WorkflowStep } from "./CaptionStudioTypes";
 import { CAPTION_PRESETS, CROP_RULESETS } from "./CaptionStudioTypes";
 
 export function ConfigSection({
@@ -28,6 +29,7 @@ export function ConfigSection({
   selectedRuleset,
   onRulesetChange,
   isProcessing,
+  workflowStep,
 }: {
   serverUrl: string;
   onServerUrlChange: (value: string) => void;
@@ -53,28 +55,69 @@ export function ConfigSection({
   selectedRuleset: CropRuleset | null;
   onRulesetChange: (ruleset: CropRuleset) => void;
   isProcessing: boolean;
+  workflowStep: WorkflowStep;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const isCollapsed = workflowStep !== "configure" && workflowStep !== "upload" && !expanded;
+  const needsCollapse = workflowStep !== "configure" && workflowStep !== "upload";
+
   return (
     <section className="rounded-xl border border-zinc-200 overflow-hidden">
-      {/* Section header */}
-      <div className="flex items-center gap-3 px-5 py-3 bg-zinc-50 border-b border-zinc-200">
-        <div className="w-6 h-6 rounded-full bg-zinc-900 text-zinc-100 flex items-center justify-center text-xs font-medium">
+      {/* Section header — clickable to expand when collapsed */}
+      <button
+        onClick={() => {
+          if (isCollapsed) setExpanded(true);
+        }}
+        className={`w-full flex items-center gap-3 px-5 py-3 bg-zinc-50 border-b border-zinc-200 text-left transition-colors ${
+          isCollapsed ? "hover:bg-zinc-100" : ""
+        }`}
+      >
+        {needsCollapse && (
+          <svg
+            className={`w-3.5 h-3.5 text-zinc-400 transition-transform duration-200 shrink-0 ${
+              isCollapsed ? "" : "rotate-90"
+            }`}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        )}
+        <div className="w-6 h-6 rounded-full bg-zinc-900 text-zinc-100 flex items-center justify-center text-xs font-medium shrink-0">
           1
         </div>
         <h2 className="text-sm font-semibold text-zinc-900">Configure</h2>
-        <p className="text-xs text-zinc-400 ml-auto hidden sm:block">
-          Set up the API connection and caption preset
-        </p>
-      </div>
+        {isCollapsed ? (
+          <span className="text-xs text-zinc-400 ml-auto shrink-0">
+            {serverUrl ? new URL(serverUrl).hostname : "—"}
+            {" · "}
+            {selectedModel || "—"}
+            {" · "}
+            {presetLabel}
+          </span>
+        ) : (
+          <p className="text-xs text-zinc-400 ml-auto hidden sm:block">
+            Set up the API connection and caption preset
+          </p>
+        )}
+      </button>
 
-      <div className="p-5 space-y-5">
+      {/* Collapsible content */}
+      <div
+        className={`collapse-content ${
+          isCollapsed ? "collapse-content-collapsed" : "collapse-content-expanded"
+        }`}
+      >
+        <div className="p-5 space-y-5">
         {/* API Connection */}
         <div className="space-y-3">
           <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-widest">
             API Connection
           </h3>
 
-          <div className="flex gap-3">
+          <div className="flex flex-col sm:flex-row gap-3">
             <input
               type="url"
               placeholder="http://localhost:8080"
@@ -88,9 +131,18 @@ export function ConfigSection({
             <button
               onClick={onFetchModels}
               disabled={modelLoading || !serverUrl.trim()}
-              className="px-4 py-2 text-sm font-medium bg-zinc-800 text-zinc-100 rounded hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+              className="px-4 py-2 text-sm font-medium bg-zinc-800 text-zinc-100 rounded hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap flex items-center gap-1.5"
             >
-              {modelLoading ? "Loading..." : "Fetch Models"}
+              {modelLoading ? (
+                <>
+                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
+                  </svg>
+                  Connecting...
+                </>
+              ) : (
+                "Fetch Models"
+              )}
             </button>
           </div>
           <p className="text-[11px] text-zinc-400 mt-1">
@@ -98,6 +150,13 @@ export function ConfigSection({
           </p>
 
           {modelError && <p className="text-xs text-zinc-400">{modelError}</p>}
+
+          {modelLoading && models.length === 0 && (
+            <div className="space-y-2">
+              <div className="skeleton h-3 w-16" />
+              <div className="skeleton h-9 w-full" />
+            </div>
+          )}
 
           {models.length > 0 && (
             <div>
@@ -270,6 +329,7 @@ export function ConfigSection({
             </select>
           </div>
         </div>
+      </div>
       </div>
     </section>
   );

@@ -404,11 +404,6 @@ async function captionImage(
     const messages = buildApiMessages(job, base64, mimeType, userText);
     const promptText = buildDisplayPromptText(job, userText);
 
-    // Log the prompt being sent
-    console.log(`[Caption] ${filename}`);
-    if (job.systemPrompt.trim()) console.log(`  System: ${job.systemPrompt.trim()}`);
-    if (userText) console.log(`  User:   ${userText}`);
-
     // Call the API
     const response = await fetchWithTimeout(
       `${baseUrl}/v1/chat/completions`,

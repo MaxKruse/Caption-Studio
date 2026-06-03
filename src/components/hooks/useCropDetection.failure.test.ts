@@ -33,11 +33,7 @@ const makeBodyBox = (confidence = 0.30): BoundingBox => ({
 });
 
 const makeHookOptions = (): UseCropDetectionOptions => ({
-  imageCount: 2,
   imageNames: ["a.png", "b.jpg"],
-  serverUrl: "http://localhost:8080",
-  selectedModel: "gpt-4o",
-  showToast: () => {},
 });
 
 const makeDetection = (
@@ -272,7 +268,6 @@ describe("autoAssignCrops — mixed success and failure", () => {
   it("allocates crop types based on valid detections only", () => {
     const { result } = renderHook(() => useCropDetection({
       ...makeHookOptions(),
-      imageCount: 3,
       imageNames: ["a.png", "b.jpg", "c.webp"],
     }));
 
@@ -407,7 +402,6 @@ describe("setDetectionResults — low confidence warning", () => {
   it("combines low confidence warning with permanent failure message", () => {
     const { result } = renderHook(() => useCropDetection({
       ...makeHookOptions(),
-      imageCount: 3,
       imageNames: ["a.png", "b.jpg", "c.webp"],
     }));
 

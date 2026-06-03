@@ -3,10 +3,10 @@ import {
   ImageFile,
   ImageStatus,
   ProgressState,
-  PresetId,
 } from "../CaptionStudioTypes";
 import { getPreset } from "../CaptionStudioPresets";
 import type { ImageCrop } from "../CaptionStudioCropTypes";
+import { useStudioStore } from "@/store/studioStore";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -15,13 +15,6 @@ import type { ImageCrop } from "../CaptionStudioCropTypes";
 export interface UseCaptionJobOptions {
   images: ImageFile[];
   selectedModel: string;
-  serverUrl: string;
-  systemPrompt: string;
-  userPrompt: string;
-  presetId: PresetId;
-  presetZipName: string;
-  triggerWord: string;
-  parallelRequests: number;
   showToast: (message: string) => void;
   onDownloadComplete: () => void;
   cropData?: ImageCrop[];
@@ -41,13 +34,6 @@ interface SSEHookOptions {
 interface ActionsHookOptions {
   images: ImageFile[];
   selectedModel: string;
-  serverUrl: string;
-  systemPrompt: string;
-  userPrompt: string;
-  presetId: PresetId;
-  presetZipName: string;
-  triggerWord: string;
-  parallelRequests: number;
   jobId: string | null;
   eventSourceRef: React.MutableRefObject<EventSource | null>;
   showToast: (message: string) => void;
@@ -138,13 +124,6 @@ function useCaptionSSE({
 function useCaptionActions({
   images,
   selectedModel,
-  serverUrl,
-  systemPrompt,
-  userPrompt,
-  presetId,
-  presetZipName,
-  triggerWord,
-  parallelRequests,
   jobId,
   eventSourceRef,
   showToast,
@@ -157,6 +136,15 @@ function useCaptionActions({
   setJobError,
   cropData,
 }: ActionsHookOptions) {
+  // -- Read config from store --
+  const serverUrl = useStudioStore((s) => s.config.serverUrl);
+  const systemPrompt = useStudioStore((s) => s.config.systemPrompt);
+  const userPrompt = useStudioStore((s) => s.config.userPrompt);
+  const presetId = useStudioStore((s) => s.config.presetId);
+  const triggerWord = useStudioStore((s) => s.config.triggerWord);
+  const parallelRequests = useStudioStore((s) => s.config.parallelRequests);
+  const preset = getPreset(presetId);
+  const presetZipName = preset.zipName;
   // Start batch captioning
   const startCaptioning = useCallback(async (sseHandlers: {
     handleSSEMessage: (event: MessageEvent) => void;
