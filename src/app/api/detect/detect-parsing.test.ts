@@ -424,4 +424,148 @@ describe("parseDetectionResponse", () => {
     // Body: OpenAI [50, 100, 950, 900] → [50, 100, 950, 900] (unchanged)
     expect(result.bodyBoxes[0].bbox_2d).toEqual([50, 100, 950, 900]);
   });
+
+  // -----------------------------------------------------------------------
+  // Flat JSON array format (Gemma 4 native) — [{box_2d, label}, ...]
+  // -----------------------------------------------------------------------
+
+  it("parses flat JSON array with box_2d (Gemma 4 native format)", () => {
+    const json = JSON.stringify([
+      { box_2d: [150, 100, 450, 400], label: "face", confidence: 0.9 },
+      { box_2d: [300, 200, 600, 500], label: "body", confidence: 0.7 },
+    ]);
+
+    const result = parse(json);
+
+    expect(result.faceBoxes).toHaveLength(1);
+    // box_2d [ymin=150, xmin=100, ymax=450, xmax=400] → [100, 150, 400, 450]
+    expect(result.faceBoxes[0].bbox_2d).toEqual([100, 150, 400, 450]);
+    expect(result.faceBoxes[0].label).toBe("face");
+
+    expect(result.bodyBoxes).toHaveLength(1);
+    // box_2d [ymin=300, xmin=200, ymax=600, xmax=500] → [200, 300, 500, 600]
+    expect(result.bodyBoxes[0].bbox_2d).toEqual([200, 300, 500, 600]);
+    expect(result.bodyBoxes[0].label).toBe("body");
+  });
+
+  it("parses flat array with multiple faces and bodies", () => {
+    const json = JSON.stringify([
+      { box_2d: [100, 50, 300, 200], label: "face" },
+      { box_2d: [400, 500, 600, 700], label: "face" },
+      { box_2d: [50, 100, 950, 800], label: "body" },
+      { box_2d: [200, 300, 800, 600], label: "person" },
+    ]);
+
+    const result = parse(json);
+
+    expect(result.faceBoxes).toHaveLength(2);
+    expect(result.faceBoxes[0].bbox_2d).toEqual([50, 100, 200, 300]);
+    expect(result.faceBoxes[1].bbox_2d).toEqual([500, 400, 700, 600]);
+
+    // "body" and "person" both classified as body
+    expect(result.bodyBoxes).toHaveLength(2);
+  });
+
+  it("parses flat array inside markdown code block", () => {
+    const content = "```json\n" + JSON.stringify([
+      { box_2d: [150, 100, 450, 400], label: "face" },
+    ]) + "\n```";
+
+    const result = parse(content);
+
+    expect(result.faceBoxes).toHaveLength(1);
+    expect(result.faceBoxes[0].bbox_2d).toEqual([100, 150, 400, 450]);
+  });
+
+  it("parses flat array with bbox_2d (x-first) entries", () => {
+    const json = JSON.stringify([
+      { bbox_2d: [100, 150, 400, 450], label: "face" },
+      { bbox_2d: [200, 300, 500, 600], label: "body" },
+    ]);
+
+    const result = parse(json);
+
+    expect(result.faceBoxes).toHaveLength(1);
+    expect(result.faceBoxes[0].bbox_2d).toEqual([100, 150, 400, 450]);
+    expect(result.bodyBoxes).toHaveLength(1);
+    expect(result.bodyBoxes[0].bbox_2d).toEqual([200, 300, 500, 600]);
+  });
+
+  it("classifies 'head' label as face", () => {
+    const json = JSON.stringify([
+      { box_2d: [100, 50, 300, 200], label: "head" },
+    ]);
+
+    const result = parse(json);
+    expect(result.faceBoxes).toHaveLength(1);
+    expect(result.bodyBoxes).toHaveLength(0);
+  });
+
+  it("classifies 'person' label as body", () => {
+    const json = JSON.stringify([
+      { box_2d: [50, 100, 950, 800], label: "person" },
+    ]);
+
+    const result = parse(json);
+    expect(result.faceBoxes).toHaveLength(0);
+    expect(result.bodyBoxes).toHaveLength(1);
+  });
+
+  it("classifies 'full body' label as body", () => {
+    const json = JSON.stringify([
+      { box_2d: [50, 100, 950, 800], label: "full body" },
+    ]);
+
+    const result = parse(json);
+    expect(result.bodyBoxes).toHaveLength(1);
+  });
+
+  it("classifies 'portrait' label as face", () => {
+    const json = JSON.stringify([
+      { box_2d: [100, 50, 300, 200], label: "portrait" },
+    ]);
+
+    const result = parse(json);
+    expect(result.faceBoxes).toHaveLength(1);
+  });
+
+  it("excludes unknown labels from both faceBoxes and bodyBoxes", () => {
+    const json = JSON.stringify([
+      { box_2d: [100, 50, 300, 200], label: "cat" },
+      { box_2d: [400, 500, 600, 700], label: "face" },
+    ]);
+
+    const result = parse(json);
+    expect(result.faceBoxes).toHaveLength(1);
+    expect(result.bodyBoxes).toHaveLength(0);
+  });
+
+  it("handles empty flat array", () => {
+    const result = parse("[]");
+    expect(result.faceBoxes).toEqual([]);
+    expect(result.bodyBoxes).toEqual([]);
+  });
+
+  it("handles flat array with surrounding text", () => {
+    const content = "Here are the detections:\n" + JSON.stringify([
+      { box_2d: [100, 50, 300, 200], label: "face" },
+    ]) + "\nThat's all I found.";
+
+    const result = parse(content);
+    expect(result.faceBoxes).toHaveLength(1);
+  });
+
+  it("handles flat array with mixed box_2d and bbox_2d entries", () => {
+    const json = JSON.stringify([
+      { box_2d: [200, 100, 500, 400], label: "face" },
+      { bbox_2d: [50, 100, 950, 900], label: "body" },
+    ]);
+
+    const result = parse(json);
+
+    // box_2d [ymin=200, xmin=100, ymax=500, xmax=400] → [100, 200, 400, 500]
+    expect(result.faceBoxes[0].bbox_2d).toEqual([100, 200, 400, 500]);
+    // bbox_2d [50, 100, 950, 900] → unchanged
+    expect(result.bodyBoxes[0].bbox_2d).toEqual([50, 100, 950, 900]);
+  });
 });

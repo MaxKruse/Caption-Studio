@@ -313,11 +313,12 @@ async function processDetectionJob(
 /**
  * Normalize a bounding box entry to the internal `bbox_2d: [xmin, ymin, xmax, ymax]` format.
  *
- * Handles two formats:
+ * Handles three formats:
+ * - Gemma format (primary): `box_2d` with `[ymin, xmin, ymax, xmax]` (y-first) — swap to x-first
  * - OpenAI / Qwen format: `bbox_2d` with `[xmin, ymin, xmax, ymax]` (x-first) — pass through
- * - Gemma format: `box_2d` with `[ymin, xmin, ymax, xmax]` (y-first) — swap to x-first and rename
+ * - Legacy `bbox_2d` with y-first (old Gemma handling): same swap as above
  *
- * Both use 0–1000 normalized coordinates.
+ * All use 0–1000 normalized coordinates.
  */
 function normalizeBoxEntry(entry: Record<string, unknown>): {
   bbox_2d: [number, number, number, number];
@@ -353,11 +354,92 @@ function normalizeBoxEntry(entry: Record<string, unknown>): {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Label classification for flat array format
+// ---------------------------------------------------------------------------
+
+/** Keywords that indicate a face/head detection. Checked in order of specificity. */
+const FACE_KEYWORDS = ["face", "head", "portrait", "face close-up", "face shot"];
+
+/** Keywords that indicate a body/full-body detection. */
+const BODY_KEYWORDS = ["body", "full body", "full-body", "person", "figure", "pose", "torso"];
+
+/**
+ * Classify a label string as "face", "body", or "unknown".
+ * Used when the model returns a flat array of detections without explicit category grouping.
+ */
+function classifyLabel(label: string): "face" | "body" | "unknown" {
+  const lower = label.toLowerCase().trim();
+  for (const keyword of FACE_KEYWORDS) {
+    if (lower.includes(keyword)) return "face";
+  }
+  for (const keyword of BODY_KEYWORDS) {
+    if (lower.includes(keyword)) return "body";
+  }
+  return "unknown";
+}
+
+/**
+ * Extract a balanced bracket/brace structure from a string starting at a given index.
+ * Handles nested brackets/braces and strings (ignores brackets inside quoted strings).
+ */
+function extractBalanced(
+  str: string,
+  startIndex: number,
+  openChar: string,
+  closeChar: string
+): string | null {
+  let depth = 0;
+  let inString = false;
+  let escapeNext = false;
+
+  for (let i = startIndex; i < str.length; i++) {
+    const ch = str[i];
+
+    // Handle string escaping
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escapeNext = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    // Skip characters inside strings
+    if (inString) continue;
+
+    if (ch === openChar) depth++;
+    else if (ch === closeChar) {
+      depth--;
+      if (depth === 0) {
+        return str.substring(startIndex, i + 1);
+      }
+    }
+  }
+
+  return null; // Unbalanced
+}
+
+// ---------------------------------------------------------------------------
+// Main parser
+// ---------------------------------------------------------------------------
+
 /**
  * Parse the model's detection response into face and body bounding box arrays.
- * Handles JSON objects, markdown code blocks, and plain text.
- * Extracts confidence scores (defaults to 0.5 when missing).
- * Normalizes both OpenAI/Qwen (`bbox_2d`) and Gemma (`box_2d`) formats.
+ *
+ * Handles three response shapes:
+ * 1. **Flat JSON array** (Gemma 4 native): `[{box_2d: [...], label: "face"}, ...]`
+ *    — sorted into faces/bodies by label classification
+ * 2. **Object with faces/bodies arrays** (legacy): `{faces: [...], bodies: [...]}`
+ * 3. **Markdown code blocks** wrapping either format
+ *
+ * Normalizes both `box_2d` (y-first) and `bbox_2d` (x-first) coordinate formats.
+ * Defaults confidence to 0.5 when missing.
  */
 export function parseDetectionResponse(content: string): {
   faceBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }>;
@@ -374,30 +456,74 @@ export function parseDetectionResponse(content: string): {
     jsonStr = codeBlockMatch[1].trim();
   }
 
-  // Try to find JSON object in the text
-  const objectMatch = jsonStr.match(/\{[\s\S]*\}/);
-  if (objectMatch) {
-    jsonStr = objectMatch[0];
+  // Try parsing the string as-is first (works for clean JSON)
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(jsonStr);
+  } catch {
+    // If it fails, try to extract a JSON structure from surrounding text.
+    // Use bracket-matching to find the outermost JSON object or array.
+    parsed = null;
+
+    const firstBracket = jsonStr.indexOf("[");
+    const firstBrace = jsonStr.indexOf("{");
+
+    // Determine which structure comes first:
+    // - If `[` comes first (or there's no `{`), it's a flat array
+    // - If `{` comes first (and before any `[`), it's a legacy object
+    if (firstBracket !== -1 && (firstBrace === -1 || firstBracket < firstBrace)) {
+      const extracted = extractBalanced(jsonStr, firstBracket, "[", "]");
+      if (extracted) {
+        try {
+          parsed = JSON.parse(extracted);
+        } catch { /* fall through */ }
+      }
+    }
+
+    if (!parsed && firstBrace !== -1) {
+      const extracted = extractBalanced(jsonStr, firstBrace, "{", "}");
+      if (extracted) {
+        try {
+          parsed = JSON.parse(extracted);
+        } catch { /* fall through */ }
+      }
+    }
+
+    if (!parsed) {
+      return { faceBoxes: [], bodyBoxes: [] };
+    }
   }
 
-  try {
-    const parsed = JSON.parse(jsonStr);
-
-    const parseBoxArray = (
-      arr: unknown[]
-    ): Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }> => {
-      if (!Array.isArray(arr)) return [];
-      return arr
-        .filter((b: unknown): b is Record<string, unknown> => b != null && typeof b === "object")
-        .map((b) => normalizeBoxEntry(b))
-        .filter((b): b is NonNullable<typeof b> => b !== null);
-    };
-
-    return {
-      faceBoxes: parseBoxArray(parsed.faces as unknown[] ?? []),
-      bodyBoxes: parseBoxArray(parsed.bodies as unknown[] ?? []),
-    };
-  } catch {
+  if (!parsed) {
     return { faceBoxes: [], bodyBoxes: [] };
   }
+
+  const parseBoxArray = (
+    arr: unknown[]
+  ): Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }> => {
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((b: unknown): b is Record<string, unknown> => b != null && typeof b === "object")
+      .map((b) => normalizeBoxEntry(b))
+      .filter((b): b is NonNullable<typeof b> => b !== null);
+  };
+
+  // Case 1: Flat JSON array (Gemma 4 native format)
+  if (Array.isArray(parsed)) {
+    const allBoxes = parseBoxArray(parsed);
+    return {
+      faceBoxes: allBoxes.filter((b) => classifyLabel(b.label) === "face"),
+      bodyBoxes: allBoxes.filter((b) => classifyLabel(b.label) === "body"),
+    };
+  }
+
+  // Case 2: Object with faces/bodies arrays (legacy format)
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    return {
+      faceBoxes: parseBoxArray((parsed as Record<string, unknown>).faces as unknown[] ?? []),
+      bodyBoxes: parseBoxArray((parsed as Record<string, unknown>).bodies as unknown[] ?? []),
+    };
+  }
+
+  return { faceBoxes: [], bodyBoxes: [] };
 }

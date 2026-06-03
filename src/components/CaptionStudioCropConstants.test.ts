@@ -112,16 +112,15 @@ describe("getDetectionPrompts — SFW", () => {
   it("systemPrompt includes JSON format instructions", () => {
     const { systemPrompt } = getDetectionPrompts("sfw");
     expect(systemPrompt).toContain("JSON");
-    expect(systemPrompt).toContain("bbox_2d");
+    expect(systemPrompt).toContain("box_2d");
     expect(systemPrompt).toContain("label");
-    expect(systemPrompt).toContain("confidence");
   });
 
-  it("systemPrompt includes a JSON example", () => {
+  it("systemPrompt includes a JSON array example", () => {
     const { systemPrompt } = getDetectionPrompts("sfw");
-    expect(systemPrompt).toContain('"faces"');
-    expect(systemPrompt).toContain('"bodies"');
-    expect(systemPrompt).toContain("bbox_2d");
+    expect(systemPrompt).toContain("box_2d");
+    expect(systemPrompt).toContain('"label"');
+    expect(systemPrompt).toContain("JSON array");
   });
 
   it("systemPrompt mentions 1000-normalized coordinates", () => {
@@ -156,28 +155,16 @@ describe("getDetectionPrompts — SFW", () => {
     expect(userPrompt).toContain("no explanation text");
   });
 
-  it("SFW userPrompt indicates faces are primary (score higher)", () => {
+  it("SFW userPrompt asks for JSON array output", () => {
     const { userPrompt } = getDetectionPrompts("sfw");
-    expect(userPrompt).toContain("faces");
-    expect(userPrompt).toContain("primary");
-    expect(userPrompt).toContain("higher");
+    expect(userPrompt).toContain("JSON array");
   });
 
-  it("SFW userPrompt indicates bodies are secondary (score lower)", () => {
+  it("SFW userPrompt does not include confidence scoring guidance", () => {
+    // Confidence scoring is handled by the parser defaulting to 0.5
     const { userPrompt } = getDetectionPrompts("sfw");
-    expect(userPrompt).toContain("bodies");
-    expect(userPrompt).toContain("secondary");
-    expect(userPrompt).toContain("lower");
-  });
-
-  it("SFW userPrompt includes face confidence range ~0.7-1.0", () => {
-    const { userPrompt } = getDetectionPrompts("sfw");
-    expect(userPrompt).toMatch(/0\.7.*1\.0/);
-  });
-
-  it("SFW userPrompt includes body confidence range ~0.1-0.4", () => {
-    const { userPrompt } = getDetectionPrompts("sfw");
-    expect(userPrompt).toMatch(/0\.1.*0\.4/);
+    expect(userPrompt).not.toContain("primary");
+    expect(userPrompt).not.toContain("confidence");
   });
 
   it("SFW userPrompt does NOT contain complex scoring constraints", () => {
@@ -226,28 +213,16 @@ describe("getDetectionPrompts — NSFW", () => {
     expect(userPrompt).toContain("JSON");
   });
 
-  it("NSFW userPrompt indicates bodies are primary (score higher)", () => {
+  it("NSFW userPrompt asks for JSON array output", () => {
     const { userPrompt } = getDetectionPrompts("nsfw");
-    expect(userPrompt).toContain("bodies");
-    expect(userPrompt).toContain("primary");
-    expect(userPrompt).toContain("higher");
+    expect(userPrompt).toContain("JSON array");
   });
 
-  it("NSFW userPrompt indicates faces are secondary (score lower)", () => {
+  it("NSFW userPrompt does not include confidence scoring guidance", () => {
+    // Confidence scoring is handled by the parser defaulting to 0.5
     const { userPrompt } = getDetectionPrompts("nsfw");
-    expect(userPrompt).toContain("faces");
-    expect(userPrompt).toContain("secondary");
-    expect(userPrompt).toContain("lower");
-  });
-
-  it("NSFW userPrompt includes body confidence range ~0.7-1.0", () => {
-    const { userPrompt } = getDetectionPrompts("nsfw");
-    expect(userPrompt).toMatch(/0\.7.*1\.0/);
-  });
-
-  it("NSFW userPrompt includes face confidence range ~0.1-0.5", () => {
-    const { userPrompt } = getDetectionPrompts("nsfw");
-    expect(userPrompt).toMatch(/0\.1.*0\.5/);
+    expect(userPrompt).not.toContain("primary");
+    expect(userPrompt).not.toContain("confidence");
   });
 
   it("NSFW userPrompt does NOT contain complex scoring constraints", () => {
@@ -263,20 +238,11 @@ describe("getDetectionPrompts — NSFW", () => {
     expect(userPrompt.length).toBeLessThan(300);
   });
 
-  it("NSFW userPrompt differs from SFW userPrompt", () => {
+  it("NSFW userPrompt is identical to SFW userPrompt (no mode-specific scoring)", () => {
+    // Confidence scoring is handled by the parser, not the prompt
     const { userPrompt: sfw } = getDetectionPrompts("sfw");
     const { userPrompt: nsfw } = getDetectionPrompts("nsfw");
-    expect(sfw).not.toBe(nsfw);
-  });
-
-  it("NSFW userPrompt has bodies as primary vs SFW has faces as primary", () => {
-    const { userPrompt: sfw } = getDetectionPrompts("sfw");
-    const { userPrompt: nsfw } = getDetectionPrompts("nsfw");
-
-    // SFW: "faces are the primary focus"
-    expect(sfw).toContain("faces are the primary");
-    // NSFW: "bodies are the primary focus"
-    expect(nsfw).toContain("bodies are the primary");
+    expect(sfw).toBe(nsfw);
   });
 });
 

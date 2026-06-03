@@ -56,26 +56,29 @@ export const DETECTION_TIMEOUT_MS = 3 * 60 * 1000;
 
 /**
  * Build detection prompts tailored to the content mode.
- * Keeps prompts short so the vision LLM focuses on detection, not instruction-following.
- * Confidence is optional — the parser defaults to 0.5 when missing.
+ *
+ * Uses a flat JSON array with `box_2d [y_min, x_min, y_max, x_max]` and `label`
+ * to match Gemma 4's native detection format. Other models (Qwen, Claude, etc.)
+ * can also follow this format since it's a simple JSON array.
+ *
+ * The parser handles both this flat array and the legacy `{faces, bodies}` object
+ * format for backward compatibility.
  */
 export function getDetectionPrompts(contentMode: "sfw" | "nsfw") {
-  const systemPrompt = `You are an object detection assistant. Detect all faces and bodies (full-body poses) in the image and return bounding boxes in JSON format.
+  const systemPrompt = `You are an object detection assistant. Detect all faces and bodies (full-body poses) in the image and return bounding boxes as a JSON array.
 
 ## Output Format
-Return a JSON object with two arrays: "faces" and "bodies".
-Each entry has: bbox_2d [x_min, y_min, x_max, y_max], label, and confidence (0-1).
-Coordinates are integers normalized to 1000. If none detected for a category, return an empty array.
+Return a JSON array. Each entry has:
+- box_2d: [y_min, x_min, y_max, x_max] — integers normalized to 1000
+- label: "face" or "body" (use "face" for faces/headshots, "body" for full-body poses)
+
+If you detect nothing, return an empty array [].
 
 ## Example
-{
-  "faces": [
-    {"bbox_2d": [100, 150, 400, 450], "label": "face", "confidence": 0.85}
-  ],
-  "bodies": [
-    {"bbox_2d": [200, 300, 500, 600], "label": "body", "confidence": 0.30}
-  ]
-}`;
+[
+  {"box_2d": [150, 100, 450, 400], "label": "face"},
+  {"box_2d": [300, 200, 600, 500], "label": "body"}
+]`;
 
   const userPrompt =
     contentMode === "sfw" ? getSfwUserPrompt() : getNsfwUserPrompt();
@@ -85,14 +88,10 @@ Coordinates are integers normalized to 1000. If none detected for a category, re
 
 function getSfwUserPrompt(): string {
   return `Detect ALL faces and ALL bodies (full-body poses) in this image.
-Return ONLY the JSON object — no markdown fences, no explanation text.
-
-For confidence scores: faces are the primary focus (score higher, ~0.7-1.0), bodies are secondary context (score lower, ~0.1-0.4).`;
+Return ONLY the JSON array — no markdown fences, no explanation text.`;
 }
 
 function getNsfwUserPrompt(): string {
   return `Detect ALL faces and ALL bodies (full-body poses) in this image.
-Return ONLY the JSON object — no markdown fences, no explanation text.
-
-For confidence scores: bodies are the primary focus (score higher, ~0.7-1.0), faces are secondary context (score lower, ~0.1-0.5).`;
+Return ONLY the JSON array — no markdown fences, no explanation text.`;
 }
