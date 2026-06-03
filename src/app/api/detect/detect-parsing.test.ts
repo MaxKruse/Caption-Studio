@@ -569,3 +569,165 @@ describe("parseDetectionResponse", () => {
     expect(result.bodyBoxes[0].bbox_2d).toEqual([50, 100, 950, 900]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Regression tests — "expect to fail" tests for previously fixed bugs
+// ---------------------------------------------------------------------------
+
+describe("regression — Bug 3: Gemma 4 bounding boxes were broken (2026-06-03)", () => {
+  let parse: (content: string) => {
+    faceBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }>;
+    bodyBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }>;
+  };
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const route = await import("./route");
+    parse = route.parseDetectionResponse;
+  });
+
+  it("does NOT return empty arrays for Gemma 4 flat array format", () => {
+    // The original bug: parser looked for parsed.faces / parsed.bodies,
+    // which don't exist in Gemma 4's flat array output → always returned []
+    const json = JSON.stringify([
+      { box_2d: [150, 100, 450, 400], label: "face" },
+      { box_2d: [300, 200, 600, 500], label: "body" },
+    ]);
+
+    const result = parse(json);
+
+    // MUST NOT be empty — that was the bug
+    expect(result.faceBoxes.length + result.bodyBoxes.length).toBeGreaterThan(0);
+    expect(result.faceBoxes).toHaveLength(1);
+    expect(result.bodyBoxes).toHaveLength(1);
+  });
+
+  it("does NOT return empty arrays when Gemma 4 wraps output in markdown fences", () => {
+    // Gemma 4 often wraps JSON in ```json ... ``` fences
+    const content = "```json\n" + JSON.stringify([
+      { box_2d: [100, 50, 300, 200], label: "face" },
+    ]) + "\n```";
+
+    const result = parse(content);
+
+    expect(result.faceBoxes.length + result.bodyBoxes.length).toBeGreaterThan(0);
+    expect(result.faceBoxes).toHaveLength(1);
+  });
+
+  it("does NOT return empty arrays when Gemma 4 adds preamble text", () => {
+    // Gemma 4 may add natural-language preamble before the JSON
+    const content = "I detected the following objects:\n\n" + JSON.stringify([
+      { box_2d: [100, 50, 300, 200], label: "face" },
+    ]);
+
+    const result = parse(content);
+
+    expect(result.faceBoxes.length + result.bodyBoxes.length).toBeGreaterThan(0);
+  });
+
+  it("does NOT swap coordinates for bbox_2d (x-first) entries", () => {
+    // OpenAI/Qwen use bbox_2d with [xmin, ymin, xmax, ymax] — must NOT be swapped
+    const json = JSON.stringify({
+      faces: [{ bbox_2d: [100, 200, 400, 500], label: "face" }],
+      bodies: [],
+    });
+
+    const result = parse(json);
+
+    // [100, 200, 400, 500] must stay [100, 200, 400, 500], NOT become [200, 100, 500, 400]
+    expect(result.faceBoxes[0].bbox_2d).toEqual([100, 200, 400, 500]);
+  });
+
+  it("does swap coordinates for box_2d (y-first) entries", () => {
+    // Gemma uses box_2d with [ymin, xmin, ymax, xmax] — MUST be swapped to x-first
+    const json = JSON.stringify({
+      faces: [{ box_2d: [200, 100, 500, 400], label: "face" }],
+      bodies: [],
+    });
+
+    const result = parse(json);
+
+    // [ymin=200, xmin=100, ymax=500, xmax=400] → [xmin=100, ymin=200, xmax=400, ymax=500]
+    expect(result.faceBoxes[0].bbox_2d).toEqual([100, 200, 400, 500]);
+  });
+
+  it("does NOT lose detections when both box_2d and bbox_2d exist (prefers box_2d)", () => {
+    // When both keys exist, box_2d (Gemma) takes precedence
+    const json = JSON.stringify({
+      faces: [{ box_2d: [200, 100, 500, 400], bbox_2d: [999, 888, 777, 666], label: "face" }],
+      bodies: [],
+    });
+
+    const result = parse(json);
+
+    // Must use box_2d values, not bbox_2d
+    expect(result.faceBoxes[0].bbox_2d).toEqual([100, 200, 400, 500]);
+    // Must NOT use the bogus bbox_2d values
+    expect(result.faceBoxes[0].bbox_2d).not.toEqual([999, 888, 777, 666]);
+  });
+
+  it("does NOT crash on malformed JSON from model", () => {
+    // Models sometimes return truncated or malformed JSON
+    expect(() => parse("{ faces: [invalid] }")).not.toThrow();
+    expect(() => parse("[{box_2d: }]")).not.toThrow();
+    expect(() => parse("not json at all")).not.toThrow();
+    expect(() => parse("")).not.toThrow();
+  });
+
+  it("does NOT produce inverted bounding boxes (xmax < xmin or ymax < ymin)", () => {
+    // After coordinate swap, boxes must remain valid (max > min)
+    const json = JSON.stringify([
+      { box_2d: [100, 50, 400, 300], label: "face" },
+    ]);
+
+    const result = parse(json);
+    const [xmin, ymin, xmax, ymax] = result.faceBoxes[0].bbox_2d;
+
+    expect(xmax).toBeGreaterThan(xmin);
+    expect(ymax).toBeGreaterThan(ymin);
+  });
+});
+
+describe("regression — Bug 1: UI state timing (2026-05-28)", () => {
+  // Bug 1 was a React setState timing issue in useCropDetection.
+  // The parser itself is synchronous — the bug was in the hook's async state management.
+  // These tests verify the parser is always synchronous and deterministic,
+  // which is a prerequisite for the ref-based fix to work correctly.
+
+  let parse: (content: string) => {
+    faceBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }>;
+    bodyBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }>;
+  };
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const route = await import("./route");
+    parse = route.parseDetectionResponse;
+  });
+
+  it("is synchronous — returns result immediately without awaiting", () => {
+    // The parser MUST be synchronous so the ref-based state fix works.
+    // If it were async, the ref would be stale when read.
+    const json = JSON.stringify({
+      faces: [{ bbox_2d: [100, 200, 300, 400], label: "face" }],
+      bodies: [],
+    });
+
+    // Must return a plain object, not a Promise
+    const result = parse(json);
+    expect(result).not.toBeInstanceOf(Promise);
+    expect(result.faceBoxes).toHaveLength(1);
+  });
+
+  it("is deterministic — same input produces identical output", () => {
+    const json = JSON.stringify([
+      { box_2d: [150, 100, 450, 400], label: "face" },
+      { box_2d: [300, 200, 600, 500], label: "body" },
+    ]);
+
+    const a = parse(json);
+    const b = parse(json);
+
+    expect(a).toEqual(b);
+  });
+});
