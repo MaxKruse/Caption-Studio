@@ -1,5 +1,7 @@
 "use client";
 
+import { useCallback, useEffect, useRef, useState } from "react";
+
 import { ImageFile, ImageStatus, ProgressState } from "./CaptionStudioTypes";
 import { StatusBadge } from "./ImagePreviewModal";
 
@@ -18,6 +20,9 @@ function ResultCard({
   croppedPreview?: string;
   onPreview: (img: ImageFile) => void;
 }) {
+  const isProcessing = status?.status === "processing";
+  const hasPrompt = !!(status?.prompt ?? status?.reasoningContent);
+
   return (
     <div className="relative group border border-zinc-200 rounded overflow-hidden bg-white card-lift">
       <button
@@ -31,6 +36,12 @@ function ResultCard({
           alt={img.name}
           className="w-full aspect-square object-cover"
         />
+        {/* Processing overlay — subtle pulse */}
+        {isProcessing && (
+          <div className="absolute inset-0 bg-zinc-900/20 flex items-center justify-center">
+            <div className="w-6 h-6 rounded-full border-2 border-zinc-100/80 border-t-transparent animate-spin" />
+          </div>
+        )}
       </button>
 
       <div className="absolute bottom-0 inset-x-0 bg-zinc-900/70 px-2 py-1 flex items-center justify-between gap-1">
@@ -40,6 +51,7 @@ function ResultCard({
         {status && <StatusBadge status={status.status} />}
       </div>
 
+      {/* Expandable details — prompt, reasoning, caption */}
       {status?.caption && (
         <div className="px-2 py-1.5 border-t border-zinc-100">
           <p className="text-[11px] text-zinc-500 line-clamp-3 leading-relaxed">
@@ -53,6 +65,67 @@ function ResultCard({
           <p className="text-[10px] text-zinc-400 line-clamp-2">
             Error: {status.error}
           </p>
+        </div>
+      )}
+
+      {/* Prompt / Reasoning toggle */}
+      {hasPrompt && status && (
+        <DetailsAccordion
+          prompt={status.prompt}
+          reasoning={status.reasoningContent}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DetailsAccordion — collapsible prompt + reasoning inside a card
+// ---------------------------------------------------------------------------
+
+function DetailsAccordion({
+  prompt,
+  reasoning,
+}: {
+  prompt?: string;
+  reasoning?: string;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="border-t border-zinc-100">
+      <button
+        onClick={() => setOpen((p) => !p)}
+        className="w-full flex items-center justify-between px-2 py-1 text-[10px] text-zinc-400 hover:text-zinc-600 hover:bg-zinc-50 transition-colors"
+      >
+        <span className="font-medium uppercase tracking-wider">
+          {prompt ? "Prompt" : ""}
+          {prompt && reasoning ? " + " : ""}
+          {reasoning ? "Reasoning" : ""}
+        </span>
+        <svg
+          className={`w-3 h-3 transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="px-2 pb-2 space-y-1.5">
+          {prompt && (
+            <p className="text-[10px] text-zinc-400 leading-relaxed line-clamp-4 font-mono">
+              {prompt}
+            </p>
+          )}
+          {reasoning && (
+            <p className="text-[10px] text-amber-700 leading-relaxed line-clamp-4 bg-amber-50/60 rounded px-1.5 py-1">
+              {reasoning}
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -88,6 +161,28 @@ export function ResultsGallery({
   onDownloadZip: () => void;
   onClearAll: () => void;
 }) {
+  // Local confirmation for "Start over" — avoids stale closure issues
+  const [confirmReset, setConfirmReset] = useState(false);
+  const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Auto-clear confirmation after 3 seconds
+  useEffect(() => {
+    if (!confirmReset) return;
+    confirmTimer.current = setTimeout(() => setConfirmReset(false), 3000);
+    return () => {
+      if (confirmTimer.current) clearTimeout(confirmTimer.current);
+    };
+  }, [confirmReset]);
+
+  const handleStartOver = useCallback(() => {
+    if (confirmReset) {
+      onClearAll();
+      setConfirmReset(false);
+    } else {
+      setConfirmReset(true);
+    }
+  }, [confirmReset, onClearAll]);
+
   const completedCount = images.filter(
     (img) => imageStatuses[img.name]?.status === "completed"
   ).length;
@@ -188,13 +283,17 @@ export function ResultsGallery({
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={onClearAll}
-                className="px-3 py-2 text-xs font-medium rounded-lg bg-zinc-100 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700 transition-colors flex items-center gap-1.5"
+                onClick={handleStartOver}
+                className={`px-3 py-2 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 ${
+                  confirmReset
+                    ? "bg-red-100 text-red-700 hover:bg-red-200 border border-red-200"
+                    : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700"
+                }`}
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
                 </svg>
-                Start over
+                {confirmReset ? "Confirm?" : "Start over"}
               </button>
               <button
                 onClick={onDownloadZip}

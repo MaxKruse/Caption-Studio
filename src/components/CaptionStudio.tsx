@@ -427,7 +427,7 @@ export default function CaptionStudio() {
           isDownloading={captionJob.isDownloading}
           onAbortCaption={captionJob.abortJob}
           onDownloadZip={captionJob.downloadZip}
-          onClearAll={handleClearAllToggle}
+          onClearAll={handleClearAll}
         />
       )}
 
