@@ -1,13 +1,31 @@
 import type { BoundingBox } from "@/components/CaptionStudioCropTypes";
 
 // ---------------------------------------------------------------------------
-// Padding constants
+// Padding ranges (per-dimension, random within range)
 // ---------------------------------------------------------------------------
 
-/** Extra padding for face crops — LLMs return tight face boxes. */
-export const FACE_CROP_PADDING = 0.25;
-/** No extra padding for body crops — LLM body boxes are already well-sized. */
-export const BODY_CROP_PADDING = 0;
+/** Face crop padding range — random +25% to +50% per dimension. */
+export const FACE_CROP_PADDING_RANGE = { min: 0.25, max: 0.5 };
+/** Body crop padding range — random +10% to +35% per dimension. */
+export const BODY_CROP_PADDING_RANGE = { min: 0.1, max: 0.35 };
+
+// ---------------------------------------------------------------------------
+// Random padding generator
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate random per-dimension padding within the given range.
+ * Width and height get independent random values for crop variety.
+ */
+export function getRandomCropPadding(
+  cropType: "face" | "body"
+): { width: number; height: number } {
+  const range = cropType === "face" ? FACE_CROP_PADDING_RANGE : BODY_CROP_PADDING_RANGE;
+  return {
+    width: range.min + Math.random() * (range.max - range.min),
+    height: range.min + Math.random() * (range.max - range.min),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Bounding box quality
@@ -30,17 +48,22 @@ export function computeBoxQuality(boxes: BoundingBox[]): number {
 /**
  * Build a crop rectangle from a bounding box with padding.
  */
+/**
+ * Padding configuration — either a single uniform factor or per-dimension values.
+ */
+export type CropPadding = number | { width: number; height: number };
+
 export function buildCropRectFromBox(
   box: BoundingBox,
-  paddingFactor: number
+  padding: CropPadding
 ): { x: number; y: number; width: number; height: number } {
   const bx = box.bbox_2d[0];
   const by = box.bbox_2d[1];
   const bw = box.bbox_2d[2] - bx;
   const bh = box.bbox_2d[3] - by;
 
-  const paddingW = bw * paddingFactor;
-  const paddingH = bh * paddingFactor;
+  const paddingW = bw * (typeof padding === "number" ? padding : padding.width);
+  const paddingH = bh * (typeof padding === "number" ? padding : padding.height);
 
   let cropX = bx - paddingW;
   let cropY = by - paddingH;
@@ -60,7 +83,7 @@ export function buildCropRectFromBox(
  */
 export function buildCropRectFromBestBox(
   boxes: BoundingBox[],
-  paddingFactor: number
+  padding: CropPadding
 ): { x: number; y: number; width: number; height: number } | null {
   if (boxes.length === 0) return null;
 
@@ -70,7 +93,7 @@ export function buildCropRectFromBestBox(
     return area > maxArea ? bb : max;
   });
 
-  return buildCropRectFromBox(largest, paddingFactor);
+  return buildCropRectFromBox(largest, padding);
 }
 
 /**

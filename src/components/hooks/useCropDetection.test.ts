@@ -6,6 +6,9 @@ import {
   buildCropRectFromBox,
   buildCropRectFromBestBox,
   buildDefaultCrop,
+  getRandomCropPadding,
+  FACE_CROP_PADDING_RANGE,
+  BODY_CROP_PADDING_RANGE,
 } from "@/lib/crop-allocation";
 
 // ---------------------------------------------------------------------------
@@ -447,7 +450,7 @@ describe("buildCropRectFromBox", () => {
     expect(result).toEqual({ x: 100, y: 200, width: 300, height: 300 });
   });
 
-  it("applies 25% padding for face crops", () => {
+  it("applies 25% uniform padding", () => {
     const box: BoundingBox = {
       bbox_2d: [100, 200, 400, 500] as [number, number, number, number],
       label: "face",
@@ -573,6 +576,20 @@ describe("buildCropRectFromBox", () => {
     expect(result.x).toBeCloseTo(492.5);
     expect(result.width).toBeCloseTo(15);
   });
+
+  it("applies per-dimension padding independently", () => {
+    const box: BoundingBox = {
+      bbox_2d: [100, 200, 400, 500] as [number, number, number, number],
+      label: "face",
+      confidence: 0.85,
+    };
+    const result = buildCropRectFromBox(box, { width: 0.1, height: 0.5 });
+    // box: x=100, y=200, w=300, h=300
+    // paddingW = 300 * 0.1 = 30, paddingH = 300 * 0.5 = 150
+    // cropX = 100 - 30 = 70, cropY = 200 - 150 = 50
+    // cropWidth = 300 + 60 = 360, cropHeight = 300 + 300 = 600
+    expect(result).toEqual({ x: 70, y: 50, width: 360, height: 600 });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -636,7 +653,7 @@ describe("buildCropRectFromBestBox", () => {
     expect(result).toEqual({ x: 350, y: 350, width: 300, height: 300 });
   });
 
-  it("handles body boxes (zero padding)", () => {
+  it("handles body boxes with zero padding", () => {
     const boxes: BoundingBox[] = [
       { bbox_2d: [100, 100, 500, 900] as [number, number, number, number], label: "body", confidence: 0.85 },
     ];
@@ -693,5 +710,50 @@ describe("computeBoxQuality — edge cases", () => {
       { bbox_2d: [100, 100, 200, 200] as [number, number, number, number], label: "face", confidence: 0.01 },
     ];
     expect(computeBoxQuality(boxes)).toBe(0.01);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getRandomCropPadding
+// ---------------------------------------------------------------------------
+
+describe("getRandomCropPadding", () => {
+  it("returns padding within face range (0.25–0.50)", () => {
+    for (let i = 0; i < 100; i++) {
+      const padding = getRandomCropPadding("face");
+      expect(padding.width).toBeGreaterThanOrEqual(FACE_CROP_PADDING_RANGE.min);
+      expect(padding.width).toBeLessThanOrEqual(FACE_CROP_PADDING_RANGE.max);
+      expect(padding.height).toBeGreaterThanOrEqual(FACE_CROP_PADDING_RANGE.min);
+      expect(padding.height).toBeLessThanOrEqual(FACE_CROP_PADDING_RANGE.max);
+    }
+  });
+
+  it("returns padding within body range (0.10–0.35)", () => {
+    for (let i = 0; i < 100; i++) {
+      const padding = getRandomCropPadding("body");
+      expect(padding.width).toBeGreaterThanOrEqual(BODY_CROP_PADDING_RANGE.min);
+      expect(padding.width).toBeLessThanOrEqual(BODY_CROP_PADDING_RANGE.max);
+      expect(padding.height).toBeGreaterThanOrEqual(BODY_CROP_PADDING_RANGE.min);
+      expect(padding.height).toBeLessThanOrEqual(BODY_CROP_PADDING_RANGE.max);
+    }
+  });
+
+  it("produces different width and height values (variety)", () => {
+    let differentCount = 0;
+    for (let i = 0; i < 100; i++) {
+      const padding = getRandomCropPadding("face");
+      if (padding.width !== padding.height) differentCount++;
+    }
+    // Should produce different values most of the time
+    expect(differentCount).toBeGreaterThan(90);
+  });
+
+  it("produces varied results across calls", () => {
+    const widths = new Set<number>();
+    for (let i = 0; i < 50; i++) {
+      widths.add(getRandomCropPadding("face").width);
+    }
+    // Should have many unique values, not just a few
+    expect(widths.size).toBeGreaterThan(20);
   });
 });

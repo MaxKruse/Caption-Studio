@@ -12,11 +12,10 @@ import type {
   UseCropDetectionReturn,
 } from "../CaptionStudioCropTypes";
 import {
-  FACE_CROP_PADDING,
-  BODY_CROP_PADDING,
   buildCropRectFromBestBox,
   buildDefaultCrop,
   allocateCropTypes,
+  getRandomCropPadding,
 } from "@/lib/crop-allocation";
 import { buildLowConfidenceWarning } from "@/lib/crop-warnings";
 
@@ -210,7 +209,7 @@ export function useCropDetection({
       }
 
       const type = cropTypes[validIndex];
-      const padding = type === "face" ? FACE_CROP_PADDING : BODY_CROP_PADDING;
+      const padding = getRandomCropPadding(type);
       const boxes = type === "face" ? detection.faceBoxes : detection.bodyBoxes;
       const cropRect = buildCropRectFromBestBox(boxes, padding);
 
@@ -283,7 +282,7 @@ export function useCropDetection({
     const existing = prev.crops[cropIndex];
 
     // Reset to the crop matching the current type
-    const padding = existing.cropType === "face" ? FACE_CROP_PADDING : BODY_CROP_PADDING;
+    const padding = getRandomCropPadding(existing.cropType);
     const boxes = existing.cropType === "face" ? detection.faceBoxes : detection.bodyBoxes;
     const cropRect = buildCropRectFromBestBox(boxes, padding);
 
