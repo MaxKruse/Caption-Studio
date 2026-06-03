@@ -286,4 +286,142 @@ describe("parseDetectionResponse", () => {
 
     expect(result.bodyBoxes).toHaveLength(2);
   });
+
+  // -----------------------------------------------------------------------
+  // Gemma format — box_2d with [ymin, xmin, ymax, xmax] (y-first)
+  // -----------------------------------------------------------------------
+
+  it("parses Gemma box_2d format and normalizes to bbox_2d [xmin, ymin, xmax, ymax]", () => {
+    const json = JSON.stringify({
+      faces: [
+        { box_2d: [200, 100, 500, 400], label: "face", confidence: 0.9 },
+      ],
+      bodies: [
+        { box_2d: [100, 50, 900, 950], label: "body", confidence: 0.7 },
+      ],
+    });
+
+    const result = parse(json);
+
+    expect(result.faceBoxes).toHaveLength(1);
+    // Gemma [ymin=200, xmin=100, ymax=500, xmax=400] → normalized [xmin=100, ymin=200, xmax=400, ymax=500]
+    expect(result.faceBoxes[0].bbox_2d).toEqual([100, 200, 400, 500]);
+    expect(result.faceBoxes[0].label).toBe("face");
+    expect(result.faceBoxes[0].confidence).toBe(0.9);
+
+    expect(result.bodyBoxes).toHaveLength(1);
+    // Gemma [ymin=100, xmin=50, ymax=900, xmax=950] → normalized [xmin=50, ymin=100, xmax=950, ymax=900]
+    expect(result.bodyBoxes[0].bbox_2d).toEqual([50, 100, 950, 900]);
+    expect(result.bodyBoxes[0].label).toBe("body");
+    expect(result.bodyBoxes[0].confidence).toBe(0.7);
+  });
+
+  it("parses Gemma format with missing confidence (defaults to 0.5)", () => {
+    const json = JSON.stringify({
+      faces: [
+        { box_2d: [150, 100, 350, 300], label: "face" },
+      ],
+      bodies: [],
+    });
+
+    const result = parse(json);
+
+    expect(result.faceBoxes).toHaveLength(1);
+    expect(result.faceBoxes[0].bbox_2d).toEqual([100, 150, 300, 350]);
+    expect(result.faceBoxes[0].confidence).toBe(0.5);
+  });
+
+  it("parses Gemma format with missing label (defaults to 'unknown')", () => {
+    const json = JSON.stringify({
+      faces: [
+        { box_2d: [150, 100, 350, 300] },
+      ],
+      bodies: [],
+    });
+
+    const result = parse(json);
+
+    expect(result.faceBoxes).toHaveLength(1);
+    expect(result.faceBoxes[0].label).toBe("unknown");
+  });
+
+  it("parses Gemma format inside markdown code block", () => {
+    const content = "```json\n" + JSON.stringify({
+      faces: [{ box_2d: [200, 100, 400, 300], label: "face" }],
+      bodies: [],
+    }) + "\n```";
+
+    const result = parse(content);
+
+    expect(result.faceBoxes).toHaveLength(1);
+    expect(result.faceBoxes[0].bbox_2d).toEqual([100, 200, 300, 400]);
+  });
+
+  it("parses multiple Gemma boxes", () => {
+    const json = JSON.stringify({
+      faces: [
+        { box_2d: [100, 50, 300, 200], label: "face", confidence: 0.9 },
+        { box_2d: [400, 500, 600, 700], label: "face", confidence: 0.8 },
+      ],
+      bodies: [
+        { box_2d: [50, 100, 950, 800], label: "body", confidence: 0.6 },
+      ],
+    });
+
+    const result = parse(json);
+
+    expect(result.faceBoxes).toHaveLength(2);
+    expect(result.faceBoxes[0].bbox_2d).toEqual([50, 100, 200, 300]);
+    expect(result.faceBoxes[1].bbox_2d).toEqual([500, 400, 700, 600]);
+    expect(result.bodyBoxes).toHaveLength(1);
+    expect(result.bodyBoxes[0].bbox_2d).toEqual([100, 50, 800, 950]);
+  });
+
+  it("filters out Gemma entries with invalid box_2d", () => {
+    const json = JSON.stringify({
+      faces: [
+        { box_2d: "invalid", label: "face" },
+        { box_2d: [100, 200], label: "face" },
+        { box_2d: [100, 200, 300, 400], label: "face" },
+      ],
+      bodies: [],
+    });
+
+    const result = parse(json);
+
+    expect(result.faceBoxes).toHaveLength(1);
+    expect(result.faceBoxes[0].bbox_2d).toEqual([200, 100, 400, 300]);
+  });
+
+  it("prefers box_2d over bbox_2d when both present (Gemma format)", () => {
+    const json = JSON.stringify({
+      faces: [
+        { box_2d: [200, 100, 500, 400], bbox_2d: [999, 888, 777, 666], label: "face" },
+      ],
+      bodies: [],
+    });
+
+    const result = parse(json);
+
+    // box_2d takes precedence — [ymin=200, xmin=100, ymax=500, xmax=400] → [100, 200, 400, 500]
+    expect(result.faceBoxes[0].bbox_2d).toEqual([100, 200, 400, 500]);
+  });
+
+  it("handles mixed Gemma and OpenAI formats in same response", () => {
+    const json = JSON.stringify({
+      faces: [
+        { box_2d: [200, 100, 400, 300], label: "face" },
+      ],
+      bodies: [
+        { bbox_2d: [50, 100, 950, 900], label: "body" },
+      ],
+    });
+
+    const result = parse(json);
+
+    // Face: Gemma [200, 100, 400, 300] → [100, 200, 300, 400]
+    expect(result.faceBoxes[0].bbox_2d).toEqual([100, 200, 300, 400]);
+    // Body: OpenAI [50, 100, 950, 900] → [50, 100, 950, 900] (unchanged)
+    expect(result.bodyBoxes[0].bbox_2d).toEqual([50, 100, 950, 900]);
+  });
 });

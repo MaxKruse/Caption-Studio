@@ -311,9 +311,53 @@ async function processDetectionJob(
 // ---------------------------------------------------------------------------
 
 /**
+ * Normalize a bounding box entry to the internal `bbox_2d: [xmin, ymin, xmax, ymax]` format.
+ *
+ * Handles two formats:
+ * - OpenAI / Qwen format: `bbox_2d` with `[xmin, ymin, xmax, ymax]` (x-first) — pass through
+ * - Gemma format: `box_2d` with `[ymin, xmin, ymax, xmax]` (y-first) — swap to x-first and rename
+ *
+ * Both use 0–1000 normalized coordinates.
+ */
+function normalizeBoxEntry(entry: Record<string, unknown>): {
+  bbox_2d: [number, number, number, number];
+  label: string;
+  confidence: number;
+} | null {
+  const rawConfidence = entry.confidence;
+  const confidence =
+    typeof rawConfidence === "number" && !Number.isNaN(rawConfidence)
+      ? Math.max(0, Math.min(1, rawConfidence))
+      : 0.5;
+  const label = (entry.label as string) ?? "unknown";
+
+  // Gemma format: `box_2d` with [ymin, xmin, ymax, xmax]
+  if ("box_2d" in entry && Array.isArray(entry.box_2d) && entry.box_2d.length === 4) {
+    const [ymin, xmin, ymax, xmax] = entry.box_2d as [number, number, number, number];
+    return {
+      bbox_2d: [xmin, ymin, xmax, ymax],
+      label,
+      confidence,
+    };
+  }
+
+  // OpenAI / Qwen format: `bbox_2d` with [xmin, ymin, xmax, ymax]
+  if ("bbox_2d" in entry && Array.isArray(entry.bbox_2d) && entry.bbox_2d.length === 4) {
+    return {
+      bbox_2d: entry.bbox_2d as [number, number, number, number],
+      label,
+      confidence,
+    };
+  }
+
+  return null;
+}
+
+/**
  * Parse the model's detection response into face and body bounding box arrays.
  * Handles JSON objects, markdown code blocks, and plain text.
  * Extracts confidence scores (defaults to 0.5 when missing).
+ * Normalizes both OpenAI/Qwen (`bbox_2d`) and Gemma (`box_2d`) formats.
  */
 export function parseDetectionResponse(content: string): {
   faceBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }>;
@@ -345,19 +389,8 @@ export function parseDetectionResponse(content: string): {
       if (!Array.isArray(arr)) return [];
       return arr
         .filter((b: unknown): b is Record<string, unknown> => b != null && typeof b === "object")
-        .map((b) => {
-          const rawConfidence = b.confidence;
-          const confidence =
-            typeof rawConfidence === "number" && !Number.isNaN(rawConfidence)
-              ? Math.max(0, Math.min(1, rawConfidence))
-              : 0.5;
-          return {
-            bbox_2d: b.bbox_2d as [number, number, number, number],
-            label: (b.label as string) ?? "unknown",
-            confidence,
-          };
-        })
-        .filter((b) => b.bbox_2d && Array.isArray(b.bbox_2d) && b.bbox_2d.length === 4);
+        .map((b) => normalizeBoxEntry(b))
+        .filter((b): b is NonNullable<typeof b> => b !== null);
     };
 
     return {
