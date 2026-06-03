@@ -1,20 +1,12 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
+import { parseDetectionResponse } from "@/lib/detect-parsing";
 
 // ---------------------------------------------------------------------------
 // parseDetectionResponse — bounding box JSON parsing
 // ---------------------------------------------------------------------------
 
 describe("parseDetectionResponse", () => {
-  let parse: (content: string) => {
-    faceBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }>;
-    bodyBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }>;
-  };
-
-  beforeEach(async () => {
-    vi.resetModules();
-    const route = await import("./route");
-    parse = route.parseDetectionResponse;
-  });
+  const parse = parseDetectionResponse;
 
   it("returns empty arrays for empty string", () => {
     const result = parse("");
@@ -575,16 +567,7 @@ describe("parseDetectionResponse", () => {
 // ---------------------------------------------------------------------------
 
 describe("regression — Bug 3: Gemma 4 bounding boxes were broken (2026-06-03)", () => {
-  let parse: (content: string) => {
-    faceBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }>;
-    bodyBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }>;
-  };
-
-  beforeEach(async () => {
-    vi.resetModules();
-    const route = await import("./route");
-    parse = route.parseDetectionResponse;
-  });
+  const parse = parseDetectionResponse;
 
   it("does NOT return empty arrays for Gemma 4 flat array format", () => {
     // The original bug: parser looked for parsed.faces / parsed.bodies,
@@ -694,16 +677,7 @@ describe("regression — Bug 1: UI state timing (2026-05-28)", () => {
   // These tests verify the parser is always synchronous and deterministic,
   // which is a prerequisite for the ref-based fix to work correctly.
 
-  let parse: (content: string) => {
-    faceBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }>;
-    bodyBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }>;
-  };
-
-  beforeEach(async () => {
-    vi.resetModules();
-    const route = await import("./route");
-    parse = route.parseDetectionResponse;
-  });
+  const parse = parseDetectionResponse;
 
   it("is synchronous — returns result immediately without awaiting", () => {
     // The parser MUST be synchronous so the ref-based state fix works.

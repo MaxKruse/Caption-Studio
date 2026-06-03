@@ -6,7 +6,7 @@ import {
   buildCropRectFromBox,
   buildCropRectFromBestBox,
   buildDefaultCrop,
-} from "./useCropDetection";
+} from "@/lib/crop-allocation";
 
 // ---------------------------------------------------------------------------
 // Helpers

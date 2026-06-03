@@ -1,5 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect } from "vitest";
+import { parseDetectionResponse } from "@/lib/detect-parsing";
 import { useCropDetection } from "./useCropDetection";
 import type {
   BoundingBox,
@@ -526,16 +527,7 @@ describe("reset — after failures", () => {
 // ---------------------------------------------------------------------------
 
 describe("parseDetectionResponse — edge cases triggering retry path", () => {
-  let parse: (content: string) => {
-    faceBoxes: BoundingBox[];
-    bodyBoxes: BoundingBox[];
-  };
-
-  beforeEach(async () => {
-    vi.resetModules();
-    const route = await import("@/app/api/detect/route");
-    parse = route.parseDetectionResponse;
-  });
+  const parse = parseDetectionResponse;
 
   it("returns empty arrays for valid JSON with empty arrays (triggers retry in API)", () => {
     const result = parse(JSON.stringify({ faces: [], bodies: [] }));

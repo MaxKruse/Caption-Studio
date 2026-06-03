@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import type { ImageFile, ImageStatus, WorkflowStep } from "./CaptionStudioTypes";
-import type { CropRuleset, DetectionResult, ImageCrop } from "./CaptionStudioCropTypes";
+import type { ImageFile, WorkflowStep } from "./CaptionStudioTypes";
+import type { CropRuleset, ImageCrop } from "./CaptionStudioCropTypes";
 import { CROP_RULESETS } from "./CaptionStudioCropConstants";
 export { formatDuration } from "./CaptionStudioTypes";
 import { cropImagePreview } from "@/lib/image-client-utils";
@@ -19,7 +19,10 @@ import { ToastNotification } from "./ToastNotification";
 import { UploadSection } from "./UploadSection";
 import { useAppConfig } from "./hooks/useAppConfig";
 import { useCaptionJob } from "./hooks/useCaptionJob";
+import { useCaptionStudioDerived } from "./hooks/useCaptionStudioDerived";
 import { useCropDetection } from "./hooks/useCropDetection";
+import { useCropKeyboardNav } from "./hooks/useCropKeyboardNav";
+import { useDetection } from "./hooks/useDetection";
 import { useFetchModels } from "./hooks/useFetchModels";
 import { useImageUpload } from "./hooks/useImageUpload";
 import { usePreviewKeyboardNav } from "./hooks/usePreviewKeyboardNav";
@@ -33,7 +36,7 @@ import { usePreviewKeyboardNav } from "./hooks/usePreviewKeyboardNav";
 export default function CaptionStudio() {
   // -- App configuration state --
   const config = useAppConfig();
-  const { showToast } = config;
+
 
   // -- Model fetching --
   const { models, modelLoading, modelError, fetchModels } =
@@ -73,9 +76,19 @@ export default function CaptionStudio() {
     }
   }, [cropRuleset, cropSetRuleset]);
 
-  // -- Detection state --
-  const [isDetecting, setIsDetecting] = useState(false);
-  const [detectionError, setDetectionError] = useState<string | null>(null);
+  // -- Detection workflow --
+  const { isDetecting, detectionError, setDetectionError, handleDetect, handleAbortDetection } =
+    useDetection({
+      images: imageUpload.images,
+      serverUrl: config.serverUrl,
+      contentMode: config.contentMode,
+      parallelRequests: config.parallelRequests,
+      selectedModel,
+      cropRuleset,
+      cropDetection,
+      showToast: config.showToast,
+      onStepChange: setWorkflowStep,
+    });
 
   // -- Caption job --
   const captionJob = useCaptionJob({
@@ -100,135 +113,7 @@ export default function CaptionStudio() {
   const resetWorkflow = useCallback(() => {
     setWorkflowStep("configure");
     cropDetection.reset();
-    setIsDetecting(false);
-    setDetectionError(null);
   }, [cropDetection]);
-
-  // -- Detection handler --
-  const handleDetect = useCallback(async () => {
-    if (isDetecting) return;
-
-    if (!cropRuleset || imageUpload.images.length === 0 || !selectedModel) {
-      return;
-    }
-
-    setIsDetecting(true);
-    setDetectionError(null);
-    setWorkflowStep("detect");
-
-    try {
-      const formData = new FormData();
-      formData.append("config", JSON.stringify({
-        serverUrl: config.serverUrl.trim(),
-        model: selectedModel,
-        contentMode: config.contentMode,
-        parallelRequests: config.parallelRequests,
-      }));
-      for (const img of imageUpload.images) {
-        formData.append("images", img.file);
-      }
-
-      const res = await fetch("/api/detect", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setDetectionError(data.error || "Detection failed");
-        setIsDetecting(false);
-        setWorkflowStep("upload");
-        return;
-      }
-
-      const jobId = data.jobId;
-
-      // Connect to SSE for live progress
-      const es = new EventSource(`/api/detect?jobId=${jobId}`);
-      const sseHandlers = cropDetection.getSSEHandlers();
-
-      es.onmessage = (event: MessageEvent) => {
-        sseHandlers.onMessage(event);
-
-        const parsed = JSON.parse(event.data);
-        if (parsed.done) {
-          es.close();
-
-          type SseStatus = { status: string; faceBoxes?: DetectionResult["faceBoxes"]; bodyBoxes?: DetectionResult["bodyBoxes"]; error?: string; retryCount?: number };
-          const statuses = (parsed.statuses ?? {}) as Record<string, SseStatus | undefined>;
-
-          const results: DetectionResult[] = imageUpload.images.map((img, i) => {
-            const status = statuses?.[img.name];
-            return {
-              imageIndex: i,
-              imageName: img.name,
-              faceBoxes: status?.faceBoxes ?? [],
-              bodyBoxes: status?.bodyBoxes ?? [],
-              error: status?.error,
-            };
-          });
-
-          cropDetection.setDetectionResults(results);
-
-          // Auto-assign crops based on ruleset (skips failed images)
-          cropDetection.autoAssignCrops();
-
-          // Ensure selected image index points to a valid (non-skipped) image
-          const validCrops = cropDetection.getFinalCrops();
-          if (validCrops.length > 0) {
-            cropDetection.setSelectedImageIndex(validCrops[0].imageIndex);
-          }
-
-          // Check if we have any crops to work with
-          const hasValidCrops = validCrops.length > 0;
-
-          if (!hasValidCrops) {
-            // All images failed — go back to upload
-            setDetectionError(
-              `All ${imageUpload.images.length} image(s) failed detection. Please try different images or a different model.`
-            );
-            setIsDetecting(false);
-            setWorkflowStep("upload");
-            showToast("All images failed detection — please try again");
-            return;
-          }
-
-          // Check for skipped images and warn
-          const skippedCount = results.filter((r) => r.error && (r.error.includes("permanently") || r.error.includes("skipped"))).length;
-          if (skippedCount > 0) {
-            setDetectionError(
-              `${skippedCount} image(s) failed detection — set their crop boxes manually in the editor below.`
-            );
-          }
-
-          // Move to crop step
-          setWorkflowStep("crop");
-          setIsDetecting(false);
-        }
-      };
-
-      es.onerror = () => {
-        es.close();
-        sseHandlers.onError();
-        setDetectionError("Detection connection lost");
-        setIsDetecting(false);
-        setWorkflowStep("upload");
-      };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Detection failed";
-      setDetectionError(message);
-      showToast(message);
-      setIsDetecting(false);
-      setWorkflowStep("upload");
-    }
-  }, [isDetecting, cropRuleset, imageUpload.images, selectedModel, config.serverUrl, config.contentMode, showToast, cropDetection]);
-
-  // -- Abort detection handler --
-  const handleAbortDetection = useCallback(() => {
-    setIsDetecting(false);
-    setWorkflowStep("upload");
-  }, []);
 
   // -- Crop handlers --
   const handleAutoAssign = useCallback(() => {
@@ -323,46 +208,12 @@ export default function CaptionStudio() {
     onNavigate: navigatePreview,
   });
 
-  // -- Keyboard navigation for crop editor (skips skipped images) --
-  useEffect(() => {
-    if (workflowStep !== "crop") return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const images = imageUpload.images;
-      const crops = cropDetection.getFinalCrops();
-      if (images.length === 0 || crops.length === 0) return;
-
-      // Build list of valid (non-skipped) image indices
-      const validIndices = crops.map((c) => c.imageIndex);
-      if (validIndices.length === 0) return;
-
-      const current = cropDetection.selectedImageIndex;
-      const currentValidIndex = validIndices.indexOf(current);
-      const currentIndexInValid = currentValidIndex >= 0 ? currentValidIndex : 0;
-
-      if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
-        e.preventDefault();
-        const nextValidIndex = currentIndexInValid > 0 ? currentIndexInValid - 1 : validIndices.length - 1;
-        cropDetection.setSelectedImageIndex(validIndices[nextValidIndex]);
-      } else if (e.key === "ArrowRight" || e.key === "ArrowDown") {
-        e.preventDefault();
-        const nextValidIndex = currentIndexInValid < validIndices.length - 1 ? currentIndexInValid + 1 : 0;
-        cropDetection.setSelectedImageIndex(validIndices[nextValidIndex]);
-      } else if (e.key === " ") {
-        e.preventDefault();
-        const crop = crops.find((c) => c.imageIndex === current);
-        if (crop) {
-          // Toggle type AND snap to the best bounding box for the new type
-          const newType = crop.cropType === "face" ? "body" : "face";
-          cropDetection.setCropType(current, newType);
-          cropDetection.resetCrop(current);
-        }
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [workflowStep, imageUpload.images, cropDetection]);
+  // -- Keyboard navigation for crop editor --
+  useCropKeyboardNav({
+    workflowStep,
+    images: imageUpload.images,
+    cropDetection,
+  });
 
   // -- Warn before leaving while a job is processing --
   useEffect(() => {
@@ -378,43 +229,15 @@ export default function CaptionStudio() {
   }, [captionJob.isProcessing]);
 
   // -- Derived values --
-  const progressPercent =
-    captionJob.progress.total > 0
-      ? Math.round(
-          ((captionJob.progress.completed + captionJob.progress.failed) /
-            captionJob.progress.total) *
-            100
-        )
-      : 0;
-
-  const canDetect =
-    !isDetecting &&
-    imageUpload.images.length > 0 &&
-    !!selectedModel &&
-    !!cropRuleset &&
-    !!config.serverUrl.trim();
-
-  const rulesetValidation = cropDetection.validateRuleset();
-  const canProceedToCaption =
-    cropDetection.hasCrops &&
-    cropDetection.rulesetValid &&
-    !isDetecting &&
-    !captionJob.isProcessing &&
-    !!selectedModel &&
-    !!config.serverUrl.trim() &&
-    !config.triggerRequired;
-
-  const jobDone = !!captionJob.jobId && !captionJob.isProcessing;
-
-  // Build image statuses
-  const mergedImageStatuses: Record<string, ImageStatus> = {};
-  for (const img of imageUpload.images) {
-    mergedImageStatuses[img.name] = captionJob.imageStatuses[img.name];
-  }
-
-  const failedImages = imageUpload.images
-    .map((img) => ({ img, status: mergedImageStatuses[img.name] }))
-    .filter(({ status }) => status?.status === "failed");
+  const derived = useCaptionStudioDerived({
+    captionJob,
+    cropDetection,
+    imageUpload,
+    config,
+    isDetecting,
+    selectedModel,
+    workflowStep,
+  });
 
   // -- Handlers --
   const handleClearAll = useCallback(() => {
@@ -440,26 +263,6 @@ export default function CaptionStudio() {
     [imageUpload]
   );
 
-  // -- Derived display step --
-  const displayStep: WorkflowStep = jobDone ? "done" : workflowStep;
-
-  const showUploadSection = displayStep === "upload" || displayStep === "configure" || displayStep === "detect" || displayStep === "crop";
-  const showCropEditor = displayStep === "crop";
-  const showGallery = displayStep === "caption" || displayStep === "done";
-
-  // -- Determine action bar step --
-  const actionBarStep = displayStep === "done"
-    ? "done"
-    : displayStep === "caption"
-      ? "caption"
-      : displayStep === "crop"
-        ? "crop"
-        : displayStep === "detect"
-          ? "detect"
-          : imageUpload.images.length > 0
-            ? "upload"
-            : "upload";
-
   // -- Crops & detections for render --
   const crops = cropDetection.getFinalCrops();
   const detections = cropDetection.state.detections;
@@ -476,9 +279,9 @@ export default function CaptionStudio() {
         onDismiss={captionJob.clearJobError}
       />
 
-      {jobDone && failedImages.length > 0 && (
+      {derived.jobDone && derived.failedImages.length > 0 && (
         <FailedImagesLog
-          failedImages={failedImages}
+          failedImages={derived.failedImages}
           isOpen={captionJob.showErrorLog}
           onToggle={() => captionJob.setShowErrorLog((prev) => !prev)}
         />
@@ -513,10 +316,10 @@ export default function CaptionStudio() {
       />
 
       {/* Step 2: Upload */}
-      {showUploadSection && (
+      {derived.showUploadSection && (
         <UploadSection
           images={imageUpload.images}
-          imageStatuses={mergedImageStatuses}
+          imageStatuses={derived.mergedImageStatuses}
           dragOver={imageUpload.dragOver}
           galleryOpen={imageUpload.galleryOpen}
           onGalleryToggle={() => imageUpload.setGalleryOpen((p) => !p)}
@@ -535,7 +338,7 @@ export default function CaptionStudio() {
       )}
 
       {/* Detection error */}
-      {(displayStep === "detect" || displayStep === "crop") && detectionError && (
+      {(derived.displayStep === "detect" || derived.displayStep === "crop") && detectionError && (
         <JobErrorMessage
           message={detectionError}
           onDismiss={() => setDetectionError(null)}
@@ -543,7 +346,7 @@ export default function CaptionStudio() {
       )}
 
       {/* Step 2.5: Crop Editor */}
-      {showCropEditor && (
+      {derived.showCropEditor && (
         <CropEditor
           images={imageUpload.images}
           ruleset={cropRuleset}
@@ -551,7 +354,7 @@ export default function CaptionStudio() {
           detections={detections}
           detectionError={detectionError}
           rulesetValid={cropDetection.rulesetValid}
-          rulesetValidation={rulesetValidation}
+          rulesetValidation={derived.rulesetValidation}
           onAutoAssign={handleAutoAssign}
           onUpdateCropRect={handleUpdateCropRect}
           onSetCropType={handleSetCropType}
@@ -564,10 +367,10 @@ export default function CaptionStudio() {
       )}
 
       {/* Step 3+: Results gallery after captioning */}
-      {showGallery && (
+      {derived.showGallery && (
         <ResultsGallery
           images={imageUpload.images}
-          imageStatuses={mergedImageStatuses}
+          imageStatuses={derived.mergedImageStatuses}
           croppedPreviews={croppedPreviews}
           onPreview={openPreview}
         />
@@ -575,28 +378,28 @@ export default function CaptionStudio() {
 
       {/* Floating Action Bar */}
       <FloatingActionBar
-        step={actionBarStep}
+        step={derived.actionBarStep}
         imagesCount={imageUpload.images.length}
         detectionProgress={cropDetection.detectionProgress}
         captionProgress={captionJob.progress}
-        captionProgressPercent={progressPercent}
+        captionProgressPercent={derived.progressPercent}
         onDetect={handleDetect}
         onAbortDetection={handleAbortDetection}
-        onProceedToCaption={canProceedToCaption ? handleProceedFromCrop : undefined}
+        onProceedToCaption={derived.canProceedToCaption ? handleProceedFromCrop : undefined}
         onBackToUpload={handleBackFromCrop}
         onAbortCaption={captionJob.abortJob}
         onDownloadZip={captionJob.downloadZip}
         onClearAll={handleClearAllToggle}
-        canDetect={canDetect}
-        canProceedToCaption={canProceedToCaption}
+        canDetect={derived.canDetect}
+        canProceedToCaption={derived.canProceedToCaption}
         rulesetValid={cropDetection.rulesetValid}
-        rulesetValidation={rulesetValidation}
+        rulesetValidation={derived.rulesetValidation}
       />
 
       {previewImage && (
         <ImagePreviewModal
           img={previewImage}
-          status={mergedImageStatuses[previewImage.name] ?? captionJob.imageStatuses[previewImage.name] ?? { status: "queued" }}
+          status={derived.mergedImageStatuses[previewImage.name] ?? captionJob.imageStatuses[previewImage.name] ?? { status: "queued" }}
           onClose={closePreview}
           allImages={imageUpload.images}
           currentIndex={imageUpload.images.findIndex(
