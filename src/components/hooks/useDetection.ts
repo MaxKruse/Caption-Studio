@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ImageFile, WorkflowStep } from "../CaptionStudioTypes";
 import type { CropRuleset, DetectionResult } from "../CaptionStudioCropTypes";
 import type { UseCropDetectionReturn } from "../CaptionStudioCropTypes";
@@ -37,6 +37,14 @@ export function useDetection({
 
   // Use a ref to track the latest EventSource so we can close it on abort
   const eventSourceRef = useRef<EventSource | null>(null);
+
+  // Keep cropDetection in a ref so SSE handlers always access the current instance.
+  // Without this, handleDetect captures a stale cropDetection closure that may point
+  // to a useCropDetection instance created before images were uploaded (empty stateRef).
+  const cropDetectionRef = useRef(cropDetection);
+  useEffect(() => {
+    cropDetectionRef.current = cropDetection;
+  }, [cropDetection]);
 
   const handleDetect = useCallback(async () => {
     if (isDetecting) return;
@@ -80,7 +88,7 @@ export function useDetection({
       // Connect to SSE for live progress
       const es = new EventSource(`/api/detect?jobId=${jobId}`);
       eventSourceRef.current = es;
-      const sseHandlers = cropDetection.getSSEHandlers();
+      const sseHandlers = cropDetectionRef.current.getSSEHandlers();
 
       es.onmessage = (event: MessageEvent) => {
         sseHandlers.onMessage(event);
@@ -89,6 +97,9 @@ export function useDetection({
         if (parsed.done) {
           es.close();
           eventSourceRef.current = null;
+
+          // Use the ref to always access the current cropDetection instance
+          const cd = cropDetectionRef.current;
 
           type SseStatus = { status: string; faceBoxes?: DetectionResult["faceBoxes"]; bodyBoxes?: DetectionResult["bodyBoxes"]; error?: string; retryCount?: number };
           const statuses = (parsed.statuses ?? {}) as Record<string, SseStatus | undefined>;
@@ -104,13 +115,13 @@ export function useDetection({
             };
           });
 
-          cropDetection.setDetectionResults(results);
-          cropDetection.autoAssignCrops();
+          cd.setDetectionResults(results);
+          cd.autoAssignCrops();
 
           // Ensure selected image index points to a valid (non-skipped) image
-          const validCrops = cropDetection.getFinalCrops();
+          const validCrops = cd.getFinalCrops();
           if (validCrops.length > 0) {
-            cropDetection.setSelectedImageIndex(validCrops[0].imageIndex);
+            cd.setSelectedImageIndex(validCrops[0].imageIndex);
           }
 
           // Check if we have any crops to work with
@@ -154,7 +165,7 @@ export function useDetection({
       setIsDetecting(false);
       onStepChange("upload");
     }
-  }, [isDetecting, cropRuleset, images, selectedModel, serverUrl, contentMode, parallelRequests, showToast, cropDetection, onStepChange]);
+  }, [isDetecting, cropRuleset, images, selectedModel, serverUrl, contentMode, parallelRequests, showToast, onStepChange]);
 
   const handleAbortDetection = useCallback(() => {
     const es = eventSourceRef.current;
