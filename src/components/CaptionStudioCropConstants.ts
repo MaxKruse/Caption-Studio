@@ -55,17 +55,43 @@ export const DETECTION_TIMEOUT_MS = 3 * 60 * 1000;
 // ---------------------------------------------------------------------------
 
 /**
- * Build detection prompts tailored to the content mode.
+ * Build detection prompts tailored to the content mode and model family.
  *
- * Uses a flat JSON array with `bbox_2d [x_min, y_min, x_max, y_max]` and `label`
- * (x-first, 0–1000 normalized). This is the universal format understood by
- * Qwen, OpenAI, and most vision models. Gemma also follows this format when
- * explicitly prompted for it.
+ * Gemma models natively return `box_2d` with `[y_min, x_min, y_max, x_max]` (y-first).
+ * Qwen models natively return `bbox_2d` with `[x_min, y_min, x_max, y_max]` (x-first).
+ * The prompt is adapted to match each model's native format so coordinates aren't swapped.
  *
- * The parser handles both `bbox_2d` (x-first) and `box_2d` (y-first, Gemma native)
+ * The parser handles both `bbox_2d` (x-first, pass-through) and `box_2d` (y-first, swap)
  * as well as the legacy `{faces, bodies}` object format for backward compatibility.
  */
-export function getDetectionPrompts(contentMode: "sfw" | "nsfw") {
+export function getDetectionPrompts(
+  contentMode: "sfw" | "nsfw",
+  model: string
+) {
+  const isGemma = model.toLowerCase().includes("gemma");
+
+  if (isGemma) {
+    // Gemma native: box_2d with [y_min, x_min, y_max, x_max] (y-first)
+    const systemPrompt = `You are an object detection assistant. Detect all faces and bodies (full-body poses) in the image and return bounding boxes as a JSON array.
+
+## Output Format
+Return a JSON array. Each entry has:
+- box_2d: [y_min, x_min, y_max, x_max] — integers normalized to 1000 (y is vertical, x is horizontal, origin at top-left)
+- label: "face" or "body" (use "face" for faces/headshots, "body" for full-body poses)
+
+If you detect nothing, return an empty array [].
+
+## Example
+[
+  {"box_2d": [150, 100, 450, 400], "label": "face"},
+  {"box_2d": [300, 200, 600, 500], "label": "body"}
+]`;
+    const userPrompt =
+      contentMode === "sfw" ? getSfwUserPrompt() : getNsfwUserPrompt();
+    return { systemPrompt, userPrompt };
+  }
+
+  // Qwen / OpenAI / default: bbox_2d with [x_min, y_min, x_max, y_max] (x-first)
   const systemPrompt = `You are an object detection assistant. Detect all faces and bodies (full-body poses) in the image and return bounding boxes as a JSON array.
 
 ## Output Format

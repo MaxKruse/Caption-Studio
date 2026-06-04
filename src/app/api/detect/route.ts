@@ -166,7 +166,7 @@ async function processDetectionJob(
   parallelRequests: number
 ): Promise<void> {
   const baseUrl = normalizeServerUrl(serverUrl);
-  const { systemPrompt, userPrompt } = getDetectionPrompts(contentMode);
+  const { systemPrompt, userPrompt } = getDetectionPrompts(contentMode, model);
   const primaryQueue: File[] = [...imageFiles];
   const retryCount = new Map<string, number>();
 
