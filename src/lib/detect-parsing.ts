@@ -10,8 +10,8 @@
  * - OpenAI / Qwen format: `bbox_2d` with `[xmin, ymin, xmax, ymax]` (x-first) — pass through
  * - Legacy `bbox_2d` with y-first (old Gemma handling): same swap as above
  *
- * All use 0–1000 normalized coordinates. If image dimensions are provided and coordinates
- * exceed 1000 (absolute pixel coords from Qwen), they are normalized to 0–1000.
+ * All models use 0–1000 normalized coordinates. Coordinates exceeding 1000 are
+ * normalized using image dimensions.
  */
 function normalizeBoxEntry(
   entry: Record<string, unknown>,
@@ -54,8 +54,9 @@ function normalizeBoxEntry(
 
 /**
  * Normalize coordinates to 0–1000 scale.
- * If any coordinate exceeds 1000 and image dimensions are available,
- * treat them as absolute pixel coordinates and normalize.
+ *
+ * All models (Qwen, Gemma, OpenAI, etc.) return 0–1000 normalized coordinates.
+ * Only normalize if any coordinate exceeds 1000 (absolute pixel values).
  */
 function normalizeCoords(
   xmin: number,
@@ -101,6 +102,18 @@ export const FACE_KEYWORDS = [
   "headshot",
   "close-up",
   "close up",
+  // Facial features (Qwen may return these as separate detections)
+  "eyes",
+  "eye",
+  "lips",
+  "lip",
+  "mouth",
+  "nose",
+  "chin",
+  "cheek",
+  "eyebrow",
+  "ear",
+  "forehead",
 ];
 
 /** Keywords that indicate a body/full-body detection. */
@@ -215,7 +228,8 @@ interface DetectionImageDimensions {
  */
 export function parseDetectionResponse(
   content: string,
-  imageDims?: DetectionImageDimensions
+  imageDims?: DetectionImageDimensions,
+  _model?: string // kept for backward compatibility, no longer used
 ): {
   faceBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }>;
   bodyBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }>;

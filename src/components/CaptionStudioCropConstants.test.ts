@@ -112,13 +112,13 @@ describe("getDetectionPrompts — SFW", () => {
   it("systemPrompt includes JSON format instructions", () => {
     const { systemPrompt } = getDetectionPrompts("sfw");
     expect(systemPrompt).toContain("JSON");
-    expect(systemPrompt).toContain("box_2d");
+    expect(systemPrompt).toContain("bbox_2d");
     expect(systemPrompt).toContain("label");
   });
 
   it("systemPrompt includes a JSON array example", () => {
     const { systemPrompt } = getDetectionPrompts("sfw");
-    expect(systemPrompt).toContain("box_2d");
+    expect(systemPrompt).toContain("bbox_2d");
     expect(systemPrompt).toContain('"label"');
     expect(systemPrompt).toContain("JSON array");
   });

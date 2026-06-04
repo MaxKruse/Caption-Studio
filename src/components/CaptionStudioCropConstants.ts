@@ -57,27 +57,28 @@ export const DETECTION_TIMEOUT_MS = 3 * 60 * 1000;
 /**
  * Build detection prompts tailored to the content mode.
  *
- * Uses a flat JSON array with `box_2d [y_min, x_min, y_max, x_max]` and `label`
- * to match Gemma 4's native detection format. Other models (Qwen, Claude, etc.)
- * can also follow this format since it's a simple JSON array.
+ * Uses a flat JSON array with `bbox_2d [x_min, y_min, x_max, y_max]` and `label`
+ * (x-first, 0–1000 normalized). This is the universal format understood by
+ * Qwen, OpenAI, and most vision models. Gemma also follows this format when
+ * explicitly prompted for it.
  *
- * The parser handles both this flat array and the legacy `{faces, bodies}` object
- * format for backward compatibility.
+ * The parser handles both `bbox_2d` (x-first) and `box_2d` (y-first, Gemma native)
+ * as well as the legacy `{faces, bodies}` object format for backward compatibility.
  */
 export function getDetectionPrompts(contentMode: "sfw" | "nsfw") {
   const systemPrompt = `You are an object detection assistant. Detect all faces and bodies (full-body poses) in the image and return bounding boxes as a JSON array.
 
 ## Output Format
 Return a JSON array. Each entry has:
-- box_2d: [y_min, x_min, y_max, x_max] — integers normalized to 1000
+- bbox_2d: [x_min, y_min, x_max, y_max] — integers normalized to 1000 (x is horizontal, y is vertical, origin at top-left)
 - label: "face" or "body" (use "face" for faces/headshots, "body" for full-body poses)
 
 If you detect nothing, return an empty array [].
 
 ## Example
 [
-  {"box_2d": [150, 100, 450, 400], "label": "face"},
-  {"box_2d": [300, 200, 600, 500], "label": "body"}
+  {"bbox_2d": [100, 150, 400, 450], "label": "face"},
+  {"bbox_2d": [200, 300, 500, 600], "label": "body"}
 ]`;
 
   const userPrompt =
