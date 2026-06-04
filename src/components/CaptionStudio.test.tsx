@@ -277,7 +277,7 @@ describe("Default prompt text", () => {
     const textareas = document.querySelectorAll("textarea");
     const systemPromptValue = textareas[0]?.value;
     expect(systemPromptValue).toContain("Flux.1-Dev LoRA fine-tuning");
-    expect(systemPromptValue).toContain("comma-separated");
+    expect(systemPromptValue).toContain("natural language");
   });
 
   it("user prompt contains all captioning instructions and {trigger}", () => {
@@ -285,8 +285,8 @@ describe("Default prompt text", () => {
     const textareas = document.querySelectorAll("textarea");
     const userPromptValue = textareas[1]?.value;
     expect(userPromptValue).toContain("{trigger}");
-    expect(userPromptValue).toContain("comma-separated");
-    expect(userPromptValue).toContain("lowercase");
+    expect(userPromptValue).toContain("natural language");
+    expect(userPromptValue).toContain("complete sentences");
   });
 });
 
