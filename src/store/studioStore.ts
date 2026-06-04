@@ -242,16 +242,20 @@ export const useStudioStore = create<StudioPersistedState & StudioActions>()(
     {
       name: "caption-studio-storage",
       // Only persist config + rulesetId. Everything else is session-only.
-      partialize: (state) => ({
-        config: state.config,
-        crop: {
+      partialize: (state) => {
+        // Exclude prompts — they reset to preset defaults on every load
+        const { serverUrl, selectedModel, contentMode, presetId, triggerWord, parallelRequests } = state.config;
+        return {
+          config: { serverUrl, selectedModel, contentMode, presetId, triggerWord, parallelRequests },
+          crop: {
           rulesetId: state.crop.rulesetId,
           // Don't persist crops/detections — they depend on fresh detection run
           crops: [],
           detections: [],
           selectedImageIndex: 0,
         },
-      }),
+        };
+      },
     },
   ),
 );
