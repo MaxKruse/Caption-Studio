@@ -28,8 +28,8 @@ export const CAPTION_PRESETS: PresetDefinition[] = [
     description: "BLIP-style captions for character LoRA training",
     zipName: "Flux1-Dev",
     needsTrigger: true,
-    systemPrompt: `You generate training captions for Flux.1-Dev LoRA fine-tuning. Output exactly one line of comma-separated descriptive phrases. Use lowercase throughout. No periods, no quotes, no markdown. Keep it under 200 characters. Describe: hair color and style, eye color, skin tone, facial features, clothing, pose, expression, background, lighting, and shot type.`,
-    userPromptTemplate: `Generate a caption for this image. Start with "a photo of {trigger}," then list visual descriptors separated by commas. One line only.`,
+    systemPrompt: `You generate training captions for Flux.1-Dev LoRA fine-tuning. Produce exactly ONE line of comma-separated descriptive phrases in BLIP format. Use lowercase throughout. No periods, no quotes, no bold, no markdown, no bullet points, no section headers, no newlines. Keep it under 200 characters.`,
+    userPromptTemplate: `Generate a training caption for this image. Output exactly ONE line starting with "a photo of {trigger}," followed by comma-separated visual descriptors. Describe: hair color and style, eye color, skin tone, facial features, clothing, pose, expression, background, lighting, and shot type. Use lowercase. No periods, no quotes, no bold, no markdown, no bullet points, no section headers, no newlines. Keep it under 200 characters.`,
   },
   {
     id: "z-image-turbo-char",
@@ -37,8 +37,8 @@ export const CAPTION_PRESETS: PresetDefinition[] = [
     description: "Tag-style captions with trigger token for character LoRA training",
     zipName: "ZImageTurbo-Char",
     needsTrigger: true,
-    systemPrompt: `You generate training captions for Z-Image-Turbo LoRA fine-tuning. Output exactly one line of comma-separated tags. Use lowercase throughout. No periods, no quotes, no markdown, no full sentences. Keep it concise. Describe: hair color and style, eye color, facial features, clothing, pose, expression, background, lighting, and shot type.`,
-    userPromptTemplate: `Generate a caption for this image. Start with "{trigger}," then list visual descriptors separated by commas. One line only.`,
+    systemPrompt: `You generate training captions for Z-Image-Turbo LoRA fine-tuning. Produce exactly ONE line of comma-separated tags. Use lowercase throughout. No periods, no quotes, no bold, no markdown, no bullet points, no section headers, no newlines. Keep it concise.`,
+    userPromptTemplate: `Generate a training caption for this image. Output exactly ONE line starting with "{trigger}," followed by comma-separated visual descriptors. Describe: hair color and style, eye color, facial features, clothing, pose, expression, background, lighting, and shot type. Use lowercase. No periods, no quotes, no bold, no markdown, no bullet points, no section headers, no newlines. Keep it under 200 characters.`,
   },
 ];
 

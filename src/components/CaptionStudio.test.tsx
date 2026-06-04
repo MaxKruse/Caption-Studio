@@ -272,7 +272,7 @@ describe("Default prompt text", () => {
     vi.stubGlobal("fetch", vi.fn());
   });
 
-  it("system prompt is the Flux1-Dev prompt", () => {
+  it("system prompt contains captioning format instructions", () => {
     render(<CaptionStudio />);
     const textareas = document.querySelectorAll("textarea");
     const systemPromptValue = textareas[0]?.value;
@@ -280,11 +280,13 @@ describe("Default prompt text", () => {
     expect(systemPromptValue).toContain("comma-separated");
   });
 
-  it("user prompt contains the {trigger} placeholder", () => {
+  it("user prompt contains all captioning instructions and {trigger}", () => {
     render(<CaptionStudio />);
     const textareas = document.querySelectorAll("textarea");
     const userPromptValue = textareas[1]?.value;
     expect(userPromptValue).toContain("{trigger}");
+    expect(userPromptValue).toContain("comma-separated");
+    expect(userPromptValue).toContain("lowercase");
   });
 });
 
