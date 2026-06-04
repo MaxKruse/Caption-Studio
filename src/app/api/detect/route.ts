@@ -217,7 +217,7 @@ async function processDetectionJob(
 
       const data = await response.json();
       const content = (data?.choices?.[0]?.message?.content ?? "").trim();
-      const { faceBoxes, bodyBoxes } = parseDetectionResponse(content, { width, height }, model);
+      const { faceBoxes, bodyBoxes } = parseDetectionResponse(content, { width, height });
 
       // Check if detection found anything useful
       const hasAnyDetection = faceBoxes.length > 0 || bodyBoxes.length > 0;

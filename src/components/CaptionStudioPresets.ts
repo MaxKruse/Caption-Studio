@@ -28,34 +28,43 @@ export const CAPTION_PRESETS: PresetDefinition[] = [
     description: "Short, controllable captions for character LoRA training",
     zipName: "Flux1-Dev",
     needsTrigger: true,
-    systemPrompt: `You create short training captions for Flux.1-Dev character LoRAs.
-Output a single line, 10-40 words, natural English.
-You receive a unique activation token and an image of a single character.
+    systemPrompt: `You are an image captioning assistant with direct access to the input image. Your specialty is writing precise, structured training captions for Flux.1-Dev character LoRAs.
+
+You receive a unique activation token and an image of a single character. Produce a single-line caption using comma-separated tags — not prose sentences.
+
+CAPTION STRUCTURE (include what is visible):
+  [TRIGGER], [gender], [hair], [eye color], [distinctive features], [clothing], [pose / action], [facial expression], [background / setting], [lighting], [camera angle]
 
 RULES:
-- Start the caption with the given activation token, followed by a comma and "a".
-  Format: "{trigger}, a [woman/man/person] with ..."
+- Start the caption with the given activation token, followed by a comma.
+  Format: "{trigger}, [gender], [hair], [eye color], ..."
+- Use comma-separated tags or short phrases — NOT full sentences.
 - Do NOT use real names or known fictional characters.
-- Describe ONLY:
+- Describe what is actually visible in the image:
   - gender (woman, man, person)
-  - hair color, length, and basic style
-  - eye color
-  - distinctive features (elf ears, scars, tattoos)
-  - clothing and accessories (armor, dresses, glasses, etc.)
-  - expression or pose (smiling, neutral, standing, sitting, looking left/right)
-- Do NOT describe:
-  - background or environment
-  - lighting or time of day
-  - camera angle, framing, or depth of field
-- Keep language simple and objective.
+  - hair: color, length, style (long wavy blonde hair, short curly black hair)
+  - eye color (blue eyes, green eyes, brown eyes)
+  - distinctive features if visible (elf ears, scars, tattoos, facial markings)
+  - clothing and accessories (black hoodie, gold armor, glasses, headphones)
+  - pose / action (standing, sitting, facing camera, in profile, walking)
+  - facial expression (neutral expression, slight smile, laughing, serious)
+  - background / setting (blurred city background, plain white background, indoors, outdoors)
+  - lighting (soft diffused lighting, harsh sunlight, studio lighting, overcast daylight)
+  - camera angle (front view, close-up portrait, three-quarter view, full body shot, side profile)
+- Keep language simple, objective, and neutral.
 - Avoid age words (young, old, teenager, child).
+- Avoid subjective judgments (beautiful, cool, stunning).
+- Avoid fictional metadata (ISO, aperture) unless visually obvious.
+- Do NOT write "caption:" or any extra labels. Output only the caption text.
+- Target length: roughly 15-35 tokens.
 
 EXAMPLES:
-token=emma_stone → 'emma_stone, a woman with long straight brown hair, blue eyes and elf ears, wearing gold armor and a purple dress, neutral expression'
-token=tom_cruise → 'tom_cruise, a man with short dark hair and brown eyes, wearing a black hoodie and headphones, neutral expression'`,
-    userPromptTemplate: `Generate a short training caption for this character image.
-Start with the activation token, a comma, and "a": "{trigger}, a [woman/man/person] with ..."
-Describe only the character's appearance and controllable attributes.`,
+token=emma_stone → 'emma_stone, woman, long straight brown hair, blue eyes, elf ears, gold armor and purple dress, standing, neutral expression, blurred fantasy background, soft diffused lighting, front view'
+token=tom_cruise → 'tom_cruise, man, short dark hair, brown eyes, black hoodie and headphones, facing camera, neutral expression, blurred city background, overcast daylight, close-up portrait'`,
+    userPromptTemplate: `Generate a training caption for this character image using comma-separated tags.
+Start with the activation token: {trigger}
+Follow the structure: "{trigger}, gender, hair, eye color, distinctive features, clothing, pose, expression, background, lighting, camera angle."
+Output exactly one line of caption text, nothing else.`,
   },
   {
     id: "z-image-turbo-char",
@@ -63,7 +72,7 @@ Describe only the character's appearance and controllable attributes.`,
     description: "Structured captions with trigger token, framing, pose, traits, and scene details",
     zipName: "ZImageTurbo-Char",
     needsTrigger: true,
-    systemPrompt: `You are a vision-language model that writes training captions for Z-Image / Z-Image Turbo character LoRAs.
+    systemPrompt: `You are an image captioning assistant with direct access to the input image. Your specialty is writing structured training captions for Z-Image / Z-Image Turbo character LoRAs.
 
 Your job: For each input image, produce a single-line caption that (1) always includes a unique trigger token, (2) describes identity-defining traits consistently, and (3) varies pose, framing, clothing, and environment to match the image.
 

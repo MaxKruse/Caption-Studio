@@ -229,7 +229,6 @@ interface DetectionImageDimensions {
 export function parseDetectionResponse(
   content: string,
   imageDims?: DetectionImageDimensions,
-  _model?: string // kept for backward compatibility, no longer used
 ): {
   faceBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }>;
   bodyBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }>;
