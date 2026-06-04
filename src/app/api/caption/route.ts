@@ -390,20 +390,21 @@ async function captionImage(
 ): Promise<void> {
   if (!job) return;
 
-  // Prepare image for API (format conversion if needed)
-  // Image data is already cropped at job creation time
-  const { buffer, mimeType } = await prepareForApi(filename, entry.data);
-  const base64 = buffer.toString("base64");
-
-  // Build prompt and messages
+  // Build static parts of the prompt (no image data needed yet)
   const userText = buildPromptText(job);
-  const messages = buildApiMessages(job, base64, mimeType, userText);
   const promptText = buildDisplayPromptText(job, userText);
 
   // Mark as processing and send prompt immediately
   updateImageStatus(jobId, filename, "processing", undefined, undefined, promptText);
 
   try {
+    // Prepare image for API (format conversion if needed)
+    // Image data is already cropped at job creation time
+    const { buffer: imageBuffer, mimeType } = await prepareForApi(filename, entry.data);
+    const base64 = imageBuffer.toString("base64");
+
+    // Build messages now that we have the image buffer
+    const messages = buildApiMessages(job, base64, mimeType, userText);
     // Call the API with streaming enabled
     const response = await fetchWithTimeout(
       `${baseUrl}/v1/chat/completions`,

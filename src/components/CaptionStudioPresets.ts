@@ -3,7 +3,7 @@
 // Each preset carries its own system prompt, user prompt template, and field requirements.
 // ---------------------------------------------------------------------------
 
-export type PresetId = "flux1-dev" | "z-image-turbo-char";
+export type PresetId = "flux1-dev" | "z-image-turbo-char" | "anima";
 
 export interface PresetDefinition {
   id: PresetId;
@@ -52,6 +52,27 @@ Use complete sentences with proper grammar. Be specific — "wearing a red butto
 "{trigger}, outdoor portrait of a man with curly dark hair, wearing a black jacket, natural light"
 
 Do NOT use comma-separated tag lists. Do NOT describe every detail. Less is more. No markdown, no bullet points, no section headers, no newlines.`,
+  },
+  {
+    id: "anima",
+    label: "Anima Anime LoRA",
+    description: "Danbooru-style tag captions for Anima's hybrid tag encoder",
+    zipName: "Anima",
+    needsTrigger: true,
+    systemPrompt: `You generate training captions for Anima LoRA fine-tuning. Anima is a Danbooru-trained anime image model. Output ONLY a comma-separated tag list — no sentences, no markdown, no newlines. Tag rules: all lowercase; use spaces not underscores (except score_ quality tags). Tag order: quality prefix → subject count (1girl/1boy) → character tags → appearance (hair, eyes) → clothing → pose/expression → background/meta.`,
+    userPromptTemplate: `Generate a Danbooru-style training caption for this image. Output ONLY a flat comma-separated tag list. Use lowercase and spaces instead of underscores (score_ tags are the exception).
+
+Tag order:
+1. Quality prefix (always): masterpiece, best quality, score_7
+2. Subject count: 1girl or 1boy (whichever applies)
+3. Character trigger: {trigger}
+4. Hair: color + length + style (e.g. long brown hair, straight hair, twin tails)
+5. Eyes: color + style (e.g. blue eyes, large eyes)
+6. Clothing: garment names (e.g. school uniform, white shirt, black skirt, hair ribbon)
+7. Pose and expression (e.g. smile, standing, looking at viewer, arms crossed)
+8. Background/meta (e.g. simple background, white background, outdoors, solo)
+
+Output ONLY the tag list. No sentences, no explanation, no markdown, no newlines.`,
   },
 ];
 
