@@ -34,7 +34,6 @@ export function ImagePreviewModal({
   allImages,
   currentIndex,
   onNavigate,
-  autoOpened,
 }: {
   img: ImageFile;
   status: ImageStatus;
@@ -42,16 +41,15 @@ export function ImagePreviewModal({
   allImages: ImageFile[];
   currentIndex: number;
   onNavigate: (index: number) => void;
-  autoOpened?: boolean;
 }) {
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex < allImages.length - 1;
 
   const isStreaming = status.status === "processing" && !!status.prompt;
 
-  // Collapsible sections — auto-expand when streaming (autoOpened)
-  const [showPrompt, setShowPrompt] = useState(autoOpened ?? false);
-  const [showReasoning, setShowReasoning] = useState(autoOpened ?? false);
+  // Collapsible sections
+  const [showPrompt, setShowPrompt] = useState(false);
+  const [showReasoning, setShowReasoning] = useState(false);
 
   // Load the original file as a data URL to avoid blob URL lifecycle issues
   // (blob URLs get revoked by effect cleanup, especially under Strict Mode)

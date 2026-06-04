@@ -51,11 +51,14 @@ function ResultCard({
         {status && <StatusBadge status={status.status} />}
       </div>
 
-      {/* Expandable details — prompt, reasoning, caption */}
-      {status?.caption && (
+      {/* Caption — shows partialCaption during streaming, caption when done */}
+      {(status?.caption || status?.partialCaption) && (
         <div className="px-2 py-1.5 border-t border-zinc-100">
           <p className="text-[11px] text-zinc-500 line-clamp-3 leading-relaxed">
-            {status.caption}
+            {status.partialCaption ?? status.caption}
+            {status.status === "processing" && !status.caption && (
+              <span className="inline-block w-0.5 h-3 bg-zinc-400 animate-pulse ml-0.5 align-text-bottom" />
+            )}
           </p>
         </div>
       )}

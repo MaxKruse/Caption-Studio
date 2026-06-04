@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import type { ImageFile, ImageStatus } from "./CaptionStudioTypes";
 import type { ImageCrop } from "./CaptionStudioCropTypes";
@@ -195,28 +195,18 @@ export default function CaptionStudio() {
 
   // -- Preview modal --
   const [previewImage, setPreviewImage] = useState<ImageFile | null>(null);
-  const [autoOpened, setAutoOpened] = useState(false);
-  const autoOpenRef = useRef(false);
-  const manualNavRef = useRef(false);
 
   const openPreview = useCallback((img: ImageFile) => {
     setPreviewImage(img);
-    setAutoOpened(false);
-    autoOpenRef.current = false;
-    manualNavRef.current = false;
   }, []);
 
   const closePreview = useCallback(() => {
     setPreviewImage(null);
-    setAutoOpened(false);
-    autoOpenRef.current = false;
-    manualNavRef.current = false;
   }, []);
 
   // -- Preview navigation --
   const navigatePreview = useCallback(
     (index: number) => {
-      manualNavRef.current = true;
       setPreviewImage(imageUpload.images[index] ?? null);
     },
     [imageUpload.images]
@@ -281,34 +271,6 @@ export default function CaptionStudio() {
   for (const img of imageUpload.images) {
     mergedImageStatuses[img.name] = captionJob.imageStatuses[img.name];
   }
-
-  // -- Auto-open modal when first image starts processing --
-  useEffect(() => {
-    // Find the first image currently being processed
-    const processingImage = imageUpload.images.find(
-      (img) => mergedImageStatuses[img.name]?.status === "processing"
-    );
-
-    // Reset auto-open state when processing ends
-    if (!captionJob.isProcessing && autoOpenRef.current) {
-      autoOpenRef.current = false;
-      manualNavRef.current = false;
-      setAutoOpened(false);
-      return;
-    }
-
-    // Auto-open on the first processing image (only once)
-    if (processingImage && !autoOpenRef.current && captionJob.isProcessing) {
-      autoOpenRef.current = true;
-      setPreviewImage(processingImage);
-      setAutoOpened(true);
-    }
-
-    // If auto-opened and user hasn't manually navigated, follow the processing image
-    if (autoOpenRef.current && !manualNavRef.current && processingImage && previewImage?.name !== processingImage.name) {
-      setPreviewImage(processingImage);
-    }
-  }, [mergedImageStatuses, imageUpload.images, captionJob.isProcessing, previewImage]);
 
   const failedImages = imageUpload.images
     .map((img) => ({ img, status: mergedImageStatuses[img.name] }))
@@ -480,7 +442,7 @@ export default function CaptionStudio() {
             (img) => img.name === previewImage.name
           )}
           onNavigate={navigatePreview}
-          autoOpened={autoOpened}
+
         />
       )}
 

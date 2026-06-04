@@ -156,7 +156,7 @@ describe("API Configuration", () => {
     render(<CaptionStudio />);
     const textareas = document.querySelectorAll("textarea");
     const systemPromptValue = textareas[0]?.value;
-    expect(systemPromptValue).toContain("Flux.1-Dev");
+    expect(systemPromptValue).toContain("Flux.1-Dev LoRA fine-tuning");
   });
 });
 
@@ -276,8 +276,8 @@ describe("Default prompt text", () => {
     render(<CaptionStudio />);
     const textareas = document.querySelectorAll("textarea");
     const systemPromptValue = textareas[0]?.value;
-    expect(systemPromptValue).toContain("Flux.1-Dev");
-    expect(systemPromptValue).toContain("activation token");
+    expect(systemPromptValue).toContain("Flux.1-Dev LoRA fine-tuning");
+    expect(systemPromptValue).toContain("comma-separated");
   });
 
   it("user prompt contains the {trigger} placeholder", () => {

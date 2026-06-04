@@ -108,7 +108,6 @@ function buildPromptText(job: CaptionJob): string {
 
 /**
  * Build the final caption — just the model output.
- * The system prompt instructs the model to include the activation token.
  */
 function buildFinalCaption(_job: CaptionJob, modelOutput: string): string {
   return modelOutput.trim();
