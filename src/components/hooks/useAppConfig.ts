@@ -53,6 +53,10 @@ export interface UseAppConfigResult {
   parallelRequests: number;
   setParallelRequests: (value: number) => void;
 
+  // Multi-preset
+  captionAllPresets: boolean;
+  setCaptionAllPresets: (value: boolean) => void;
+
   // Toast (local only)
   toast: ToastState;
   showToast: (message: string) => void;
@@ -79,6 +83,8 @@ export function useAppConfig(): UseAppConfigResult {
   const setUserPrompt = useStudioStore((s) => s.setUserPrompt);
   const setTriggerWord = useStudioStore((s) => s.setTriggerWord);
   const setParallelRequests = useStudioStore((s) => s.setParallelRequests);
+  const captionAllPresets = useStudioStore((s) => s.config.captionAllPresets);
+  const setCaptionAllPresets = useStudioStore((s) => s.setCaptionAllPresets);
 
   // -- Derived from preset --
   const preset = getPreset(presetId);
@@ -131,6 +137,8 @@ export function useAppConfig(): UseAppConfigResult {
     triggerRequired,
     parallelRequests,
     setParallelRequests,
+    captionAllPresets,
+    setCaptionAllPresets,
     toast,
     showToast,
     hideToast,

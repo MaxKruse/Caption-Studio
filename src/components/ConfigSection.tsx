@@ -26,6 +26,8 @@ export function ConfigSection({
   triggerRequired,
   parallelRequests,
   onParallelRequestsChange,
+  captionAllPresets,
+  onCaptionAllPresetsChange,
   selectedRuleset,
   onRulesetChange,
   isProcessing,
@@ -56,6 +58,8 @@ export function ConfigSection({
   onRulesetChange: (ruleset: CropRuleset) => void;
   isProcessing: boolean;
   workflowStep: WorkflowStep;
+  captionAllPresets: boolean;
+  onCaptionAllPresetsChange: (value: boolean) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const isCollapsed = workflowStep !== "configure" && workflowStep !== "upload" && !expanded;
@@ -230,6 +234,24 @@ export function ConfigSection({
               </p>
             </div>
           )}
+
+          {/* Caption all presets toggle */}
+          <div className="flex items-center gap-2 pt-1">
+            <input
+              type="checkbox"
+              id="captionAllPresets"
+              checked={captionAllPresets}
+              onChange={(e) => onCaptionAllPresetsChange(e.target.checked)}
+              disabled={isProcessing}
+              className="w-3.5 h-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            />
+            <label htmlFor="captionAllPresets" className="text-sm text-zinc-700 select-none cursor-pointer">
+              Caption for all presets
+            </label>
+            <span className="text-[11px] text-zinc-400">
+              (runs each preset sequentially, one ZIP with folders)
+            </span>
+          </div>
         </div>
 
         {/* Prompts (editable) */}
@@ -238,35 +260,67 @@ export function ConfigSection({
             Prompts
           </h3>
 
-          <div>
-            <label className="block text-xs text-zinc-400 mb-1">
-              System Prompt
-            </label>
-            <textarea
-              value={systemPrompt}
-              onChange={(e) => onSystemPromptChange(e.target.value)}
-              rows={6}
-              className="w-full px-3 py-2 text-sm border border-zinc-300 rounded bg-white text-zinc-900 focus:outline-none focus:border-zinc-500 resize-y font-mono leading-relaxed"
-            />
-          </div>
+          {captionAllPresets ? (
+            /* Multi-preset mode: show preset tabs instead of editable textareas */
+            <div className="space-y-2">
+              <p className="text-[11px] text-zinc-400">
+                Each preset uses its own prompts — images are captioned once per preset.
+              </p>
+              <div className="space-y-1.5">
+                {CAPTION_PRESETS.map((preset) => (
+                  <div
+                    key={preset.id}
+                    className="flex items-start gap-2 p-2.5 rounded-lg border border-zinc-200 bg-zinc-50"
+                  >
+                    <div className="w-5 h-5 rounded-full bg-zinc-900 text-zinc-100 flex items-center justify-center text-[10px] font-medium shrink-0 mt-0.5">
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-zinc-700">{preset.label}</span>
+                        <span className="text-[10px] text-zinc-400">{preset.description}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            /* Single-preset mode: editable textareas */
+            <>
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">
+                  System Prompt
+                </label>
+                <textarea
+                  value={systemPrompt}
+                  onChange={(e) => onSystemPromptChange(e.target.value)}
+                  rows={6}
+                  className="w-full px-3 py-2 text-sm border border-zinc-300 rounded bg-white text-zinc-900 focus:outline-none focus:border-zinc-500 resize-y font-mono leading-relaxed"
+                />
+              </div>
 
-          <div>
-            <label className="block text-xs text-zinc-400 mb-1">
-              User Prompt
-              <span className="normal-case font-normal ml-1 text-zinc-500">
-                ({presetLabel})
-              </span>
-            </label>
-            <textarea
-              value={userPrompt}
-              onChange={(e) => onUserPromptChange(e.target.value)}
-              rows={3}
-              className="w-full px-3 py-2 text-sm border border-zinc-300 rounded bg-white text-zinc-900 focus:outline-none focus:border-zinc-500 resize-y font-mono leading-relaxed"
-            />
-            <p className="text-[11px] text-zinc-400 mt-1">
-              <code>{`{trigger}`}</code> is replaced with the activation token at runtime
-            </p>
-          </div>
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">
+                  User Prompt
+                  <span className="normal-case font-normal ml-1 text-zinc-500">
+                    ({presetLabel})
+                  </span>
+                </label>
+                <textarea
+                  value={userPrompt}
+                  onChange={(e) => onUserPromptChange(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 text-sm border border-zinc-300 rounded bg-white text-zinc-900 focus:outline-none focus:border-zinc-500 resize-y font-mono leading-relaxed"
+                />
+                <p className="text-[11px] text-zinc-400 mt-1">
+                  <code>{`{trigger}`}</code> is replaced with the activation token at runtime
+                </p>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Ruleset */}

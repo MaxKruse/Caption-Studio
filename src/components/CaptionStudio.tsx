@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import type { ImageFile, ImageStatus } from "./CaptionStudioTypes";
+import { CAPTION_PRESETS } from "./CaptionStudioTypes";
 import type { ImageCrop } from "./CaptionStudioCropTypes";
 import { CROP_RULESETS } from "./CaptionStudioCropConstants";
 export { formatDuration } from "./CaptionStudioTypes";
@@ -182,10 +183,14 @@ export default function CaptionStudio() {
 
     setWorkflowStep("caption");
     setTimeout(() => {
-      captionJob.startCaptioning();
+      if (config.captionAllPresets) {
+        captionJob.startCaptioningAllPresets();
+      } else {
+        captionJob.startCaptioning();
+      }
     }, 100);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setWorkflowStep is a stable store action
-  }, [captionJob, cropDetection, imageUpload.images]);
+  }, [captionJob, cropDetection, imageUpload.images, config.captionAllPresets]);
 
   // -- Back from crop to upload --
   const handleBackFromCrop = useCallback(() => {
@@ -256,6 +261,11 @@ export default function CaptionStudio() {
     !!config.serverUrl.trim();
 
   const rulesetValidation = cropDetection.validateRuleset();
+  // In multi-preset mode, check if ANY preset needs a trigger word
+  const anyPresetNeedsTrigger = config.captionAllPresets
+    ? CAPTION_PRESETS.some((p) => p.needsTrigger && !config.triggerWord.trim())
+    : config.triggerRequired;
+
   const canProceedToCaption =
     cropDetection.hasCrops &&
     cropDetection.rulesetValid &&
@@ -263,13 +273,18 @@ export default function CaptionStudio() {
     !captionJob.isProcessing &&
     !!selectedModel &&
     !!config.serverUrl.trim() &&
-    !config.triggerRequired;
+    !anyPresetNeedsTrigger;
 
-  const jobDone = !!captionJob.jobId && !captionJob.isProcessing;
+  const jobDone = (!captionJob.isProcessing && (captionJob.jobId || (config.captionAllPresets && captionJob.progress.total > 0)));
+
+  // In multi-preset mode, use active preset's statuses (or current if still processing)
+  const activePresetStatuses = config.captionAllPresets
+    ? captionJob.presetResults[captionJob.activePresetId ?? ""] ?? captionJob.imageStatuses
+    : captionJob.imageStatuses;
 
   const mergedImageStatuses: Record<string, ImageStatus> = {};
   for (const img of imageUpload.images) {
-    mergedImageStatuses[img.name] = captionJob.imageStatuses[img.name];
+    mergedImageStatuses[img.name] = activePresetStatuses[img.name];
   }
 
   const failedImages = imageUpload.images
@@ -355,6 +370,8 @@ export default function CaptionStudio() {
         triggerRequired={config.triggerRequired}
         parallelRequests={config.parallelRequests}
         onParallelRequestsChange={config.setParallelRequests}
+        captionAllPresets={config.captionAllPresets}
+        onCaptionAllPresetsChange={config.setCaptionAllPresets}
         selectedRuleset={cropRuleset}
         onRulesetChange={(r) => setCropRulesetId(r.id)}
         isProcessing={captionJob.isProcessing || isDetecting}
@@ -425,9 +442,12 @@ export default function CaptionStudio() {
           captionProgressPercent={progressPercent}
           isProcessing={captionJob.isProcessing}
           isDownloading={captionJob.isDownloading}
-          onAbortCaption={captionJob.abortJob}
-          onDownloadZip={captionJob.downloadZip}
+          onAbortCaption={config.captionAllPresets ? captionJob.abortMultiPreset : captionJob.abortJob}
+          onDownloadZip={config.captionAllPresets ? captionJob.downloadMultiPresetZip : captionJob.downloadZip}
           onClearAll={handleClearAll}
+          captionAllPresets={config.captionAllPresets}
+          presetResults={captionJob.presetResults}
+          activePresetId={captionJob.activePresetId}
         />
       )}
 

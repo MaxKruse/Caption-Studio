@@ -8,8 +8,14 @@ import { getJob, deleteJob } from "@/lib/store";
 
 export async function POST(request: Request) {
   const body = await request.json();
-  const { jobId } = body;
+  const { jobId, jobIds } = body;
 
+  // Multi-job mode (multi-preset captioning)
+  if (Array.isArray(jobIds)) {
+    return handleMultiJobDownload(jobIds);
+  }
+
+  // Single-job mode (existing behavior)
   if (!jobId) {
     return Response.json({ error: "Missing jobId" }, { status: 400 });
   }
@@ -19,7 +25,159 @@ export async function POST(request: Request) {
     return Response.json({ error: "Job not found" }, { status: 404 });
   }
 
-  // Create a stream that we'll pipe archiver output into
+  return handleSingleJobDownload(job);
+}
+
+// ---------------------------------------------------------------------------
+// Single-job download (existing behavior)
+// ---------------------------------------------------------------------------
+
+async function handleSingleJobDownload(job: ReturnType<typeof getJob>) {
+  if (!job) return Response.json({ error: "Job not found" }, { status: 404 });
+
+  const archive = createArchive();
+
+  // Build a map of basename -> count to detect caption filename collisions.
+  const basenameCounts = new Map<string, number>();
+  for (const filename of job.images.keys()) {
+    const base = filename.replace(/\.[^.]+$/, "");
+    basenameCounts.set(base, (basenameCounts.get(base) ?? 0) + 1);
+  }
+
+  const usedCaptionNames = new Set<string>();
+  const basenameIndex = new Map<string, number>();
+
+  for (const [filename, entry] of job.images.entries()) {
+    const base = filename.replace(/\.[^.]+$/, "");
+    const ext = filename.replace(/.*\./, "");
+    const count = basenameCounts.get(base) ?? 1;
+    const idx = basenameIndex.get(base) ?? 0;
+    basenameIndex.set(base, idx + 1);
+
+    let imageFile = filename;
+    let captionFile = `${base}.txt`;
+    if (count > 1 && idx > 0) {
+      imageFile = `${base} (${idx}).${ext}`;
+      captionFile = `${base} (${idx}).txt`;
+    }
+
+    let safetyIdx = idx + 1;
+    while (usedCaptionNames.has(captionFile)) {
+      imageFile = `${base} (${safetyIdx}).${ext}`;
+      captionFile = `${base} (${safetyIdx}).txt`;
+      safetyIdx++;
+    }
+    usedCaptionNames.add(captionFile);
+
+    archive.append(entry.data, { name: imageFile });
+    const captionContent = entry.caption ?? "(caption failed)";
+    archive.append(captionContent, { name: captionFile });
+  }
+
+  await archive.finalize();
+  await archive.done;
+  deleteJob(job.id);
+
+  const buffer = Buffer.concat(archive.chunks);
+  const presetName = job.presetName.trim();
+  const safeName = job.triggerWord.trim() || "Untitled";
+  const filename = presetName
+    ? `${presetName}_${safeName}.zip`
+    : `Captions.zip`;
+
+  return new Response(buffer, {
+    headers: {
+      "Content-Type": "application/zip",
+      "Content-Disposition": `attachment; filename="${filename}"`,
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Multi-job download (multi-preset captioning)
+// ---------------------------------------------------------------------------
+
+async function handleMultiJobDownload(jobIds: string[]) {
+  if (jobIds.length === 0) {
+    return Response.json({ error: "Missing jobIds — no jobs provided" }, { status: 400 });
+  }
+
+  // Validate all jobs exist
+  const jobs = jobIds.map((id) => getJob(id)).filter(Boolean) as NonNullable<ReturnType<typeof getJob>>[];
+  if (jobs.length !== jobIds.length) {
+    return Response.json({ error: "One or more jobs not found" }, { status: 404 });
+  }
+
+  const archive = createArchive();
+
+  // Each preset gets its own folder in the ZIP
+  for (const job of jobs) {
+    const presetFolder = job.presetName.trim() || "Captions";
+
+    // Collision tracking within this preset folder
+    const basenameCounts = new Map<string, number>();
+    for (const filename of job.images.keys()) {
+      const base = filename.replace(/\.[^.]+$/, "");
+      basenameCounts.set(base, (basenameCounts.get(base) ?? 0) + 1);
+    }
+
+    const usedCaptionNames = new Set<string>();
+    const basenameIndex = new Map<string, number>();
+
+    for (const [filename, entry] of job.images.entries()) {
+      const base = filename.replace(/\.[^.]+$/, "");
+      const ext = filename.replace(/.*\./, "");
+      const count = basenameCounts.get(base) ?? 1;
+      const idx = basenameIndex.get(base) ?? 0;
+      basenameIndex.set(base, idx + 1);
+
+      let imageFile = filename;
+      let captionFile = `${base}.txt`;
+      if (count > 1 && idx > 0) {
+        imageFile = `${base} (${idx}).${ext}`;
+        captionFile = `${base} (${idx}).txt`;
+      }
+
+      let safetyIdx = idx + 1;
+      while (usedCaptionNames.has(captionFile)) {
+        imageFile = `${base} (${safetyIdx}).${ext}`;
+        captionFile = `${base} (${safetyIdx}).txt`;
+        safetyIdx++;
+      }
+      usedCaptionNames.add(captionFile);
+
+      // Prefix with preset folder
+      archive.append(entry.data, { name: `${presetFolder}/${imageFile}` });
+      const captionContent = entry.caption ?? "(caption failed)";
+      archive.append(captionContent, { name: `${presetFolder}/${captionFile}` });
+    }
+  }
+
+  await archive.finalize();
+  await archive.done;
+
+  // Delete all jobs
+  for (const jobId of jobIds) {
+    deleteJob(jobId);
+  }
+
+  const buffer = Buffer.concat(archive.chunks);
+  const safeName = jobs[0]?.triggerWord.trim() || "Untitled";
+  const filename = `AllPresets_${safeName}.zip`;
+
+  return new Response(buffer, {
+    headers: {
+      "Content-Type": "application/zip",
+      "Content-Disposition": `attachment; filename="${filename}"`,
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Archive factory — creates archiver instance with accumulated chunks
+// ---------------------------------------------------------------------------
+
+function createArchive() {
   const chunks: Buffer[] = [];
   let archiveResolve: () => void;
   const archiveDone = new Promise<void>((resolve) => {
@@ -40,73 +198,10 @@ export async function POST(request: Request) {
     console.error("Archive error:", err);
   });
 
-  // Build a map of basename -> count to detect caption filename collisions.
-  // e.g. "1.png" and "1.jpg" both want "1.txt" → second becomes "1 (1).txt".
-  const basenameCounts = new Map<string, number>();
-  for (const filename of job.images.keys()) {
-    const base = filename.replace(/\.[^.]+$/, "");
-    basenameCounts.set(base, (basenameCounts.get(base) ?? 0) + 1);
-  }
-
-  // Track which caption names we've already used (in case a count-suffixed
-  // name collides with another entry's plain caption name).
-  const usedCaptionNames = new Set<string>();
-
-  // Running index per basename so we assign unique suffixes.
-  const basenameIndex = new Map<string, number>();
-
-  // Add each image and its caption to the zip
-  // Images are already cropped at job creation time
-  for (const [filename, entry] of job.images.entries()) {
-    const base = filename.replace(/\.[^.]+$/, "");
-    const ext = filename.replace(/.*\./, "");
-    const count = basenameCounts.get(base) ?? 1;
-    const idx = basenameIndex.get(base) ?? 0;
-    basenameIndex.set(base, idx + 1);
-
-    // When multiple images share the same base name (e.g. "1.png" + "1.jpg"),
-    // suffix both the image and its caption so they stay paired.
-    // First occurrence keeps the original name; subsequent ones get (1), (2), etc.
-    let imageFile = filename;
-    let captionFile = `${base}.txt`;
-    if (count > 1 && idx > 0) {
-      imageFile = `${base} (${idx}).${ext}`;
-      captionFile = `${base} (${idx}).txt`;
-    }
-
-    // Safety: if this name somehow collides with an entry that already
-    // owns it, keep bumping the suffix.
-    let safetyIdx = idx + 1;
-    while (usedCaptionNames.has(captionFile)) {
-      imageFile = `${base} (${safetyIdx}).${ext}`;
-      captionFile = `${base} (${safetyIdx}).txt`;
-      safetyIdx++;
-    }
-    usedCaptionNames.add(captionFile);
-
-    archive.append(entry.data, { name: imageFile });
-    const captionContent = entry.caption ?? "(caption failed)";
-    archive.append(captionContent, { name: captionFile });
-  }
-
-  await archive.finalize();
-  await archiveDone;
-
-  // Cleanup job from memory after download
-  deleteJob(jobId);
-
-  const buffer = Buffer.concat(chunks);
-
-  const presetName = job.presetName.trim();
-  const safeName = job.triggerWord.trim() || "Untitled";
-  const filename = presetName
-    ? `${presetName}_${safeName}.zip`
-    : `Captions.zip`;
-
-  return new Response(buffer, {
-    headers: {
-      "Content-Type": "application/zip",
-      "Content-Disposition": `attachment; filename="${filename}"`,
-    },
-  });
+  return {
+    append: archive.append.bind(archive),
+    finalize: archive.finalize.bind(archive),
+    done: archiveDone,
+    chunks,
+  };
 }

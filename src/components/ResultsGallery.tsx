@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { ImageFile, ImageStatus, ProgressState } from "./CaptionStudioTypes";
+import { CAPTION_PRESETS, ImageFile, ImageStatus, ProgressState } from "./CaptionStudioTypes";
 import { StatusBadge } from "./ImagePreviewModal";
 
 // ---------------------------------------------------------------------------
@@ -136,6 +136,75 @@ function DetailsAccordion({
 }
 
 // ---------------------------------------------------------------------------
+// PresetTabs — preset indicator tabs for multi-preset mode
+// ---------------------------------------------------------------------------
+
+function PresetTabs({
+  presets,
+  activePresetId,
+  completedCounts,
+  isProcessing,
+}: {
+  presets: typeof CAPTION_PRESETS;
+  activePresetId: string | null;
+  completedCounts?: Record<string, { completed: number; failed: number; total: number }>;
+  isProcessing: boolean;
+}) {
+  return (
+    <div className="flex gap-1 pb-2 border-b border-zinc-200">
+      {presets.map((preset) => {
+        const isActive = activePresetId === preset.id;
+        const counts = completedCounts?.[preset.id];
+        const isDone = counts && counts.completed + counts.failed === counts.total;
+        const isComplete = isDone && counts.failed === 0;
+
+        return (
+          <div
+            key={preset.id}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              isActive
+                ? "bg-zinc-900 text-zinc-100"
+                : isComplete
+                  ? "bg-zinc-100 text-zinc-700"
+                  : isDone
+                    ? "bg-zinc-50 text-zinc-500"
+                    : "bg-zinc-50 text-zinc-400"
+            }`}
+          >
+            {/* Status icon */}
+            {isActive && isProcessing ? (
+              <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
+              </svg>
+            ) : isComplete ? (
+              <svg className="w-3.5 h-3.5 text-zinc-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            ) : isDone ? (
+              <svg className="w-3.5 h-3.5 text-zinc-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            ) : (
+              <div className="w-3.5 h-3.5 rounded-full border-2 border-zinc-300" />
+            )}
+
+            <span>{preset.label}</span>
+
+            {counts && (
+              <span className={`text-[10px] ${
+                isActive ? "text-zinc-400" : "text-zinc-400"
+              }`}>
+                {counts.completed}/{counts.total}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // ResultsGallery — shows captioned images with results
 // ---------------------------------------------------------------------------
 
@@ -151,6 +220,9 @@ export function ResultsGallery({
   onAbortCaption,
   onDownloadZip,
   onClearAll,
+  captionAllPresets,
+  presetResults,
+  activePresetId,
 }: {
   images: ImageFile[];
   imageStatuses: Record<string, ImageStatus>;
@@ -163,6 +235,10 @@ export function ResultsGallery({
   onAbortCaption: () => void;
   onDownloadZip: () => void;
   onClearAll: () => void;
+  // Multi-preset mode
+  captionAllPresets?: boolean;
+  presetResults?: Record<string, Record<string, ImageStatus>>;
+  activePresetId?: string | null;
 }) {
   // Local confirmation for "Start over" — avoids stale closure issues
   const [confirmReset, setConfirmReset] = useState(false);
@@ -193,6 +269,22 @@ export function ResultsGallery({
     (img) => imageStatuses[img.name]?.status === "failed"
   ).length;
 
+  // Multi-preset: compute per-preset completed counts
+  const presetCompletedCounts = captionAllPresets && presetResults
+    ? Object.fromEntries(
+        CAPTION_PRESETS.map((p) => {
+          const statuses = presetResults[p.id];
+          const completed = statuses
+            ? Object.values(statuses).filter((s) => s.status === "completed").length
+            : 0;
+          const failed = statuses
+            ? Object.values(statuses).filter((s) => s.status === "failed").length
+            : 0;
+          return [p.id, { completed, failed, total: images.length }];
+        })
+      )
+    : undefined;
+
   return (
     <section className="animate-fade-in rounded-xl border border-zinc-200 overflow-hidden">
       <div className="flex items-center gap-3 px-5 py-3 bg-zinc-50 border-b border-zinc-200">
@@ -202,13 +294,28 @@ export function ResultsGallery({
         <h2 className="text-sm font-semibold text-zinc-900">Results</h2>
         {images.length > 0 && (
           <span className="text-xs text-zinc-400 ml-auto space-x-2">
-            <span>{completedCount} captioned</span>
-            {failedCount > 0 && <span className="text-zinc-400">&middot; {failedCount} failed</span>}
+            {!captionAllPresets ? (
+              <>
+                <span>{completedCount} captioned</span>
+                {failedCount > 0 && <span className="text-zinc-400">&middot; {failedCount} failed</span>}
+              </>
+            ) : (
+              <span>{captionProgress.completed} / {captionProgress.total} across all presets</span>
+            )}
           </span>
         )}
       </div>
 
       <div className="p-5 space-y-4">
+        {/* Multi-preset tabs */}
+        {captionAllPresets && (
+          <PresetTabs
+            presets={CAPTION_PRESETS}
+            activePresetId={activePresetId ?? null}
+            completedCounts={presetCompletedCounts}
+            isProcessing={isProcessing}
+          />
+        )}
         {/* Caption progress — shown while processing */}
         {isProcessing && (
           <div className="space-y-2">

@@ -42,6 +42,7 @@ export interface StudioConfig {
   userPrompt: string;
   triggerWord: string;
   parallelRequests: number;
+  captionAllPresets: boolean;
 }
 
 export interface StudioImages {
@@ -87,6 +88,7 @@ function createDefaultConfig(): StudioConfig {
     userPrompt: preset?.userPromptTemplate ?? "",
     triggerWord: "",
     parallelRequests: 4,
+  captionAllPresets: false,
   };
 }
 
@@ -172,6 +174,9 @@ export const useStudioStore = create<StudioPersistedState & StudioActions>()(
       setTriggerWord: (value: string) =>
         set((state) => ({ config: { ...state.config, triggerWord: value } })),
 
+      setCaptionAllPresets: (value: boolean) =>
+        set((state) => ({ config: { ...state.config, captionAllPresets: value } })),
+
       // =========================================================================
       // WORKFLOW ACTIONS
       // =========================================================================
@@ -252,6 +257,7 @@ export const useStudioStore = create<StudioPersistedState & StudioActions>()(
           userPrompt,
           triggerWord,
           parallelRequests,
+          captionAllPresets,
         } = state.config;
         return {
           config: {
@@ -263,6 +269,7 @@ export const useStudioStore = create<StudioPersistedState & StudioActions>()(
             userPrompt,
             triggerWord,
             parallelRequests,
+            captionAllPresets,
           },
           crop: {
             rulesetId: state.crop.rulesetId,
@@ -291,6 +298,7 @@ export interface StudioActions {
   setSystemPrompt: (value: string) => void;
   setUserPrompt: (value: string) => void;
   setTriggerWord: (value: string) => void;
+  setCaptionAllPresets: (value: boolean) => void;
 
   // Workflow
   setWorkflowStep: (step: WorkflowStep) => void;
