@@ -12,6 +12,7 @@ import {
   getJob,
   getProgress,
   isJobDone,
+  updateImagePartial,
   updateImageStatus,
   type CaptionJob,
   type ImageEntry,
@@ -380,7 +381,7 @@ async function fetchWithTimeout(
   }
 }
 
-/** Caption a single image by calling the OpenAI-compatible API. */
+/** Caption a single image by calling the OpenAI-compatible API (with streaming). */
 async function captionImage(
   jobId: string,
   filename: string,
@@ -390,27 +391,32 @@ async function captionImage(
 ): Promise<void> {
   if (!job) return;
 
-  updateImageStatus(jobId, filename, "processing");
+  // Prepare image for API (format conversion if needed)
+  // Image data is already cropped at job creation time
+  const { buffer, mimeType } = await prepareForApi(filename, entry.data);
+  const base64 = buffer.toString("base64");
+
+  // Build prompt and messages
+  const userText = buildPromptText(job);
+  const messages = buildApiMessages(job, base64, mimeType, userText);
+  const promptText = buildDisplayPromptText(job, userText);
+
+  // Mark as processing and send prompt immediately
+  updateImageStatus(jobId, filename, "processing", undefined, undefined, promptText);
 
   try {
-    // Prepare image for API (format conversion if needed)
-    // Image data is already cropped at job creation time
-    const { buffer, mimeType } = await prepareForApi(filename, entry.data);
-
-    const base64 = buffer.toString("base64");
-
-    // Build prompt and messages
-    const userText = buildPromptText(job);
-    const messages = buildApiMessages(job, base64, mimeType, userText);
-    const promptText = buildDisplayPromptText(job, userText);
-
-    // Call the API
+    // Call the API with streaming enabled
     const response = await fetchWithTimeout(
       `${baseUrl}/v1/chat/completions`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: job.model, messages }),
+        body: JSON.stringify({
+          model: job.model,
+          messages,
+          stream: true,
+          stream_options: { include_usage: true },
+        }),
         cache: "no-store",
       },
       API_TIMEOUT_MS
@@ -421,15 +427,51 @@ async function captionImage(
       throw new Error(`API ${response.status}: ${errorText}`);
     }
 
-    // Parse response
-    const data = await response.json();
-    const modelOutput =
-      (data?.choices?.[0]?.message?.content ?? "(empty response)").trim();
-    const reasoningContent =
-      data?.choices?.[0]?.message?.reasoning_content;
+    // Accumulate streamed content
+    let caption = "";
+    let reasoningContent = "";
+    const body = response.body;
+    if (!body) throw new Error("No response body");
 
-    // Build final caption (prefix + model output)
-    const finalCaption = buildFinalCaption(job, modelOutput);
+    const reader = body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // Parse SSE lines
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? ""; // keep incomplete line in buffer
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data: ")) continue;
+        const dataStr = trimmed.slice(6);
+        if (dataStr === "[DONE]") continue;
+
+        try {
+          const chunk = JSON.parse(dataStr);
+          const delta = chunk?.choices?.[0]?.delta;
+          if (delta?.reasoning_content) {
+            reasoningContent += delta.reasoning_content;
+            updateImagePartial(jobId, filename, undefined, reasoningContent);
+          }
+          if (delta?.content) {
+            caption += delta.content;
+            updateImagePartial(jobId, filename, caption, undefined);
+          }
+        } catch {
+          // skip malformed chunks
+        }
+      }
+    }
+
+    // Build final caption
+    const finalCaption = buildFinalCaption(job, caption);
 
     updateImageStatus(
       jobId,

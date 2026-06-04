@@ -34,6 +34,7 @@ export function ImagePreviewModal({
   allImages,
   currentIndex,
   onNavigate,
+  autoOpened,
 }: {
   img: ImageFile;
   status: ImageStatus;
@@ -41,18 +42,22 @@ export function ImagePreviewModal({
   allImages: ImageFile[];
   currentIndex: number;
   onNavigate: (index: number) => void;
+  autoOpened?: boolean;
 }) {
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex < allImages.length - 1;
 
-  // Collapsible sections — system prompt and reasoning start collapsed
-  const [showPrompt, setShowPrompt] = useState(false);
-  const [showReasoning, setShowReasoning] = useState(false);
+  const isStreaming = status.status === "processing" && !!status.prompt;
+
+  // Collapsible sections — auto-expand when streaming (autoOpened)
+  const [showPrompt, setShowPrompt] = useState(autoOpened ?? false);
+  const [showReasoning, setShowReasoning] = useState(autoOpened ?? false);
 
   // Load the original file as a data URL to avoid blob URL lifecycle issues
   // (blob URLs get revoked by effect cleanup, especially under Strict Mode)
   const [fullQualitySrc, setFullQualitySrc] = useState<string | null>(null);
   const loadingRef = useRef(true);
+  const detailsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadingRef.current = true;
@@ -63,6 +68,13 @@ export function ImagePreviewModal({
     };
     reader.readAsDataURL(img.file);
   }, [img.file]);
+
+  // Auto-scroll to bottom when streaming content updates
+  useEffect(() => {
+    if (isStreaming && detailsRef.current) {
+      detailsRef.current.scrollTop = detailsRef.current.scrollHeight;
+    }
+  }, [isStreaming, status.partialCaption, status.partialReasoning]);
 
   return (
     <div
@@ -134,7 +146,7 @@ export function ImagePreviewModal({
         </div>
 
         {/* Details section */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-3">
+        <div ref={detailsRef} className="flex-1 overflow-y-auto p-5 space-y-3">
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-semibold text-zinc-900">{img.name}</h3>
             <StatusBadge status={status.status} />
@@ -145,7 +157,7 @@ export function ImagePreviewModal({
             )}
           </div>
 
-          {/* Prompt — collapsed by default */}
+          {/* Prompt — always shown when streaming */}
           {status.prompt && (
             <div className="space-y-1.5">
               <button
@@ -171,8 +183,8 @@ export function ImagePreviewModal({
             </div>
           )}
 
-          {/* Reasoning — collapsed by default */}
-          {status.reasoningContent && (
+          {/* Reasoning — streams in as model thinks */}
+          {(status.reasoningContent || status.partialReasoning) && (
             <div className="space-y-1.5">
               <button
                 onClick={() => setShowReasoning((p) => !p)}
@@ -188,24 +200,44 @@ export function ImagePreviewModal({
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                 </svg>
                 Reasoning
+                {isStreaming && !status.reasoningContent && (
+                  <span className="ml-1 animate-pulse text-amber-500">●</span>
+                )}
               </button>
               {showReasoning && (
                 <div className="p-3 bg-amber-50 border border-amber-200 rounded text-sm text-amber-900 whitespace-pre-wrap leading-relaxed">
-                  {status.reasoningContent}
+                  {status.partialReasoning ?? status.reasoningContent}
+                  {isStreaming && !status.reasoningContent && (
+                    <span className="inline-block w-0.5 h-4 bg-amber-500 animate-pulse ml-0.5 align-text-bottom" />
+                  )}
                 </div>
               )}
             </div>
           )}
 
-          {/* Generated Caption — always visible */}
-          {status.caption && (
+          {/* Generated Caption — streams in as model generates */}
+          {(status.caption || status.partialCaption) && (
             <div className="space-y-1.5">
               <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-widest">
                 Generated Caption
+                {isStreaming && !status.caption && (
+                  <span className="ml-1 animate-pulse text-zinc-500">●</span>
+                )}
               </h4>
               <div className="p-3 bg-zinc-50 border border-zinc-200 rounded text-sm text-zinc-700 whitespace-pre-wrap leading-relaxed">
-                {status.caption}
+                {status.partialCaption ?? status.caption}
+                {isStreaming && !status.caption && (
+                  <span className="inline-block w-0.5 h-4 bg-zinc-500 animate-pulse ml-0.5 align-text-bottom" />
+                )}
               </div>
+            </div>
+          )}
+
+          {/* Processing indicator — shown when image is being processed but no content yet */}
+          {status.status === "processing" && !status.prompt && (
+            <div className="flex items-center gap-2 py-3 text-sm text-zinc-400">
+              <div className="w-4 h-4 rounded-full border-2 border-zinc-300 border-t-zinc-600 animate-spin" />
+              <span>Processing image...</span>
             </div>
           )}
         </div>

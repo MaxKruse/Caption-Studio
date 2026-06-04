@@ -25,6 +25,8 @@ export interface ImageEntry {
   error?: string;
   prompt?: string; // the prompt text sent to the API for this image
   reasoningContent?: string; // reasoning_content from the API (some models)
+  partialCaption?: string; // streaming caption (updated token-by-token)
+  partialReasoning?: string; // streaming reasoning (updated token-by-token)
   processingStartedAt?: number; // timestamp when processing began
   processingDurationMs?: number; // ms taken to complete (completed or failed)
   crop?: ImageCropData; // crop configuration (1000-normalized coords)
@@ -197,6 +199,22 @@ export function updateImageStatus(
   if (reasoningContent !== undefined) entry.reasoningContent = reasoningContent;
 }
 
+/** Update partial (streaming) content for a single image entry. */
+export function updateImagePartial(
+  jobId: string,
+  filename: string,
+  partialCaption?: string,
+  partialReasoning?: string
+): void {
+  const job = jobs.get(jobId);
+  if (!job) return;
+  const entry = job.images.get(filename);
+  if (!entry) return;
+
+  if (partialCaption !== undefined) entry.partialCaption = partialCaption;
+  if (partialReasoning !== undefined) entry.partialReasoning = partialReasoning;
+}
+
 /** Check if all images in a job are done (completed or failed). */
 export function isJobDone(jobId: string): boolean {
   const job = jobs.get(jobId);
@@ -287,6 +305,8 @@ export function buildStatusMap(
     error?: string;
     prompt?: string;
     reasoningContent?: string;
+    partialCaption?: string;
+    partialReasoning?: string;
   }
 > {
   const statuses: Record<
@@ -297,6 +317,8 @@ export function buildStatusMap(
       error?: string;
       prompt?: string;
       reasoningContent?: string;
+      partialCaption?: string;
+      partialReasoning?: string;
     }
   > = {};
 
@@ -308,6 +330,8 @@ export function buildStatusMap(
       error: entry.error,
       prompt: entry.prompt,
       reasoningContent: entry.reasoningContent,
+      partialCaption: entry.partialCaption,
+      partialReasoning: entry.partialReasoning,
     };
   }
 

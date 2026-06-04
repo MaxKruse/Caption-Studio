@@ -52,4 +52,6 @@ export interface ImageStatus {
   error?: string;
   prompt?: string;
   reasoningContent?: string;
+  partialCaption?: string; // streaming caption (may be partial)
+  partialReasoning?: string; // streaming reasoning (may be partial)
 }
