@@ -173,12 +173,14 @@ describe("prepareForDetection", () => {
   });
 
   it("scales image to max 1024px and converts to JPEG", async () => {
+    const mockMetadata = vi.fn().mockResolvedValue({ width: 2048, height: 1536 });
     const mockResize = vi.fn().mockReturnThis();
     const mockJpeg = vi.fn().mockReturnThis();
     const mockToBuffer = vi.fn().mockResolvedValue(Buffer.from("scaled-jpeg"));
 
     mockSharp.mockImplementation(() =>
       ({
+        metadata: mockMetadata,
         resize: mockResize,
         jpeg: mockJpeg,
         toBuffer: mockToBuffer,
@@ -191,12 +193,38 @@ describe("prepareForDetection", () => {
 
     expect(result.mimeType).toBe("image/jpeg");
     expect(result.buffer).toEqual(Buffer.from("scaled-jpeg"));
+    // 2048x1536 → scale to 1024x768
+    expect(result.width).toBe(1024);
+    expect(result.height).toBe(768);
     expect(mockResize).toHaveBeenCalledWith(
       DETECTION_MAX_DIMENSION,
       DETECTION_MAX_DIMENSION,
       { fit: "inside", withoutEnlargement: true }
     );
     expect(mockJpeg).toHaveBeenCalledWith({ quality: 85 });
+  });
+
+  it("returns original dimensions when image is already within limits", async () => {
+    const mockMetadata = vi.fn().mockResolvedValue({ width: 800, height: 600 });
+    const mockResize = vi.fn().mockReturnThis();
+    const mockJpeg = vi.fn().mockReturnThis();
+    const mockToBuffer = vi.fn().mockResolvedValue(Buffer.from("jpeg-data"));
+
+    mockSharp.mockImplementation(() =>
+      ({
+        metadata: mockMetadata,
+        resize: mockResize,
+        jpeg: mockJpeg,
+        toBuffer: mockToBuffer,
+      }) as any
+    );
+
+    const { prepareForDetection } = await import("./image-utils");
+
+    const result = await prepareForDetection(Buffer.from("original-data"));
+
+    expect(result.width).toBe(800);
+    expect(result.height).toBe(600);
   });
 
   it("uses DETECTION_MAX_DIMENSION constant of 1024", async () => {

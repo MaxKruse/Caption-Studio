@@ -176,7 +176,7 @@ async function processDetectionJob(
 
     try {
       const imageBuffer = Buffer.from(await file.arrayBuffer());
-      const { buffer, mimeType } = await prepareForDetection(imageBuffer);
+      const { buffer, mimeType, width, height } = await prepareForDetection(imageBuffer);
       const base64 = buffer.toString("base64");
 
       const response = await fetch(`${baseUrl}/v1/chat/completions`, {
@@ -217,7 +217,7 @@ async function processDetectionJob(
 
       const data = await response.json();
       const content = (data?.choices?.[0]?.message?.content ?? "").trim();
-      const { faceBoxes, bodyBoxes } = parseDetectionResponse(content);
+      const { faceBoxes, bodyBoxes } = parseDetectionResponse(content, { width, height });
 
       // Check if detection found anything useful
       const hasAnyDetection = faceBoxes.length > 0 || bodyBoxes.length > 0;

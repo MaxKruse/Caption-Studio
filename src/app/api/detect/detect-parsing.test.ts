@@ -705,3 +705,196 @@ describe("regression — Bug 1: UI state timing (2026-05-28)", () => {
     expect(a).toEqual(b);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Qwen-specific label classification
+// ---------------------------------------------------------------------------
+
+describe("Qwen label classification — expanded keywords", () => {
+  const parse = parseDetectionResponse;
+
+  it("classifies 'woman' as body", () => {
+    const json = JSON.stringify([
+      { bbox_2d: [100, 200, 400, 800], label: "woman" },
+    ]);
+    const result = parse(json);
+    expect(result.bodyBoxes).toHaveLength(1);
+    expect(result.faceBoxes).toHaveLength(0);
+  });
+
+  it("classifies 'man' as body", () => {
+    const json = JSON.stringify([
+      { bbox_2d: [100, 200, 400, 800], label: "man" },
+    ]);
+    const result = parse(json);
+    expect(result.bodyBoxes).toHaveLength(1);
+  });
+
+  it("classifies 'girl' as body", () => {
+    const json = JSON.stringify([
+      { bbox_2d: [100, 200, 400, 800], label: "girl" },
+    ]);
+    const result = parse(json);
+    expect(result.bodyBoxes).toHaveLength(1);
+  });
+
+  it("classifies 'boy' as body", () => {
+    const json = JSON.stringify([
+      { bbox_2d: [100, 200, 400, 800], label: "boy" },
+    ]);
+    const result = parse(json);
+    expect(result.bodyBoxes).toHaveLength(1);
+  });
+
+  it("classifies 'child' as body", () => {
+    const json = JSON.stringify([
+      { bbox_2d: [100, 200, 400, 800], label: "child" },
+    ]);
+    const result = parse(json);
+    expect(result.bodyBoxes).toHaveLength(1);
+  });
+
+  it("classifies 'headshot' as face", () => {
+    const json = JSON.stringify([
+      { bbox_2d: [100, 100, 400, 500], label: "headshot" },
+    ]);
+    const result = parse(json);
+    expect(result.faceBoxes).toHaveLength(1);
+    expect(result.bodyBoxes).toHaveLength(0);
+  });
+
+  it("classifies 'close-up' as face", () => {
+    const json = JSON.stringify([
+      { bbox_2d: [100, 100, 400, 500], label: "close-up" },
+    ]);
+    const result = parse(json);
+    expect(result.faceBoxes).toHaveLength(1);
+  });
+
+  it("classifies 'standing woman' as body (substring match)", () => {
+    const json = JSON.stringify([
+      { bbox_2d: [50, 100, 400, 900], label: "standing woman" },
+    ]);
+    const result = parse(json);
+    expect(result.bodyBoxes).toHaveLength(1);
+  });
+
+  it("classifies 'face of a woman' as face (face takes priority)", () => {
+    const json = JSON.stringify([
+      { bbox_2d: [100, 100, 400, 500], label: "face of a woman" },
+    ]);
+    const result = parse(json);
+    // "face" keyword matches first (checked before body keywords)
+    expect(result.faceBoxes).toHaveLength(1);
+    expect(result.bodyBoxes).toHaveLength(0);
+  });
+
+  it("classifies 'male' as body", () => {
+    const json = JSON.stringify([
+      { bbox_2d: [100, 200, 400, 800], label: "male" },
+    ]);
+    const result = parse(json);
+    expect(result.bodyBoxes).toHaveLength(1);
+  });
+
+  it("classifies 'female' as body", () => {
+    const json = JSON.stringify([
+      { bbox_2d: [100, 200, 400, 800], label: "female" },
+    ]);
+    const result = parse(json);
+    expect(result.bodyBoxes).toHaveLength(1);
+  });
+
+  it("classifies 'sitting' as body", () => {
+    const json = JSON.stringify([
+      { bbox_2d: [100, 200, 400, 800], label: "sitting" },
+    ]);
+    const result = parse(json);
+    expect(result.bodyBoxes).toHaveLength(1);
+  });
+
+  it("handles Qwen-style flat array with descriptive labels", () => {
+    const json = JSON.stringify([
+      { bbox_2d: [100, 50, 350, 400], label: "face of a woman" },
+      { bbox_2d: [50, 100, 950, 900], label: "standing woman" },
+    ]);
+    const result = parse(json);
+    expect(result.faceBoxes).toHaveLength(1);
+    expect(result.bodyBoxes).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Coordinate normalization (absolute pixel → 0-1000)
+// ---------------------------------------------------------------------------
+
+describe("coordinate normalization — absolute pixel to 0-1000", () => {
+  const parse = parseDetectionResponse;
+
+  it("passes through coordinates already in 0-1000 range", () => {
+    const json = JSON.stringify([
+      { bbox_2d: [100, 200, 400, 800], label: "face" },
+    ]);
+    const result = parse(json, { width: 1024, height: 768 });
+    // Coordinates ≤ 1000 — no normalization needed
+    expect(result.faceBoxes[0].bbox_2d).toEqual([100, 200, 400, 800]);
+  });
+
+  it("normalizes absolute pixel coordinates when they exceed 1000", () => {
+    // Qwen returns pixel coords for a 2048x1536 image (coords > 1000)
+    const json = JSON.stringify([
+      { bbox_2d: [409, 819, 1638, 1536], label: "woman" },
+    ]);
+    const result = parse(json, { width: 2048, height: 1536 });
+    // [409/2048*1000, 819/1536*1000, 1638/2048*1000, 1536/1536*1000]
+    // = [199.69..., 533.20..., 799.80..., 1000]
+    expect(result.bodyBoxes[0].bbox_2d[0]).toBeCloseTo(199.7, 1);
+    expect(result.bodyBoxes[0].bbox_2d[1]).toBeCloseTo(533.2, 1);
+    expect(result.bodyBoxes[0].bbox_2d[2]).toBeCloseTo(799.8, 1);
+    expect(result.bodyBoxes[0].bbox_2d[3]).toBeCloseTo(1000, 1);
+  });
+
+  it("normalizes Gemma box_2d coordinates that exceed 1000", () => {
+    // Gemma might also return pixel coords
+    const json = JSON.stringify([
+      { box_2d: [200, 100, 600, 800], label: "face" },
+    ]);
+    const result = parse(json, { width: 1024, height: 768 });
+    // box_2d [ymin=200, xmin=100, ymax=600, xmax=800]
+    // After swap: [100, 200, 800, 600] — all ≤ 1000, no normalization
+    expect(result.faceBoxes[0].bbox_2d).toEqual([100, 200, 800, 600]);
+  });
+
+  it("normalizes large pixel coordinates for both axes", () => {
+    // 2048x1536 image
+    const json = JSON.stringify([
+      { bbox_2d: [512, 384, 1536, 1152], label: "person" },
+    ]);
+    const result = parse(json, { width: 2048, height: 1536 });
+    // [512/2048*1000, 384/1536*1000, 1536/2048*1000, 1152/1536*1000]
+    // = [250, 250, 750, 750]
+    expect(result.bodyBoxes[0].bbox_2d).toEqual([250, 250, 750, 750]);
+  });
+
+  it("passes through coordinates when no image dimensions provided", () => {
+    const json = JSON.stringify([
+      { bbox_2d: [2048, 1024, 4096, 2048], label: "person" },
+    ]);
+    const result = parse(json);
+    // No dimensions — can't normalize, return as-is
+    expect(result.bodyBoxes[0].bbox_2d).toEqual([2048, 1024, 4096, 2048]);
+  });
+
+  it("handles flat array with pixel coords from Qwen", () => {
+    const json = JSON.stringify([
+      { bbox_2d: [128, 102, 384, 512], label: "face of a woman" },
+      { bbox_2d: [64, 204, 960, 768], label: "standing woman" },
+    ]);
+    const result = parse(json, { width: 1024, height: 768 });
+    // All coords ≤ 1000 — no normalization needed
+    expect(result.faceBoxes).toHaveLength(1);
+    expect(result.faceBoxes[0].bbox_2d).toEqual([128, 102, 384, 512]);
+    expect(result.bodyBoxes).toHaveLength(1);
+    expect(result.bodyBoxes[0].bbox_2d).toEqual([64, 204, 960, 768]);
+  });
+});

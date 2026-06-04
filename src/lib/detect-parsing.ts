@@ -10,9 +10,14 @@
  * - OpenAI / Qwen format: `bbox_2d` with `[xmin, ymin, xmax, ymax]` (x-first) — pass through
  * - Legacy `bbox_2d` with y-first (old Gemma handling): same swap as above
  *
- * All use 0–1000 normalized coordinates.
+ * All use 0–1000 normalized coordinates. If image dimensions are provided and coordinates
+ * exceed 1000 (absolute pixel coords from Qwen), they are normalized to 0–1000.
  */
-function normalizeBoxEntry(entry: Record<string, unknown>): {
+function normalizeBoxEntry(
+  entry: Record<string, unknown>,
+  imageWidth?: number,
+  imageHeight?: number
+): {
   bbox_2d: [number, number, number, number];
   label: string;
   confidence: number;
@@ -28,7 +33,7 @@ function normalizeBoxEntry(entry: Record<string, unknown>): {
   if ("box_2d" in entry && Array.isArray(entry.box_2d) && entry.box_2d.length === 4) {
     const [ymin, xmin, ymax, xmax] = entry.box_2d as [number, number, number, number];
     return {
-      bbox_2d: [xmin, ymin, xmax, ymax],
+      bbox_2d: normalizeCoords(xmin, ymin, xmax, ymax, imageWidth, imageHeight),
       label,
       confidence,
     };
@@ -36,8 +41,9 @@ function normalizeBoxEntry(entry: Record<string, unknown>): {
 
   // OpenAI / Qwen format: `bbox_2d` with [xmin, ymin, xmax, ymax]
   if ("bbox_2d" in entry && Array.isArray(entry.bbox_2d) && entry.bbox_2d.length === 4) {
+    const [xmin, ymin, xmax, ymax] = entry.bbox_2d as [number, number, number, number];
     return {
-      bbox_2d: entry.bbox_2d as [number, number, number, number],
+      bbox_2d: normalizeCoords(xmin, ymin, xmax, ymax, imageWidth, imageHeight),
       label,
       confidence,
     };
@@ -46,15 +52,78 @@ function normalizeBoxEntry(entry: Record<string, unknown>): {
   return null;
 }
 
+/**
+ * Normalize coordinates to 0–1000 scale.
+ * If any coordinate exceeds 1000 and image dimensions are available,
+ * treat them as absolute pixel coordinates and normalize.
+ */
+function normalizeCoords(
+  xmin: number,
+  ymin: number,
+  xmax: number,
+  ymax: number,
+  imageWidth?: number,
+  imageHeight?: number
+): [number, number, number, number] {
+  const maxCoord = Math.max(Math.abs(xmin), Math.abs(ymin), Math.abs(xmax), Math.abs(ymax));
+
+  // Already in 0–1000 range — pass through
+  if (maxCoord <= 1000) {
+    return [xmin, ymin, xmax, ymax];
+  }
+
+  // Coordinates exceed 1000 — likely absolute pixel values.
+  // Normalize to 0–1000 using image dimensions.
+  if (imageWidth && imageHeight) {
+    return [
+      (xmin / imageWidth) * 1000,
+      (ymin / imageHeight) * 1000,
+      (xmax / imageWidth) * 1000,
+      (ymax / imageHeight) * 1000,
+    ];
+  }
+
+  // No dimensions available — return as-is (will likely be wrong, but can't fix)
+  return [xmin, ymin, xmax, ymax];
+}
+
 // ---------------------------------------------------------------------------
 // Label classification for flat array format
 // ---------------------------------------------------------------------------
 
 /** Keywords that indicate a face/head detection. Checked in order of specificity. */
-export const FACE_KEYWORDS = ["face", "head", "portrait", "face close-up", "face shot"];
+export const FACE_KEYWORDS = [
+  "face",
+  "head",
+  "portrait",
+  "face close-up",
+  "face shot",
+  "headshot",
+  "close-up",
+  "close up",
+];
 
 /** Keywords that indicate a body/full-body detection. */
-export const BODY_KEYWORDS = ["body", "full body", "full-body", "person", "figure", "pose", "torso"];
+export const BODY_KEYWORDS = [
+  "body",
+  "full body",
+  "full-body",
+  "person",
+  "figure",
+  "pose",
+  "torso",
+  "man",
+  "woman",
+  "girl",
+  "boy",
+  "child",
+  "kid",
+  "adult",
+  "male",
+  "female",
+  "standing",
+  "sitting",
+];
 
 /**
  * Classify a label string as "face", "body", or "unknown".
@@ -125,6 +194,12 @@ export function extractBalanced(
 // Main parser
 // ---------------------------------------------------------------------------
 
+/** Optional image dimensions for normalizing absolute pixel coordinates. */
+interface DetectionImageDimensions {
+  width: number;
+  height: number;
+}
+
 /**
  * Parse the model's detection response into face and body bounding box arrays.
  *
@@ -136,8 +211,12 @@ export function extractBalanced(
  *
  * Normalizes both `box_2d` (y-first) and `bbox_2d` (x-first) coordinate formats.
  * Defaults confidence to 0.5 when missing.
+ * If image dimensions are provided, absolute pixel coordinates (>1000) are normalized to 0–1000.
  */
-export function parseDetectionResponse(content: string): {
+export function parseDetectionResponse(
+  content: string,
+  imageDims?: DetectionImageDimensions
+): {
   faceBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }>;
   bodyBoxes: Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }>;
 } {
@@ -194,13 +273,16 @@ export function parseDetectionResponse(content: string): {
     return { faceBoxes: [], bodyBoxes: [] };
   }
 
+  const imageWidth = imageDims?.width;
+  const imageHeight = imageDims?.height;
+
   const parseBoxArray = (
     arr: unknown[]
   ): Array<{ bbox_2d: [number, number, number, number]; label: string; confidence: number }> => {
     if (!Array.isArray(arr)) return [];
     return arr
       .filter((b: unknown): b is Record<string, unknown> => b != null && typeof b === "object")
-      .map((b) => normalizeBoxEntry(b))
+      .map((b) => normalizeBoxEntry(b, imageWidth, imageHeight))
       .filter((b): b is NonNullable<typeof b> => b !== null);
   };
 

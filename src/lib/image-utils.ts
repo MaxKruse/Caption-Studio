@@ -127,11 +127,27 @@ export const DETECTION_MAX_DIMENSION = 1024;
  * Prepares an image for detection — scales down to DETECTION_MAX_DIMENSION
  * and converts to JPEG. Coordinates returned by the API (1000-normalized)
  * are resolution-independent, so they apply correctly to the original image.
+ * Returns the resized image dimensions for coordinate normalization.
  */
 export async function prepareForDetection(
   imageBuffer: Buffer
-): Promise<{ buffer: Buffer; mimeType: string }> {
-  const resized = await sharp(imageBuffer)
+): Promise<{ buffer: Buffer; mimeType: string; width: number; height: number }> {
+  // Get original dimensions to calculate resized size
+  const original = await sharp(imageBuffer).metadata();
+  const origWidth = original.width ?? 0;
+  const origHeight = original.height ?? 0;
+  const biggest = Math.max(origWidth, origHeight);
+
+  // Calculate resized dimensions (same logic as sharp resize with fit: "inside")
+  let width = origWidth;
+  let height = origHeight;
+  if (biggest > DETECTION_MAX_DIMENSION) {
+    const scale = DETECTION_MAX_DIMENSION / biggest;
+    width = Math.round(origWidth * scale);
+    height = Math.round(origHeight * scale);
+  }
+
+  const resizedBuffer = await sharp(imageBuffer)
     .resize(DETECTION_MAX_DIMENSION, DETECTION_MAX_DIMENSION, {
       fit: "inside",
       withoutEnlargement: true,
@@ -139,5 +155,10 @@ export async function prepareForDetection(
     .jpeg({ quality: 85 })
     .toBuffer();
 
-  return { buffer: resized, mimeType: "image/jpeg" };
+  return {
+    buffer: resizedBuffer,
+    mimeType: "image/jpeg",
+    width,
+    height,
+  };
 }
