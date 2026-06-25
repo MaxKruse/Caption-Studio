@@ -6,6 +6,54 @@
 import archiver from "archiver";
 import { getJob, deleteJob } from "@/lib/store";
 
+// ---------------------------------------------------------------------------
+// Filename collision resolver — shared by single and multi-job downloads
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve filename collisions within a set of images.
+ * Returns a map of original filename -> { imageFile, captionFile }.
+ */
+function resolveFilenameCollisions(filenames: string[]): Map<string, { imageFile: string; captionFile: string }> {
+  // Build basename -> count map
+  const basenameCounts = new Map<string, number>();
+  for (const filename of filenames) {
+    const base = filename.replace(/\.[^.]+$/, "");
+    basenameCounts.set(base, (basenameCounts.get(base) ?? 0) + 1);
+  }
+
+  const resolved = new Map<string, { imageFile: string; captionFile: string }>();
+  const usedCaptionNames = new Set<string>();
+  const basenameIndex = new Map<string, number>();
+
+  for (const filename of filenames) {
+    const base = filename.replace(/\.[^.]+$/, "");
+    const ext = filename.replace(/.*\./, "");
+    const count = basenameCounts.get(base) ?? 1;
+    const idx = basenameIndex.get(base) ?? 0;
+    basenameIndex.set(base, idx + 1);
+
+    let imageFile = filename;
+    let captionFile = `${base}.txt`;
+    if (count > 1 && idx > 0) {
+      imageFile = `${base} (${idx}).${ext}`;
+      captionFile = `${base} (${idx}).txt`;
+    }
+
+    let safetyIdx = idx + 1;
+    while (usedCaptionNames.has(captionFile)) {
+      imageFile = `${base} (${safetyIdx}).${ext}`;
+      captionFile = `${base} (${safetyIdx}).txt`;
+      safetyIdx++;
+    }
+    usedCaptionNames.add(captionFile);
+
+    resolved.set(filename, { imageFile, captionFile });
+  }
+
+  return resolved;
+}
+
 export async function POST(request: Request) {
   const body = await request.json();
   const { jobId, jobIds } = body;
@@ -36,39 +84,10 @@ async function handleSingleJobDownload(job: ReturnType<typeof getJob>) {
   if (!job) return Response.json({ error: "Job not found" }, { status: 404 });
 
   const archive = createArchive();
-
-  // Build a map of basename -> count to detect caption filename collisions.
-  const basenameCounts = new Map<string, number>();
-  for (const filename of job.images.keys()) {
-    const base = filename.replace(/\.[^.]+$/, "");
-    basenameCounts.set(base, (basenameCounts.get(base) ?? 0) + 1);
-  }
-
-  const usedCaptionNames = new Set<string>();
-  const basenameIndex = new Map<string, number>();
+  const resolved = resolveFilenameCollisions(Array.from(job.images.keys()));
 
   for (const [filename, entry] of job.images.entries()) {
-    const base = filename.replace(/\.[^.]+$/, "");
-    const ext = filename.replace(/.*\./, "");
-    const count = basenameCounts.get(base) ?? 1;
-    const idx = basenameIndex.get(base) ?? 0;
-    basenameIndex.set(base, idx + 1);
-
-    let imageFile = filename;
-    let captionFile = `${base}.txt`;
-    if (count > 1 && idx > 0) {
-      imageFile = `${base} (${idx}).${ext}`;
-      captionFile = `${base} (${idx}).txt`;
-    }
-
-    let safetyIdx = idx + 1;
-    while (usedCaptionNames.has(captionFile)) {
-      imageFile = `${base} (${safetyIdx}).${ext}`;
-      captionFile = `${base} (${safetyIdx}).txt`;
-      safetyIdx++;
-    }
-    usedCaptionNames.add(captionFile);
-
+    const { imageFile, captionFile } = resolved.get(filename) ?? { imageFile: filename, captionFile: `${filename.replace(/\.[^.]+$/, "")}.txt` };
     archive.append(entry.data, { name: imageFile });
     const captionContent = entry.caption ?? "(caption failed)";
     archive.append(captionContent, { name: captionFile });
@@ -113,40 +132,10 @@ async function handleMultiJobDownload(jobIds: string[]) {
   // Each preset gets its own folder in the ZIP
   for (const job of jobs) {
     const presetFolder = job.presetName.trim() || "Captions";
-
-    // Collision tracking within this preset folder
-    const basenameCounts = new Map<string, number>();
-    for (const filename of job.images.keys()) {
-      const base = filename.replace(/\.[^.]+$/, "");
-      basenameCounts.set(base, (basenameCounts.get(base) ?? 0) + 1);
-    }
-
-    const usedCaptionNames = new Set<string>();
-    const basenameIndex = new Map<string, number>();
+    const resolved = resolveFilenameCollisions(Array.from(job.images.keys()));
 
     for (const [filename, entry] of job.images.entries()) {
-      const base = filename.replace(/\.[^.]+$/, "");
-      const ext = filename.replace(/.*\./, "");
-      const count = basenameCounts.get(base) ?? 1;
-      const idx = basenameIndex.get(base) ?? 0;
-      basenameIndex.set(base, idx + 1);
-
-      let imageFile = filename;
-      let captionFile = `${base}.txt`;
-      if (count > 1 && idx > 0) {
-        imageFile = `${base} (${idx}).${ext}`;
-        captionFile = `${base} (${idx}).txt`;
-      }
-
-      let safetyIdx = idx + 1;
-      while (usedCaptionNames.has(captionFile)) {
-        imageFile = `${base} (${safetyIdx}).${ext}`;
-        captionFile = `${base} (${safetyIdx}).txt`;
-        safetyIdx++;
-      }
-      usedCaptionNames.add(captionFile);
-
-      // Prefix with preset folder
+      const { imageFile, captionFile } = resolved.get(filename) ?? { imageFile: filename, captionFile: `${filename.replace(/\.[^.]+$/, "")}.txt` };
       archive.append(entry.data, { name: `${presetFolder}/${imageFile}` });
       const captionContent = entry.caption ?? "(caption failed)";
       archive.append(captionContent, { name: `${presetFolder}/${captionFile}` });

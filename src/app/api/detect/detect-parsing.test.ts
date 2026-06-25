@@ -892,22 +892,22 @@ describe("coordinate normalization — absolute pixel to 0-1000", () => {
       { bbox_2d: [128, 102, 384, 512], label: "face of a woman" },
       { bbox_2d: [64, 204, 960, 768], label: "standing woman" },
     ]);
-    const result = parse(json, { width: 1024, height: 768 }, "qwen-vl-max");
-    // All coords ≤ 1000 — pass through (Qwen is already normalized)
+    const result = parse(json, { width: 1024, height: 768 });
+    // All coords ≤ 1000 — pass through (already normalized)
     expect(result.faceBoxes).toHaveLength(1);
     expect(result.faceBoxes[0].bbox_2d).toEqual([128, 102, 384, 512]);
     expect(result.bodyBoxes).toHaveLength(1);
     expect(result.bodyBoxes[0].bbox_2d).toEqual([64, 204, 960, 768]);
   });
 
-  it("does NOT normalize Qwen coordinates under 1000 — they are already 0-1000", () => {
-    // Qwen returns 0-1000 normalized coordinates like [526, 312, 645, 363]
+  it("does NOT normalize coordinates under 1000 — they are already 0-1000", () => {
+    // Models return 0-1000 normalized coordinates like [526, 312, 645, 363]
     // These should NOT be treated as pixel coordinates
     const json = JSON.stringify([
       { bbox_2d: [526, 312, 645, 363], label: "lips" },
       { bbox_2d: [100, 50, 900, 700], label: "standing woman" },
     ]);
-    const result = parse(json, { width: 1024, height: 768 }, "qwen-vl-max");
+    const result = parse(json, { width: 1024, height: 768 });
     // Pass through unchanged — already normalized
     expect(result.faceBoxes[0].bbox_2d).toEqual([526, 312, 645, 363]);
     expect(result.bodyBoxes[0].bbox_2d).toEqual([100, 50, 900, 700]);
@@ -919,13 +919,9 @@ describe("coordinate normalization — absolute pixel to 0-1000", () => {
       { bbox_2d: [128, 102, 384, 512], label: "face" },
     ]);
 
-    // "Qwen-VL-Max" (mixed case)
-    const result1 = parse(json, { width: 1024, height: 768 }, "Qwen-VL-Max");
+    // Coords ≤ 1000 pass through regardless of model name (model param removed)
+    const result1 = parse(json, { width: 1024, height: 768 });
     expect(result1.faceBoxes[0].bbox_2d).toEqual([128, 102, 384, 512]);
-
-    // "qwQwen-2-vl" (contains "qwen" anywhere)
-    const result2 = parse(json, { width: 1024, height: 768 }, "qwQwen-2-vl");
-    expect(result2.faceBoxes[0].bbox_2d).toEqual([128, 102, 384, 512]);
   });
 
   it("does NOT normalize Gemma coordinates under 1000", () => {
@@ -933,7 +929,7 @@ describe("coordinate normalization — absolute pixel to 0-1000", () => {
     const json = JSON.stringify([
       { box_2d: [200, 100, 500, 400], label: "face" },
     ]);
-    const result = parse(json, { width: 1024, height: 768 }, "gemma-3-12b-it");
+    const result = parse(json, { width: 1024, height: 768 });
     // box_2d [ymin=200, xmin=100, ymax=500, xmax=400] → [100, 200, 400, 500]
     // All ≤ 1000 — pass through (Gemma is already normalized)
     expect(result.faceBoxes[0].bbox_2d).toEqual([100, 200, 400, 500]);
@@ -944,7 +940,7 @@ describe("coordinate normalization — absolute pixel to 0-1000", () => {
     const json = JSON.stringify([
       { bbox_2d: [1536, 1024, 3072, 2048], label: "person" },
     ]);
-    const result = parse(json, { width: 4096, height: 3072 }, "qwen-vl-max");
+    const result = parse(json, { width: 4096, height: 3072 });
     // [1536/4096*1000, 1024/3072*1000, 3072/4096*1000, 2048/3072*1000]
     // = [375, 333.33..., 750, 666.66...]
     expect(result.bodyBoxes[0].bbox_2d[0]).toBeCloseTo(375, 1);

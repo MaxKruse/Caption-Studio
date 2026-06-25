@@ -1,6 +1,11 @@
+// ---------------------------------------------------------------------------
+// useCaptionJob — single-job caption lifecycle (SSE, polling, download)
+//
+// For multi-preset captioning, use useMultiPresetJob alongside this hook.
+// ---------------------------------------------------------------------------
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  CAPTION_PRESETS,
   ImageFile,
   ImageStatus,
   ProgressState,
@@ -8,6 +13,7 @@ import {
 import { getPreset } from "../CaptionStudioPresets";
 import type { ImageCrop } from "../CaptionStudioCropTypes";
 import { useStudioStore } from "@/store/studioStore";
+import { useMultiPresetJob } from "./useMultiPresetJob";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -90,7 +96,6 @@ function useCaptionSSE({
     return () => clearInterval(interval);
   }, [jobId, onStatuses]);
 
-  // Return handler for startCaptioning to use
   const handleSSEMessage = useCallback(
     (event: MessageEvent) => {
       const payload: ProgressState = JSON.parse(event.data);
@@ -111,11 +116,7 @@ function useCaptionSSE({
     [onProgress, onStatuses, onDone, showToast, showErrorLogRef, setShowErrorLog],
   );
 
-  const handleSSEError = useCallback(() => {
-    // Caller will handle closing
-  }, []);
-
-  return { handleSSEMessage, handleSSEError };
+  return { handleSSEMessage };
 }
 
 // ---------------------------------------------------------------------------
@@ -146,6 +147,7 @@ function useCaptionActions({
   const parallelRequests = useStudioStore((s) => s.config.parallelRequests);
   const preset = getPreset(presetId);
   const presetZipName = preset.zipName;
+
   // Start batch captioning
   const startCaptioning = useCallback(async (sseHandlers: {
     handleSSEMessage: (event: MessageEvent) => void;
@@ -162,7 +164,6 @@ function useCaptionActions({
       setJobError("Enter a server URL");
       return;
     }
-    // Validate trigger word if preset requires it
     if (getPreset(presetId).needsTrigger && !triggerWord.trim()) {
       setJobError("Enter an activation token (trigger word)");
       return;
@@ -175,16 +176,7 @@ function useCaptionActions({
 
     try {
       const formData = new FormData();
-      // Build crop data map (filename -> single crop with type)
-      const cropDataMap: Record<string, { cropType: "portrait" | "body"; cropRect: { x: number; y: number; width: number; height: number } }> = {};
-      if (cropData && cropData.length > 0) {
-        for (const crop of cropData) {
-          cropDataMap[crop.imageName] = {
-            cropType: crop.cropType === "face" ? "portrait" : "body",
-            cropRect: crop.cropRect,
-          };
-        }
-      }
+      const cropDataMap = buildCropDataMap(cropData);
 
       formData.append("config", JSON.stringify({
         serverUrl: serverUrl.trim(),
@@ -297,7 +289,6 @@ function useCaptionActions({
         failed: 0,
       });
 
-      // Notify parent to clear images
       onDownloadComplete();
     } catch (err) {
       showToast(
@@ -322,15 +313,13 @@ function useCaptionActions({
     setJobError("");
   }, [setJobId, setImageStatuses, setProgress, setJobError]);
 
-  // Abort job — stops processing, keeps UI state
+  // Abort job
   const abortJob = useCallback(async () => {
     if (!jobId) return;
 
-    // Close SSE connection
     eventSourceRef.current?.close();
     eventSourceRef.current = null;
 
-    // Tell server to abort queued images
     try {
       await fetch(`/api/caption?jobId=${jobId}`, {
         method: "DELETE",
@@ -339,7 +328,7 @@ function useCaptionActions({
       // ignore network errors on abort
     }
 
-    // Mark remaining queued images as failed on the client side immediately
+    // Mark remaining queued images as failed immediately
     setImageStatuses((prev) => {
       const updated = { ...prev };
       for (const [name, status] of Object.entries(updated)) {
@@ -362,6 +351,23 @@ function useCaptionActions({
 }
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Build crop data map from ImageCrop array. */
+function buildCropDataMap(cropData?: ImageCrop[]): Record<string, { cropType: "portrait" | "body"; cropRect: { x: number; y: number; width: number; height: number } }> {
+  const map: Record<string, { cropType: "portrait" | "body"; cropRect: { x: number; y: number; width: number; height: number } }> = {};
+  if (!cropData || cropData.length === 0) return map;
+  for (const crop of cropData) {
+    map[crop.imageName] = {
+      cropType: crop.cropType === "face" ? "portrait" : "body",
+      cropRect: crop.cropRect,
+    };
+  }
+  return map;
+}
+
+// ---------------------------------------------------------------------------
 // useCaptionJob — Orchestrator (public API)
 // ---------------------------------------------------------------------------
 
@@ -378,14 +384,8 @@ export function useCaptionJob(options: UseCaptionJobOptions) {
   const [showErrorLog, setShowErrorLog] = useState(false);
   const [jobError, setJobError] = useState("");
 
-  // Multi-preset state
-  const [presetResults, setPresetResults] = useState<Record<string, Record<string, ImageStatus>>>({});
-  const [activePresetId, setActivePresetId] = useState<string | null>(null);
-  const [presetJobIds, setPresetJobIds] = useState<Record<string, string>>({});
-
   const eventSourceRef = useRef<EventSource | null>(null);
   const showErrorLogRef = useRef(false);
-  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => { showErrorLogRef.current = showErrorLog; }, [showErrorLog]);
 
@@ -412,266 +412,24 @@ export function useCaptionJob(options: UseCaptionJobOptions) {
     await startCaptioning({ handleSSEMessage: sseHandlers.handleSSEMessage });
   }, [startCaptioning, sseHandlers]);
 
-  // -- Multi-preset start: runs all presets sequentially --
-  const startCaptioningAllPresets = useCallback(async () => {
-    // Validate common requirements
-    if (options.images.length === 0) {
-      setJobError("Upload at least one image");
-      return;
-    }
-    if (!options.selectedModel) {
-      setJobError("Select a model");
-      return;
-    }
-
-    const storeConfig = useStudioStore.getState().config;
-    if (!storeConfig.serverUrl.trim()) {
-      setJobError("Enter a server URL");
-      return;
-    }
-
-    // Check if any preset needs a trigger word
-    const needsTrigger = CAPTION_PRESETS.some((p) => p.needsTrigger);
-    if (needsTrigger && !storeConfig.triggerWord.trim()) {
-      setJobError("Enter an activation token (trigger word)");
-      return;
-    }
-
-    eventSourceRef.current?.close();
-    abortControllerRef.current = new AbortController();
-    setJobError("");
-    setIsProcessing(true);
-    setImageStatuses({});
-    setPresetResults({});
-    setPresetJobIds({});
-
-    const cropDataMap: Record<string, { cropType: "portrait" | "body"; cropRect: { x: number; y: number; width: number; height: number } }> = {};
-    if (options.cropData && options.cropData.length > 0) {
-      for (const crop of options.cropData) {
-        cropDataMap[crop.imageName] = {
-          cropType: crop.cropType === "face" ? "portrait" : "body",
-          cropRect: crop.cropRect,
-        };
-      }
-    }
-
-    const presets = CAPTION_PRESETS;
-    const totalImages = options.images.length * presets.length;
-    let completedCount = 0;
-    let failedCount = 0;
-
-    for (const preset of presets) {
-      if (abortControllerRef.current?.signal.aborted) break;
-
-      setActivePresetId(preset.id);
-
-      // Set initial "queued" statuses for this preset's images
-      const initial: Record<string, ImageStatus> = {};
-      for (const img of options.images) {
-        initial[img.name] = { status: "queued" };
-      }
-      setImageStatuses(initial);
-
-      try {
-        const formData = new FormData();
-        formData.append("config", JSON.stringify({
-          serverUrl: storeConfig.serverUrl.trim(),
-          model: options.selectedModel,
-          systemPrompt: preset.systemPrompt,
-          userPrompt: preset.userPromptTemplate,
-          presetId: preset.id,
-          presetZipName: preset.zipName,
-          triggerWord: storeConfig.triggerWord.trim(),
-          parallelRequests: storeConfig.parallelRequests,
-          imageNames: options.images.map((img) => img.name),
-          cropData: Object.keys(cropDataMap).length > 0 ? cropDataMap : undefined,
-        }));
-        for (const img of options.images) {
-          formData.append("images", img.file);
-        }
-
-        const res = await fetch("/api/caption", {
-          method: "POST",
-          body: formData,
-        });
-
-        const data = await res.json();
-        if (!res.ok) {
-          options.showToast(data.error || `Failed to start captioning for ${preset.label}`);
-          // Mark all images for this preset as failed
-          const failed: Record<string, ImageStatus> = {};
-          for (const img of options.images) {
-            failed[img.name] = { status: "failed", error: data.error || "Failed" };
-          }
-          setPresetResults((prev) => ({ ...prev, [preset.id]: failed }));
-          failedCount += options.images.length;
-          setProgress({
-            total: totalImages,
-            queued: 0,
-            processing: 0,
-            completed: completedCount,
-            failed: failedCount,
-          });
-          continue;
-        }
-
-        const presetJobId = data.jobId;
-        setPresetJobIds((prev) => ({ ...prev, [preset.id]: presetJobId }));
-
-        // Wait for this preset's job to complete via polling
-        await new Promise<void>((resolve) => {
-          const pollInterval = setInterval(async () => {
-            try {
-              const statusRes = await fetch(`/api/status?jobId=${presetJobId}`);
-              if (!statusRes.ok) {
-                clearInterval(pollInterval);
-                resolve();
-                return;
-              }
-              const statusData = await statusRes.json() as { statuses?: Record<string, ImageStatus> };
-              const statuses = statusData.statuses;
-              if (statuses) {
-                // Update current preset's statuses
-                setImageStatuses(statuses);
-              }
-
-              if (!statuses) return;
-
-              // Check if done
-              const allDone = Object.values(statuses).every(
-                (s) => s.status === "completed" || s.status === "failed"
-              );
-              if (allDone) {
-                clearInterval(pollInterval);
-
-                // Save results for this preset
-                setPresetResults((prev) => ({ ...prev, [preset.id]: statuses }));
-
-                // Update overall progress
-                const presetCompleted = Object.values(statuses).filter(
-                  (s) => s.status === "completed"
-                ).length;
-                const presetFailed = Object.values(statuses).filter(
-                  (s) => s.status === "failed"
-                ).length;
-                completedCount += presetCompleted;
-                failedCount += presetFailed;
-                setProgress({
-                  total: totalImages,
-                  queued: 0,
-                  processing: 0,
-                  completed: completedCount,
-                  failed: failedCount,
-                });
-
-                resolve();
-              }
-            } catch {
-              clearInterval(pollInterval);
-              resolve();
-            }
-          }, 500);
-        });
-      } catch (err) {
-        options.showToast(err instanceof Error ? err.message : "Unexpected error");
-      }
-    }
-
-    // All presets done
-    setActivePresetId(null);
-    abortControllerRef.current = null;
-    setIsProcessing(false);
-
-    // Show error summary if any failures
-    if (failedCount > 0) {
-      options.showToast(`${failedCount} image(s) failed across presets`);
-      if (!showErrorLogRef.current) {
-        setShowErrorLog(true);
-      }
-    }
-  }, [options, setJobError, eventSourceRef]);
-
-  // -- Multi-preset abort --
-  const abortMultiPreset = useCallback(async () => {
-    abortControllerRef.current?.abort();
-    eventSourceRef.current?.close();
-    eventSourceRef.current = null;
-
-    // Abort any active job
-    for (const presetId of Object.keys(presetJobIds)) {
-      const jid = presetJobIds[presetId];
-      try {
-        await fetch(`/api/caption?jobId=${jid}`, { method: "DELETE" });
-      } catch {
-        // ignore
-      }
-    }
-
-    setActivePresetId(null);
-    setIsProcessing(false);
-  }, [presetJobIds]);
-
-  // -- Multi-preset download --
-  const downloadMultiPresetZip = useCallback(async () => {
-    const jobIds = Object.values(presetJobIds);
-    if (jobIds.length === 0) return;
-
-    setIsDownloading(true);
-    setJobError("");
-
-    try {
-      const res = await fetch("/api/download", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobIds }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        setJobError(data.error || "Download failed");
-        return;
-      }
-
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.click();
-      document.body.appendChild(a);
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      // Reset
-      setJobId(null);
-      setImageStatuses({});
-      setPresetResults({});
-      setPresetJobIds({});
-      setActivePresetId(null);
-      setProgress(emptyProgress);
-      options.onDownloadComplete();
-    } catch (err) {
-      options.showToast(err instanceof Error ? err.message : "Download error");
-    } finally {
-      setIsDownloading(false);
-    }
-  }, [presetJobIds, options, setJobError]);
-
-  // -- Multi-preset reset --
-  const resetMultiPreset = useCallback(() => {
-    setPresetResults({});
-    setPresetJobIds({});
-    setActivePresetId(null);
-    abortControllerRef.current?.abort();
-    abortControllerRef.current = null;
-  }, []);
+  // -- Delegate multi-preset to dedicated hook --
+  const multiPreset = useMultiPresetJob({
+    ...options,
+    setIsProcessing,
+    setIsDownloading,
+    setImageStatuses,
+    setProgress,
+    setJobError,
+    setShowErrorLog,
+  });
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      abortControllerRef.current?.abort();
       eventSourceRef.current?.close();
+      multiPreset.cleanup();
     };
-  }, []);
+  }, [multiPreset]);
 
   return {
     jobId, progress, isProcessing, isDownloading,
@@ -679,13 +437,7 @@ export function useCaptionJob(options: UseCaptionJobOptions) {
     jobError, clearJobError,
     startCaptioning: startCaptioningWrapped,
     abortJob, downloadZip, reset,
-    // Multi-preset exports
-    presetResults,
-    activePresetId,
-    presetJobIds,
-    startCaptioningAllPresets,
-    abortMultiPreset,
-    downloadMultiPresetZip,
-    resetMultiPreset,
+    // Multi-preset exports (from dedicated hook)
+    ...multiPreset,
   };
 }

@@ -125,36 +125,50 @@ public/                             — Static assets
 
 ```
 Browser (Client)
-  ├── ConfigSection  →  API URL, model, prompts
-  ├── UploadSection  →  Image files (base64)
-  └── ProcessSection →  Caption All / Download ZIP
+  ├── Zustand Store (src/store/studioStore.ts) — persisted config + ruleset
+  ├── ConfigSection  →  API URL, model, preset, prompts, trigger word
+  ├── UploadSection  →  Image files (FormData), drag-drop
+  ├── CropEditor     →  Manual crop box adjustments
+  └── ResultsGallery →  Caption results, progress, download
         │
-        ├── useImageUpload  →  file handling, drag-drop, validation
-        └── useCaptionJob   →  SSE connection, polling, download
+        ├── useImageUpload      →  file handling, drag-drop, validation
+        ├── useDetection        →  face/body detection workflow
+        ├── useCropDetection    →  crop state (ref-based for immediate reads)
+        ├── useCaptionJob       →  single-job SSE, polling, download
+        └── useMultiPresetJob   →  multi-preset sequential orchestration
               │
         fetch() / EventSource
               │
   Next.js API Routes
-    ├── POST /api/caption     →  Start job, returns jobId
+    ├── POST /api/caption     →  Start caption job, returns jobId
     ├── GET  /api/caption     →  SSE progress stream (500ms interval)
+    ├── DELETE /api/caption   →  Abort job (marks queued as failed, deletes from memory)
+    ├── POST /api/detect      →  Start detection job, returns jobId
+    ├── GET  /api/detect      →  SSE progress stream (300ms interval)
     ├── GET  /api/status      →  Polling fallback for per-image status
     ├── GET  /api/models      →  Proxy to remote /v1/models (vision filter)
     └── POST /api/download    →  ZIP generation (images + .txt captions)
           │
-  In-Memory Store (src/lib/store.ts)
-    └── Map<string, CaptionJob>  — job ID → job data
+  In-Memory Stores
+    ├── src/lib/store.ts        — Map<string, CaptionJob> (caption jobs)
+    ├── src/lib/detect-store.ts — detection jobs (cleaned after SSE close)
+    └── Stale cleanup           — deletes completed jobs older than 24h
           │
   Remote OpenAI-Compatible API
-    └── POST /v1/chat/completions  — Vision API call
+    └── POST /v1/chat/completions  — Vision API call (streaming)
 ```
 
 ### Concurrency
 
-Worker pool pattern — configurable 1–8 parallel API requests (default 4). As one finishes, the next queued image starts immediately.
+Worker pool pattern — configurable 1-8 parallel API requests (default 4). As one finishes, the next queued image starts immediately.
 
 ### Image Format Handling
 
-OpenAI only accepts PNG/JPEG. Non-compatible formats (WebP, GIF) are converted to JPEG (quality 90) via `sharp` before API calls — **dimensions are never changed**. Images are always sent at full original resolution. ZIP exports contain the **original** image, not the converted one.
+OpenAI only accepts PNG/JPEG. Non-compatible formats (WebP, GIF) are converted to JPEG (quality 90) via `sharp` before API calls. Images are resized to max 3072px biggest dimension. ZIP exports contain the **cropped** image (not original).
+
+### Detection Images
+
+Detection images are scaled down to 1024px max dimension to reduce bandwidth and API cost. Bounding box coordinates are 1000-normalized (resolution-independent), so they apply correctly to the full-resolution image.
 
 ### Job Lifecycle
 
@@ -163,12 +177,23 @@ OpenAI only accepts PNG/JPEG. Non-compatible formats (WebP, GIF) are converted t
 3. `GET /api/status?jobId=<id>` → polling fallback, 2-second interval from client
 4. Job completes when all images are `completed` or `failed`
 5. `POST /api/download` → generates ZIP, deletes job from memory
+6. `DELETE /api/caption?jobId=<id>` → aborts job, marks queued as failed, deletes from memory
+7. Stale cleanup → completed jobs older than 24h are auto-deleted
+
+### Multi-Preset Flow
+
+1. User checks "Caption for all presets"
+2. `useMultiPresetJob` runs each preset sequentially
+3. Each preset gets its own job ID
+4. Progress is aggregated across all presets
+5. Results stored per-preset in `presetResults` state
+6. Single ZIP download contains folders per preset
 
 ## Key Gotchas
 
 ### No Persistence
 
-Jobs are in-memory only. Server restart = all jobs lost. No database, no disk caching.
+Jobs are in-memory only. Server restart = all jobs lost. No database, no disk caching. Completed jobs auto-delete after 24h.
 
 ### No API Key Support
 

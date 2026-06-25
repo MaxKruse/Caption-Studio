@@ -51,6 +51,28 @@ export interface CaptionJob {
 /** Global map of active jobs. Keyed by job ID. */
 const jobs = new Map<string, CaptionJob>();
 
+/** Max age for completed jobs before auto-cleanup (24 hours). */
+const JOB_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/** Cleanup interval (every hour). */
+const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+
+/**
+ * Delete completed jobs older than JOB_MAX_AGE_MS.
+ * Runs periodically to prevent memory leaks from undownloaded jobs.
+ */
+function cleanupStaleJobs(): void {
+  const now = Date.now();
+  for (const [id, job] of jobs.entries()) {
+    if (isJobDone(id) && now - job.createdAt > JOB_MAX_AGE_MS) {
+      jobs.delete(id);
+    }
+  }
+}
+
+// Start periodic cleanup
+setInterval(cleanupStaleJobs, CLEANUP_INTERVAL_MS);
+
 /** Generate a short random job ID. */
 function generateId(): string {
   return Math.random().toString(36).substring(2, 10);
@@ -228,7 +250,7 @@ export function isJobDone(jobId: string): boolean {
   return true;
 }
 
-/** Abort a job — marks all queued images as failed and signals workers to stop. */
+/** Abort a job — marks all queued images as failed, signals workers, and removes from memory. */
 export function abortJob(jobId: string): boolean {
   const job = jobs.get(jobId);
   if (!job) return false;
@@ -243,6 +265,9 @@ export function abortJob(jobId: string): boolean {
 
   // Signal workers to stop
   job.abortSignal.abort();
+
+  // Remove job from memory to free image buffers
+  jobs.delete(jobId);
 
   return true;
 }
