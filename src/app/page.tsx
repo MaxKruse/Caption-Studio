@@ -9,25 +9,17 @@
 
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
-import { loadSession } from "@/lib/session";
+import { useState, useCallback } from "react";
 import { ServerCheck } from "@/components/server-check";
 import { ModeSelector } from "@/components/mode-selector";
 import { SimpleMode } from "@/components/simple-mode";
 import { MultiStepMode } from "@/components/multi-step-mode";
-import type { AppMode } from "@/lib/session";
+import type { AppMode } from "@/hooks/use-session";
 
 export default function Home() {
-  // Restore initial state from session on mount (lazy init, no effect needed)
-  const initialSession = useMemo(() => loadSession(), []);
-
-  const [appPhase, setAppPhase] = useState<"checking" | "select-mode" | "working">(
-    initialSession.mode && initialSession.serverUrl ? "working" : "checking"
-  );
-  const [selectedMode, setSelectedMode] = useState<AppMode | null>(
-    initialSession.mode
-  );
-  const [serverUrl, setServerUrl] = useState(initialSession.serverUrl);
+  const [appPhase, setAppPhase] = useState<"checking" | "select-mode" | "working">("checking");
+  const [selectedMode, setSelectedMode] = useState<AppMode | null>(null);
+  const [serverUrl, setServerUrl] = useState("");
   const [sessionKey, setSessionKey] = useState(0); // increment to force child re-mount
 
   const handleServerReady = useCallback((url: string) => {
@@ -45,10 +37,6 @@ export default function Home() {
   }, []);
 
   const handleReset = useCallback(() => {
-    // Clear localStorage
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("caption-studio-session");
-    }
     setServerUrl("");
     setSelectedMode(null);
     setAppPhase("checking");
