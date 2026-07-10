@@ -1,6 +1,61 @@
 @import "tailwindcss";
 
+/* --------------------------------------------------------------------------- */
+/* Grey Theme - Caption Studio                                                  */
+/* --------------------------------------------------------------------------- */
+
+:root {
+  --bg-primary: #1a1a2e;
+  --bg-secondary: #16213e;
+  --bg-surface: #222244;
+  --bg-elevated: #2a2a4a;
+  --bg-input: #1e1e3a;
+  --border-subtle: #3a3a5c;
+  --border-focus: #5a5a8a;
+  --text-primary: #e0e0e8;
+  --text-secondary: #a0a0b8;
+  --text-muted: #7070888;
+  --accent: #6366f1;
+  --accent-hover: #818cf8;
+  --accent-subtle: #4f46e5;
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --error: #ef4444;
+}
+
+* {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
   padding: 0;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, sans-serif;
+  min-height: 100vh;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-focus);
+}
+
+/* Focus ring */
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

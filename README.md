@@ -1,19 +1,81 @@
 # Caption Studio
 
-Scaffolding for a new app. Currently retains only the **llama.cpp server connectivity** layer from the previous version.
+Guided caption generation application for llama.cpp vision models. Upload images, choose a mode, and generate captions with streaming feedback.
 
-## What's Here
+## Guided Experience Flow
 
-### API Routes (App Router)
+1. **Server Check** - Enter your llama.cpp server URL. The app auto-polls every 3 seconds until the server responds.
+2. **Mode Selection** - Choose between Simple or Multi-step mode.
+3. **Workflow** - Upload images → Select model → Configure prompts → Start → View results one-by-one.
+
+### Modes
+
+| Mode | Description |
+|------|-------------|
+| **Simple** | One prompt per image. System message + User message. Each image gets captioned independently. |
+| **Multi-step** | Chain of user messages per image. First message includes the image; subsequent messages build on the conversation context. Final `.content` becomes the caption. |
+
+### Prompt Variables
+
+Both modes support these placeholders in prompt text:
+
+| Variable | Replaced With |
+|----------|--------------|
+| `{trigger}` | Trigger word (reserved for future use) |
+| `{image_name}` | The filename of the current image |
+| `{index}` | 1-based index of the current image |
+| `{total}` | Total number of images in the batch |
+
+## Architecture
+
+### Client-Side
+
+| Component | Purpose |
+|-----------|---------|
+| `page.tsx` | Guided experience orchestrator (server check → mode select → mode workflow) |
+| `server-check.tsx` | Server URL input + auto-polling availability checker |
+| `mode-selector.tsx` | Simple vs Multi-step mode selection cards |
+| `image-uploader.tsx` | Drag-and-drop + file picker image upload with thumbnails |
+| `model-selector.tsx` | Fetches and displays available vision models from connected server |
+| `prompt-editor.tsx` | System + user message editors with variable hints |
+| `caption-viewer.tsx` | One-by-one result display with navigation, streaming captions, and reasoning toggle |
+| `simple-mode.tsx` | Simple mode workflow orchestrator (upload → configure → process → results) |
+| `multi-step-mode.tsx` | Multi-step mode workflow orchestrator |
+
+### State Management
+
+- **Session** (`lib/session.ts` + `hooks/use-session.ts`) - localStorage-backed session with reactive React hook
+- Persists: mode, serverUrl, model, images, prompts across page navigations
+- "New session" button resets all state
+
+### API Routes
 
 | Route | Method | Description |
 |-------|--------|-------------|
-| `/api/models` | GET | Proxy to `/v1/models` — discovers available models, filters for vision-capable ones |
-| `/api/caption` | POST | Start batch caption job (FormData with images + JSON config) |
-| `/api/caption` | GET | SSE progress stream (`?jobId=<id>`) |
-| `/api/caption` | DELETE | Abort job (`?jobId=<id>`) |
-| `/api/detect` | POST | Start face/body detection job |
-| `/api/detect` | GET | SSE progress stream (`?jobId=<id>`) |
+| `/api/ping` | GET | Lightweight server availability check (`?serverUrl=<url>`) |
+| `/api/models` | GET | Proxy to `/v1/models` - discovers vision models |
+| `/api/caption/simple` | POST | Simple mode - processes images sequentially with single prompt, returns SSE stream |
+| `/api/caption/multi-step` | POST | Multi-step mode - chains API calls per image, returns SSE stream |
+| `/api/caption` | POST/GET/DELETE | Legacy batch captioning (job-based, in-memory store) |
+| `/api/detect` | POST/GET | Face/body detection (legacy) |
+
+### SSE Event Streams (Simple + Multi-step)
+
+Both mode endpoints return Server-Sent Events:
+
+| Event | Data | Description |
+|-------|------|-------------|
+| `image_start` | `{ index, name }` | Started processing an image |
+| `step_start` | `{ imageIndex, stepIndex, totalSteps }` | Started a step (multi-step only) |
+| `token` | `{ type, content, full }` | Streaming token (type: "caption" or "reasoning") |
+| `step_complete` | `{ imageIndex, stepIndex, content, reasoningContent }` | Step finished (multi-step only) |
+| `image_complete` | `{ index, name, status, caption?, reasoningContent?, error? }` | Image processing done |
+| `done` | `{ allComplete: true }` | All images processed |
+| `error` | `{ error }` | Fatal error |
+
+### Legacy API Routes
+
+The original `/api/caption` (POST/GET/DELETE) and `/api/detect` routes remain for backward compatibility. They use the in-memory job store pattern (`lib/store.ts`, `lib/detect-store.ts`).
 
 ### Lib
 
@@ -21,61 +83,39 @@ Scaffolding for a new app. Currently retains only the **llama.cpp server connect
 |------|---------|
 | `lib/url-utils.ts` | Normalizes server URLs (strips trailing `/` and `/v1`) |
 | `lib/types.ts` | Shared types (`ModelInfo`, `CropRect`) |
-| `lib/store.ts` | In-memory caption job store with stale cleanup |
-| `lib/detect-store.ts` | In-memory detection job store |
-| `lib/image-utils.ts` | Image prep: format conversion (WebP/GIF → JPEG), resize to max 3072px |
-| `lib/detect-parsing.ts` | Parses vision API bounding box responses (Gemma `box_2d` and OpenAI/Qwen `bbox_2d` formats) |
-| `lib/detection-prompts.ts` | Detection prompt builder (Gemma vs Qwen coordinate format adaptation) |
+| `lib/session.ts` | localStorage session persistence layer |
+| `lib/store.ts` | In-memory caption job store (legacy) |
+| `lib/image-utils.ts` | Image prep: format conversion, resize to 3072px max |
 | `lib/string-utils.ts` | File extension utility |
 
-### Key Patterns
+### UI Theme
 
-- **URL normalization**: `normalizeServerUrl()` strips `/v1` suffix and trailing slashes
-- **Model discovery**: GET `/api/models?serverUrl=<url>` proxies to `<url>/v1/models`, filters for vision models by `architecture.input_modalities`
-- **Chat completions call**: POST to `<url>/v1/chat/completions` with `stream: true`
-- **SSE progress**: `ReadableStream` + `TextEncoder`, polling interval from `setInterval`, closes on job completion
-- **Streaming response parsing**: Reads `delta.reasoning_content` and `delta.content` from SSE chunks
-- **Worker pool**: Configurable concurrency (1-8, default 4) for parallel API requests
-- **Image prep**: `sharp` converts non-PNG/JPEG to JPEG and resizes to 3072px max dimension
-- **Timeout**: `AbortController` with `setTimeout` per API call (5 min for caption, 3 min for detection)
-
-### Concurrency Model
-
-```
-POST /api/caption → creates job in memory → spawns workers → returns jobId immediately
-GET  /api/caption → SSE stream polls store every 500ms → client sees live progress
-DELETE /api/caption → aborts workers, marks queued as failed, deletes from memory
-```
-
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `NEXT_PUBLIC_CAPTION_API_URL` | `http://localhost:8080` | Pre-fills the server URL in the UI |
-
-### Before Using
-
-The UI layer has been removed. The API routes are functional but there's no frontend to drive them yet. Use `curl` or a tool like Postman to test the endpoints against a running llama.cpp server.
-
-Example model discovery:
-```bash
-curl "http://localhost:3000/api/models?serverUrl=http://localhost:8080"
-```
+Grey/slate theme - neither dark nor light. Uses indigo accents for interactive elements.
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Framework | Next.js 16.2.6 (App Router) |
-| Runtime | Bun for dev, Node 22 for production |
-| Language | TypeScript 5 (strict) |
-| Image Processing | sharp |
+| Framework | Next.js 16.2.6 (App Router only) |
+| UI | React 19.2.4 |
 | Styling | Tailwind CSS v4 |
+| Package Manager | Bun |
+| Runtime | Bun for dev/build, Node 22 for production |
+| Language | TypeScript 5 (strict mode) |
+| Image Processing | sharp |
 
 ## Scripts
 
 ```bash
-bun install    # install dependencies
-bun run dev    # start dev server
-bun run build  # production build
+bun install       # install dependencies
+bun run dev       # start dev server (http://localhost:3000)
+bun run build     # production build
+bun run lint      # run linter
 ```
+
+## Before Using
+
+1. Start a llama.cpp server with vision model support (e.g., LLaVA, BakLLaVA)
+2. Run `bun run dev`
+3. Navigate to `http://localhost:3000`
+4. Enter your server URL and follow the guided flow
