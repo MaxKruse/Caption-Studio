@@ -25,6 +25,41 @@ interface CaptionResult {
   error?: string;
 }
 
+/** Trigger a ZIP download of image/caption pairs via /api/download. */
+async function triggerDownload(results: CaptionResult[]): Promise<void> {
+  const items = results
+    .filter((r) => r.caption && r.caption.trim())
+    .map((r) => ({
+      name: r.name,
+      imageDataUrl: r.imageDataUrl,
+      caption: r.caption,
+    }));
+
+  if (items.length === 0) return;
+
+  try {
+    const response = await fetch("/api/download", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items }),
+    });
+
+    if (!response.ok) return;
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "captions.zip";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch {
+    // Silently fail - download is a convenience feature
+  }
+}
+
 interface SimpleModeProps {
   serverUrl: string;
   onBack: () => void;
@@ -43,13 +78,12 @@ export function SimpleMode({ serverUrl, onBack }: SimpleModeProps) {
 
   const handleStart = useCallback(async () => {
     // Initialize results array
-    setResults(
-      state.images.map((dataUrl, i) => ({
-        name: state.imageNames[i] || `image-${i}.jpg`,
-        imageDataUrl: dataUrl,
-        status: "queued" as const,
-      }))
-    );
+    const initialResults: CaptionResult[] = state.images.map((dataUrl, i) => ({
+      name: state.imageNames[i] || `image-${i}.jpg`,
+      imageDataUrl: dataUrl,
+      status: "queued" as const,
+    }));
+    setResults(initialResults);
     setPhase("processing");
     setIsProcessing(true);
 
@@ -72,15 +106,21 @@ export function SimpleMode({ serverUrl, onBack }: SimpleModeProps) {
 
     if (!response.ok) {
       const error = await response.json();
-      setResults((prev) =>
-        prev.map((r) => ({ ...r, status: "failed" as const, error: error.error }))
-      );
+      const failed = initialResults.map((r) => ({
+        ...r,
+        status: "failed" as const,
+        error: error.error,
+      }));
+      setResults(failed);
       setIsProcessing(false);
       return;
     }
 
     const reader = response.body?.getReader();
     if (!reader) return;
+
+    // Local mutable copy for download trigger (avoids stale closure)
+    const localResults = [...initialResults];
 
     const decoder = new TextDecoder();
     let buffer = "";
@@ -105,65 +145,66 @@ export function SimpleMode({ serverUrl, onBack }: SimpleModeProps) {
           continue;
         }
 
-        setResults((prev) => {
-          const updated = [...prev];
-
-          switch (eventType) {
-            case "image_start": {
-              const idx = (data as { index: number }).index;
-              if (updated[idx]) {
-                updated[idx] = { ...updated[idx], status: "processing" };
-              }
-              break;
+        // Update local array
+        switch (eventType) {
+          case "image_start": {
+            const idx = (data as { index: number }).index;
+            if (localResults[idx]) {
+              localResults[idx] = { ...localResults[idx], status: "processing" };
             }
-            case "token": {
-              const tokenData = data as {
-                index: number;
-                type: string;
-                full: string;
-              };
-              const idx = tokenData.index;
-              if (updated[idx]) {
-                updated[idx] = {
-                  ...updated[idx],
-                  [tokenData.type === "reasoning"
-                    ? "partialReasoning"
-                    : "partialCaption"]: tokenData.full,
-                };
-              }
-              break;
-            }
-            case "image_complete": {
-              const completeData = data as {
-                index: number;
-                status: string;
-                caption?: string;
-                reasoningContent?: string;
-                error?: string;
-              };
-              const idx = completeData.index;
-              if (updated[idx]) {
-                updated[idx] = {
-                  ...updated[idx],
-                  status: completeData.status as CaptionResult["status"],
-                  caption: completeData.caption,
-                  reasoningContent: completeData.reasoningContent,
-                  error: completeData.error,
-                  partialCaption: undefined,
-                  partialReasoning: undefined,
-                };
-              }
-              break;
-            }
+            break;
           }
+          case "token": {
+            const tokenData = data as {
+              index: number;
+              type: string;
+              full: string;
+            };
+            const idx = tokenData.index;
+            if (localResults[idx]) {
+              localResults[idx] = {
+                ...localResults[idx],
+                [tokenData.type === "reasoning"
+                  ? "partialReasoning"
+                  : "partialCaption"]: tokenData.full,
+              };
+            }
+            break;
+          }
+          case "image_complete": {
+            const completeData = data as {
+              index: number;
+              status: string;
+              caption?: string;
+              reasoningContent?: string;
+              error?: string;
+            };
+            const idx = completeData.index;
+            if (localResults[idx]) {
+              localResults[idx] = {
+                ...localResults[idx],
+                status: completeData.status as CaptionResult["status"],
+                caption: completeData.caption,
+                reasoningContent: completeData.reasoningContent,
+                error: completeData.error,
+                partialCaption: undefined,
+                partialReasoning: undefined,
+              };
+            }
+            break;
+          }
+        }
 
-          return updated;
-        });
+        // Sync to React state
+        setResults([...localResults]);
       }
     }
 
     setIsProcessing(false);
     setPhase("results");
+
+    // Auto-download ZIP with image/caption pairs
+    void triggerDownload(localResults);
   }, [state, serverUrl]);
 
   const handleNewBatch = useCallback(() => {

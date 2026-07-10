@@ -151,3 +151,10 @@ OpenAI-compatible APIs only accept PNG/JPEG. Non-compatible formats (WebP, GIF) 
 1. Check `node_modules/next/dist/docs/` for Next.js 16 API changes
 2. Use `@/*` path alias for all src imports
 3. Run `bun run lint` before committing
+
+### After Committing
+
+4. Always redeploy the Docker container after commits that change application code:
+   ```bash
+   docker compose up -d --build
+   ```
