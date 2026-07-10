@@ -1,6 +1,5 @@
 /**
  * Prompt editor for system and user messages.
- * Supports variable placeholders like {trigger}, {image_name}, etc.
  */
 
 "use client";
@@ -22,13 +21,6 @@ export function PromptEditor({ mode }: PromptEditorProps) {
     addMultiStepMessage,
     removeMultiStepMessage,
   } = useSession();
-
-  const availableVariables = [
-    "{trigger}",
-    "{image_name}",
-    "{index}",
-    "{total}",
-  ];
 
   return (
     <div className="space-y-4">
@@ -103,19 +95,6 @@ export function PromptEditor({ mode }: PromptEditorProps) {
           )}
         </div>
       )}
-
-      {/* Available variables */}
-      <div className="text-xs text-slate-500">
-        <span className="font-medium">Available variables:</span>{" "}
-        {availableVariables.map((v) => (
-          <code
-            key={v}
-            className="bg-slate-700 px-1.5 py-0.5 rounded mx-0.5 text-slate-400"
-          >
-            {v}
-          </code>
-        ))}
-      </div>
     </div>
   );
 }
