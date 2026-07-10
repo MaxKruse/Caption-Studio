@@ -5,7 +5,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -28,20 +28,6 @@ interface CaptionViewerProps {
 export function CaptionViewer({ results }: CaptionViewerProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showReasoning, setShowReasoning] = useState(false);
-
-  // Auto-advance to next image when current completes
-  useEffect(() => {
-    const current = results[currentIndex];
-    if (current && current.status === "completed") {
-      // Small delay so user sees the completed state
-      const timer = setTimeout(() => {
-        if (currentIndex < results.length - 1) {
-          setCurrentIndex((i) => i + 1);
-        }
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [currentIndex, results]);
 
   if (results.length === 0) return null;
 
