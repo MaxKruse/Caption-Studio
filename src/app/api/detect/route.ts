@@ -11,7 +11,7 @@ import { parseDetectionResponse } from "@/lib/detect-parsing";
 import {
   DETECTION_CONCURRENCY,
   getDetectionPrompts,
-} from "@/components/CaptionStudioCropConstants";
+} from "@/lib/detection-prompts";
 import {
   createDetectionJob,
   getDetectionJob,

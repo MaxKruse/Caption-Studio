@@ -17,9 +17,9 @@ import {
   type CaptionJob,
   type ImageEntry,
 } from "@/lib/store";
-import { prepareForApi, type CropRect } from "@/lib/image-utils";
-
+import { prepareForApi } from "@/lib/image-utils";
 import { normalizeServerUrl } from "@/lib/url-utils";
+import type { CropRect } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Job config shape — parsed from either FormData or JSON

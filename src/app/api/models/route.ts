@@ -5,7 +5,7 @@
 
 import { NextRequest } from "next/server";
 
-import type { ModelInfo } from "@/components/CaptionStudioTypes";
+import type { ModelInfo } from "@/lib/types";
 import { normalizeServerUrl } from "@/lib/url-utils";
 
 export async function GET(request: NextRequest) {

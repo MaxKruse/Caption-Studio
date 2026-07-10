@@ -1,77 +1,23 @@
 // ---------------------------------------------------------------------------
-// Crop rulesets - predefined portrait/body split ratios
-// ---------------------------------------------------------------------------
-
-import type { CropRuleset } from "./CaptionStudioCropTypes";
-
-/**
- * Available crop rulesets for batch image cropping.
- * Each ruleset defines what percentage of images should be portrait (face) vs body (pose) crops.
- */
-export const CROP_RULESETS: CropRuleset[] = [
-  {
-    id: "crop_33_66",
-    label: "33 / 66",
-    portraitRatio: 0.33,
-    description: "1/3 portrait, 2/3 body — diverse poses with some face shots",
-  },
-  {
-    id: "crop_50_50",
-    label: "50 / 50",
-    portraitRatio: 0.5,
-    description: "Equal split between portrait and body shots",
-  },
-  {
-    id: "crop_66_33",
-    label: "66 / 33",
-    portraitRatio: 0.66,
-    description: "2/3 portrait, 1/3 body — face-focused with some variety",
-  },
-  {
-    id: "crop_80_20",
-    label: "80 / 20",
-    portraitRatio: 0.8,
-    description: "Mostly portrait (face) with a few body shots",
-  },
-];
-
-/** Get a crop ruleset by ID. */
-export function getCropRuleset(id: string): CropRuleset {
-  return CROP_RULESETS.find((r) => r.id === id) ?? CROP_RULESETS[1]; // default 50/50
-}
-
-// ---------------------------------------------------------------------------
-// Detection defaults
+// Detection prompt builder
 // ---------------------------------------------------------------------------
 
 /** Max concurrent detection requests. */
 export const DETECTION_CONCURRENCY = 3;
-
-/** Timeout per detection request (3 minutes). */
-export const DETECTION_TIMEOUT_MS = 3 * 60 * 1000;
-
-// ---------------------------------------------------------------------------
-// Detection prompt builder
-// ---------------------------------------------------------------------------
 
 /**
  * Build detection prompts tailored to the content mode and model family.
  *
  * Gemma models natively return `box_2d` with `[y_min, x_min, y_max, x_max]` (y-first).
  * Qwen models natively return `bbox_2d` with `[x_min, y_min, x_max, y_max]` (x-first).
- * The prompt is adapted to match each model's native format so coordinates aren't swapped.
- *
- * The parser handles both `bbox_2d` (x-first, pass-through) and `box_2d` (y-first, swap)
- * as well as the legacy `{faces, bodies}` object format for backward compatibility.
  */
 export function getDetectionPrompts(
   contentMode: "sfw" | "nsfw",
   model: string
-) {
+): { systemPrompt: string; userPrompt: string } {
   const isGemma = model.toLowerCase().includes("gemma");
 
   if (isGemma) {
-    // Gemma native: box_2d with [y_min, x_min, y_max, x_max] (y-first)
     const systemPrompt = `You are an object detection assistant. Detect all faces and bodies (full-body poses) in the image and return bounding boxes as a JSON array.
 
 ## Output Format
@@ -91,7 +37,6 @@ If you detect nothing, return an empty array [].
     return { systemPrompt, userPrompt };
   }
 
-  // Qwen / OpenAI / default: bbox_2d with [x_min, y_min, x_max, y_max] (x-first)
   const systemPrompt = `You are an object detection assistant. Detect all faces and bodies (full-body poses) in the image and return bounding boxes as a JSON array.
 
 ## Output Format
