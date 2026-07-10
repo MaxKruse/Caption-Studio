@@ -100,6 +100,8 @@ export function SimpleMode({ serverUrl, onBack }: SimpleModeProps) {
         model: state.model,
         systemPrompt: state.systemPrompt,
         userPrompt: state.userPrompt,
+        triggerWordPerson: state.triggerWordPerson,
+        triggerWordOther: state.triggerWordOther,
         images,
       }),
     });

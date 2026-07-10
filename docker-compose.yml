@@ -5,6 +5,5 @@ services:
       - "8800:3000"
     environment:
       - NODE_ENV=production
-      - DOCKER_HOST_INTERNAL=host.docker.internal
-      - NEXT_PUBLIC_DEFAULT_SERVER_URL=http://host.docker.internal:8080
+      - DEFAULT_SERVER_URL=http://host.docker.internal:8080
     restart: unless-stopped

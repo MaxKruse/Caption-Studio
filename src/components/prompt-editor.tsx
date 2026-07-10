@@ -5,6 +5,7 @@
 "use client";
 
 import { useSession } from "@/hooks/use-session";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
 interface PromptEditorProps {
@@ -16,6 +17,8 @@ export function PromptEditor({ mode }: PromptEditorProps) {
     state,
     setSystemPrompt,
     setUserPrompt,
+    setTriggerWordPerson,
+    setTriggerWordOther,
     setMultiStepSystemPrompt,
     updateMultiStepMessage,
     addMultiStepMessage,
@@ -37,6 +40,26 @@ export function PromptEditor({ mode }: PromptEditorProps) {
         rows={3}
         className="text-sm font-mono"
       />
+
+      {/* Trigger Words (optional, prepended to user prompt) */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium text-slate-300">Trigger Words (optional)</label>
+        <p className="text-xs text-slate-500 -mt-1.5 mb-2">If filled, these are prepended to each user message.</p>
+        <div className="grid grid-cols-2 gap-3">
+          <Input
+            label="Person"
+            value={state.triggerWordPerson}
+            onChange={(e) => setTriggerWordPerson(e.target.value)}
+            placeholder="e.g. Alice, character name..."
+          />
+          <Input
+            label="Other"
+            value={state.triggerWordOther}
+            onChange={(e) => setTriggerWordOther(e.target.value)}
+            placeholder="e.g. subject, object..."
+          />
+        </div>
+      </div>
 
       {mode === "simple" ? (
         /* Simple mode: single user prompt */

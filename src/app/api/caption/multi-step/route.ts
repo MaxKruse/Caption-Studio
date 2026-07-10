@@ -21,10 +21,11 @@ function replaceVariables(
   text: string,
   imageName: string,
   index: number,
-  total: number
+  total: number,
+  triggerWord: string
 ): string {
   return text
-    .replace(/{trigger}/g, "")
+    .replace(/{trigger}/g, triggerWord)
     .replace(/{image_name}/g, imageName)
     .replace(/{index}/g, String(index + 1))
     .replace(/{total}/g, String(total));
@@ -136,8 +137,17 @@ export async function POST(request: NextRequest) {
     model,
     systemPrompt,
     userMessages,
+    triggerWordPerson,
+    triggerWordOther,
     images,
-  } = body as MultiStepCaptionRequest;
+  } = body as MultiStepCaptionRequest & {
+    triggerWordPerson?: string;
+    triggerWordOther?: string;
+  };
+
+  // Build combined trigger word string
+  const triggerParts = [triggerWordPerson, triggerWordOther].filter((p) => p?.trim());
+  const triggerWord = triggerParts.length > 0 ? `${triggerParts.join(" ")} - ` : "";
 
   if (!serverUrl || !model || !images || images.length === 0) {
     return Response.json(
@@ -202,7 +212,8 @@ export async function POST(request: NextRequest) {
             userMessages[0],
             imageName,
             imgIdx,
-            images.length
+            images.length,
+            triggerWord
           );
 
           messages.push({
@@ -260,7 +271,8 @@ export async function POST(request: NextRequest) {
                 userMessages[stepIdx + 1],
                 imageName,
                 imgIdx,
-                images.length
+                images.length,
+                triggerWord
               );
               messages.push({ role: "user", content: nextUserMsg });
             }

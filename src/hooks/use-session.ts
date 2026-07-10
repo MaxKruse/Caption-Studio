@@ -19,6 +19,9 @@ export interface SessionState {
   model: string;
   images: string[]; // base64 data URLs
   imageNames: string[];
+  // Trigger words (optional, prepended to user prompt if filled)
+  triggerWordPerson: string;
+  triggerWordOther: string;
   // Simple mode
   systemPrompt: string;
   userPrompt: string;
@@ -37,6 +40,8 @@ const DEFAULT_STATE: SessionState = {
   model: "",
   images: [],
   imageNames: [],
+  triggerWordPerson: "",
+  triggerWordOther: "",
   systemPrompt: [
     "You are an expert at writing detailed, precise image generation prompts optimized for Krea-2 and Qwen Image models.",
     "",
@@ -140,6 +145,14 @@ export function useSession() {
     setState((prev) => ({ ...prev, images: [], imageNames: [] }));
   }, []);
 
+  const setTriggerWordPerson = useCallback((triggerWordPerson: string) => {
+    setState((prev) => ({ ...prev, triggerWordPerson }));
+  }, []);
+
+  const setTriggerWordOther = useCallback((triggerWordOther: string) => {
+    setState((prev) => ({ ...prev, triggerWordOther }));
+  }, []);
+
   const setSystemPrompt = useCallback((systemPrompt: string) => {
     setState((prev) => ({ ...prev, systemPrompt }));
   }, []);
@@ -193,6 +206,8 @@ export function useSession() {
     clearImages,
     setSystemPrompt,
     setUserPrompt,
+    setTriggerWordPerson,
+    setTriggerWordOther,
     setMultiStepSystemPrompt,
     setMultiStepMessages,
     updateMultiStepMessage,

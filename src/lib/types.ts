@@ -6,6 +6,8 @@
 export interface ModelInfo {
   id: string;
   owned_by?: string;
+  /** Max concurrent requests the server can handle for this model (from --parallel flag in status.args). */
+  parallel?: number;
   architecture?: {
     input_modalities?: string[];
   };

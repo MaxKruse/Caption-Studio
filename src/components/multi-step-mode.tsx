@@ -103,6 +103,8 @@ export function MultiStepMode({ serverUrl, onBack }: MultiStepModeProps) {
         model: state.model,
         systemPrompt: state.multiStepSystemPrompt,
         userMessages: state.multiStepMessages,
+        triggerWordPerson: state.triggerWordPerson,
+        triggerWordOther: state.triggerWordOther,
         images,
       }),
     });
