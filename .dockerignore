@@ -1,0 +1,31 @@
+# Dependencies - installed fresh from lockfile
+node_modules/
+
+# Build output - rebuilt in Docker
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Agent / docs
+.serena/
+coverage/
+AGENTS.md
+
+# Git
+.git/
+.gitignore
