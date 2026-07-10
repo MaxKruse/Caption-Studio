@@ -18,8 +18,7 @@ interface ServerCheckProps {
 }
 
 export function ServerCheck({ defaultServerUrl, onServerReady }: ServerCheckProps) {
-  const { state: session } = useSession();
-  const { setServerUrl } = useSession();
+  const { state: session, setServerUrl } = useSession();
   const [inputUrl, setInputUrl] = useState(session.serverUrl || defaultServerUrl);
   const { state: checkState, startPolling, stopPolling } = useServerCheck();
 

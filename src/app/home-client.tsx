@@ -14,6 +14,7 @@ import { ServerCheck } from "@/components/server-check";
 import { ModeSelector } from "@/components/mode-selector";
 import { SimpleMode } from "@/components/simple-mode";
 import { MultiStepMode } from "@/components/multi-step-mode";
+import { SessionProvider } from "@/hooks/use-session";
 import type { AppMode } from "@/hooks/use-session";
 
 interface HomeClientProps {
@@ -48,7 +49,8 @@ export function HomeClient({ defaultServerUrl }: HomeClientProps) {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#1a1a2e] text-slate-100">
+    <SessionProvider key={sessionKey}>
+      <div className="min-h-screen bg-[#1a1a2e] text-slate-100">
       {/* Top bar */}
       <header className="border-b border-slate-700/50 bg-slate-900/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
@@ -89,11 +91,11 @@ export function HomeClient({ defaultServerUrl }: HomeClientProps) {
         )}
 
         {appPhase === "working" && selectedMode === "simple" && (
-          <SimpleMode key={`simple-${sessionKey}`} serverUrl={serverUrl} onBack={handleBackToModes} />
+          <SimpleMode serverUrl={serverUrl} onBack={handleBackToModes} />
         )}
 
         {appPhase === "working" && selectedMode === "multi-step" && (
-          <MultiStepMode key={`multi-${sessionKey}`} serverUrl={serverUrl} onBack={handleBackToModes} />
+          <MultiStepMode serverUrl={serverUrl} onBack={handleBackToModes} />
         )}
       </main>
 
@@ -103,6 +105,7 @@ export function HomeClient({ defaultServerUrl }: HomeClientProps) {
           Caption Studio - llama.cpp vision model captioning
         </div>
       </footer>
-    </div>
+      </div>
+    </SessionProvider>
   );
 }

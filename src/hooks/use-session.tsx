@@ -5,7 +5,7 @@
 
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, createContext, useContext } from "react";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -105,10 +105,36 @@ const DEFAULT_STATE: SessionState = {
 };
 
 // ---------------------------------------------------------------------------
-// Hook
+// Context
 // ---------------------------------------------------------------------------
 
-export function useSession() {
+interface SessionContextValue {
+  state: SessionState;
+  setMode: (mode: AppMode | null) => void;
+  setServerUrl: (serverUrl: string) => void;
+  setModel: (model: string) => void;
+  addImage: (dataUrl: string, name: string) => void;
+  removeImage: (index: number) => void;
+  clearImages: () => void;
+  setSystemPrompt: (systemPrompt: string) => void;
+  setUserPrompt: (userPrompt: string) => void;
+  setTriggerWordPerson: (triggerWordPerson: string) => void;
+  setTriggerWordOther: (triggerWordOther: string) => void;
+  setMultiStepSystemPrompt: (prompt: string) => void;
+  setMultiStepMessages: (messages: string[]) => void;
+  updateMultiStepMessage: (index: number, content: string) => void;
+  addMultiStepMessage: (content?: string) => void;
+  removeMultiStepMessage: (index: number) => void;
+  reset: () => void;
+}
+
+const SessionContext = createContext<SessionContextValue | null>(null);
+
+/**
+ * Provider component that holds shared session state.
+ * Wrap the app (or each mode subtree) with this to share state across components.
+ */
+export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<SessionState>(() => ({ ...DEFAULT_STATE }));
 
   const setMode = useCallback((mode: AppMode | null) => {
@@ -196,7 +222,7 @@ export function useSession() {
     setState({ ...DEFAULT_STATE });
   }, []);
 
-  return {
+  const value: SessionContextValue = {
     state,
     setMode,
     setServerUrl,
@@ -215,4 +241,21 @@ export function useSession() {
     removeMultiStepMessage,
     reset,
   };
+
+  return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
+}
+
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
+
+/**
+ * Access the shared session state. Must be used within a SessionProvider.
+ */
+export function useSession(): SessionContextValue {
+  const context = useContext(SessionContext);
+  if (!context) {
+    throw new Error("useSession must be used within a SessionProvider");
+  }
+  return context;
 }

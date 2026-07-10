@@ -5,7 +5,7 @@
 
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useSession } from "@/hooks/use-session";
 import { ImageUploader } from "@/components/image-uploader";
 import { ModelSelector } from "@/components/model-selector";
@@ -71,6 +71,16 @@ export function SimpleMode({ serverUrl, onBack }: SimpleModeProps) {
   const [imageCount, setImageCount] = useState(0);
   const [results, setResults] = useState<CaptionResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Cleanup: abort any in-flight request on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   const handleImagesReady = useCallback((count: number) => {
     setImageCount(count);
@@ -92,121 +102,162 @@ export function SimpleMode({ serverUrl, onBack }: SimpleModeProps) {
       imageName: state.imageNames[i] || `image-${i}.jpg`,
     }));
 
-    const response = await fetch("/api/caption/simple", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        serverUrl,
-        model: state.model,
-        systemPrompt: state.systemPrompt,
-        userPrompt: state.userPrompt,
-        triggerWordPerson: state.triggerWordPerson,
-        triggerWordOther: state.triggerWordOther,
-        images,
-      }),
-    });
+    try {
+      const response = await fetch("/api/caption/simple", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: abortControllerRef.current?.signal,
+        body: JSON.stringify({
+          serverUrl,
+          model: state.model,
+          systemPrompt: state.systemPrompt,
+          userPrompt: state.userPrompt,
+          triggerWordPerson: state.triggerWordPerson,
+          triggerWordOther: state.triggerWordOther,
+          images,
+        }),
+      });
 
-    if (!response.ok) {
-      const error = await response.json();
-      const failed = initialResults.map((r) => ({
-        ...r,
-        status: "failed" as const,
-        error: error.error,
-      }));
-      setResults(failed);
-      setIsProcessing(false);
-      return;
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) return;
-
-    // Local mutable copy for download trigger (avoids stale closure)
-    const localResults = [...initialResults];
-
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n\n");
-      buffer = lines.pop() ?? "";
-
-      for (const block of lines) {
-        const eventMatch = block.match(/^event: (\w+)\s*\n\/data: ([\s\S]+)$/);
-        if (!eventMatch) continue;
-
-        const eventType = eventMatch[1];
-        let data: unknown;
-        try {
-          data = JSON.parse(eventMatch[2]);
-        } catch {
-          continue;
-        }
-
-        // Update local array
-        switch (eventType) {
-          case "image_start": {
-            const idx = (data as { index: number }).index;
-            if (localResults[idx]) {
-              localResults[idx] = { ...localResults[idx], status: "processing" };
-            }
-            break;
-          }
-          case "token": {
-            const tokenData = data as {
-              index: number;
-              type: string;
-              full: string;
-            };
-            const idx = tokenData.index;
-            if (localResults[idx]) {
-              localResults[idx] = {
-                ...localResults[idx],
-                [tokenData.type === "reasoning"
-                  ? "partialReasoning"
-                  : "partialCaption"]: tokenData.full,
-              };
-            }
-            break;
-          }
-          case "image_complete": {
-            const completeData = data as {
-              index: number;
-              status: string;
-              caption?: string;
-              reasoningContent?: string;
-              error?: string;
-            };
-            const idx = completeData.index;
-            if (localResults[idx]) {
-              localResults[idx] = {
-                ...localResults[idx],
-                status: completeData.status as CaptionResult["status"],
-                caption: completeData.caption,
-                reasoningContent: completeData.reasoningContent,
-                error: completeData.error,
-                partialCaption: undefined,
-                partialReasoning: undefined,
-              };
-            }
-            break;
-          }
-        }
-
-        // Sync to React state
-        setResults([...localResults]);
+      if (!response.ok) {
+        const error = await response.json();
+        const failed = initialResults.map((r) => ({
+          ...r,
+          status: "failed" as const,
+          error: error.error,
+        }));
+        setResults(failed);
+        setIsProcessing(false);
+        return;
       }
+
+      const reader = response.body?.getReader();
+      if (!reader) return;
+
+      // Local mutable copy for download trigger (avoids stale closure)
+      const localResults = [...initialResults];
+      let isDone = false;
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          isDone = true;
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() ?? "";
+
+        for (const block of lines) {
+          const eventMatch = block.match(/^event: (\w+)\s*\ndata: ([\s\S]+)$/);
+          if (!eventMatch) continue;
+
+          const eventType = eventMatch[1];
+          let data: unknown;
+          try {
+            data = JSON.parse(eventMatch[2]);
+          } catch {
+            continue;
+          }
+
+          // Update local array
+          switch (eventType) {
+            case "image_start": {
+              const idx = (data as { index: number }).index;
+              if (localResults[idx]) {
+                localResults[idx] = { ...localResults[idx], status: "processing" };
+              }
+              break;
+            }
+            case "token": {
+              const tokenData = data as {
+                index: number;
+                type: string;
+                full: string;
+              };
+              const idx = tokenData.index;
+              if (localResults[idx]) {
+                localResults[idx] = {
+                  ...localResults[idx],
+                  [tokenData.type === "reasoning"
+                    ? "partialReasoning"
+                    : "partialCaption"]: tokenData.full,
+                };
+              }
+              break;
+            }
+            case "image_complete": {
+              const completeData = data as {
+                index: number;
+                status: string;
+                caption?: string;
+                reasoningContent?: string;
+                error?: string;
+              };
+              const idx = completeData.index;
+              if (localResults[idx]) {
+                localResults[idx] = {
+                  ...localResults[idx],
+                  status: completeData.status as CaptionResult["status"],
+                  caption: completeData.caption,
+                  reasoningContent: completeData.reasoningContent,
+                  error: completeData.error,
+                  partialCaption: undefined,
+                  partialReasoning: undefined,
+                };
+              }
+              break;
+            }
+            case "done": {
+              break;
+            }
+          }
+
+          // Sync to React state
+          setResults([...localResults]);
+        }
+      }
+
+      // Clear abort controller ref when done
+      if (abortControllerRef.current && abortControllerRef.current.signal.aborted) {
+        // User aborted - mark remaining queued as failed
+        for (const result of localResults) {
+          if (result.status === "queued" || result.status === "processing") {
+            result.status = "failed";
+            result.error = "Stopped by user";
+          }
+        }
+        setResults([...localResults]);
+      } else if (isDone) {
+        // Normal completion - auto-download
+        void triggerDownload(localResults);
+      }
+
+      abortControllerRef.current = null;
+      setIsProcessing(false);
+      setPhase("results");
+    } catch (error) {
+      // Handle abort or network errors
+      if (error instanceof DOMException && error.name === "AbortError") {
+        // User clicked stop - already handled by signal.aborted check
+        const localResults = initialResults.map((r) => ({
+          ...r,
+          status: r.status === "queued" || r.status === "processing"
+            ? "failed" as const
+            : r.status,
+          error: r.status === "queued" || r.status === "processing"
+            ? "Stopped by user"
+            : r.error,
+        }));
+        setResults(localResults);
+      }
+      abortControllerRef.current = null;
+      setIsProcessing(false);
+      setPhase("results");
     }
-
-    setIsProcessing(false);
-    setPhase("results");
-
-    // Auto-download ZIP with image/caption pairs
-    void triggerDownload(localResults);
   }, [state, serverUrl]);
 
   const handleNewBatch = useCallback(() => {
@@ -275,7 +326,10 @@ export function SimpleMode({ serverUrl, onBack }: SimpleModeProps) {
                 Back
               </Button>
               <Button
-                onClick={handleStart}
+                onClick={async () => {
+                  abortControllerRef.current = new AbortController();
+                  await handleStart();
+                }}
                 disabled={!state.model || !state.userPrompt.trim() || isProcessing}
               >
                 Start Captioning
@@ -306,8 +360,9 @@ export function SimpleMode({ serverUrl, onBack }: SimpleModeProps) {
               variant="danger"
               size="sm"
               onClick={() => {
-                setIsProcessing(false);
-                setPhase("results");
+                if (abortControllerRef.current) {
+                  abortControllerRef.current.abort();
+                }
               }}
             >
               Stop
