@@ -2,11 +2,36 @@
  * Simple mode caption endpoint.
  * Processes images in parallel with configurable concurrency.
  * POST /api/caption/simple - starts processing and returns SSE stream
+ * DELETE /api/caption/simple?sessionId=<id> - aborts an active session
  */
 
 import { NextRequest } from "next/server";
 import { normalizeServerUrl, toDockerHostUrl } from "@/lib/url-utils";
 import { prepareForApi } from "@/lib/image-utils";
+
+// ---------------------------------------------------------------------------
+// Active session tracking for explicit abort
+// ---------------------------------------------------------------------------
+
+const activeSessions = new Map<string, AbortController>();
+
+/** Cleanup stale sessions (completed sessions that weren't removed). */
+setInterval(() => {
+  for (const [sessionId, ac] of activeSessions.entries()) {
+    if (ac.signal.aborted) {
+      activeSessions.delete(sessionId);
+    }
+  }
+}, 60_000); // every minute
+
+/** Generate a short random session ID. */
+function generateSessionId(): string {
+  return Math.random().toString(36).substring(2, 12);
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 /** Replace variable placeholders in prompt text. */
 function replaceVariables(
@@ -39,19 +64,36 @@ const API_TIMEOUT_MS = 5 * 60 * 1000;
 /** Default max concurrency for parallel image processing. */
 const MAX_CONCURRENCY = 8;
 
+/**
+ * Fetch with timeout + external abort signal support.
+ * If `externalSignal` fires, the fetch is aborted immediately.
+ */
 async function fetchWithTimeout(
   url: string,
   options: RequestInit,
-  timeoutMs: number
+  timeoutMs: number,
+  externalSignal?: AbortSignal
 ): Promise<Response> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  // Forward external abort to this fetch
+  if (externalSignal?.aborted) {
+    controller.abort();
+  } else {
+    externalSignal?.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+
   try {
     return await fetch(url, { ...options, signal: controller.signal });
   } finally {
     clearTimeout(timeoutId);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Image processing
+// ---------------------------------------------------------------------------
 
 /**
  * Process a single image and emit SSE events via sendEvent.
@@ -86,6 +128,8 @@ async function processImage(
       triggerWord
     );
 
+    if (abortSignal.aborted) return;
+
     const messages: Array<Record<string, unknown>> = [];
 
     if (systemPrompt.trim()) {
@@ -116,7 +160,8 @@ async function processImage(
         }),
         cache: "no-store",
       },
-      API_TIMEOUT_MS
+      API_TIMEOUT_MS,
+      abortSignal
     );
 
     if (!response.ok) {
@@ -147,6 +192,11 @@ async function processImage(
       sseBuffer = lines.pop() ?? "";
 
       for (const line of lines) {
+        if (abortSignal.aborted) {
+          reader.cancel();
+          return;
+        }
+
         const trimmed = line.trim();
         if (!trimmed.startsWith("data: ")) continue;
         const dataStr = trimmed.slice(6);
@@ -201,6 +251,9 @@ async function processImage(
   }
 }
 
+// ---------------------------------------------------------------------------
+// POST - Start processing and return SSE stream
+// ---------------------------------------------------------------------------
 export async function POST(request: NextRequest) {
   const body = await request.json();
   const {
@@ -253,8 +306,18 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  // Use the request's abort signal to detect client disconnects
-  const abortSignal = request.signal;
+  // Create a shared AbortController for this session
+  const sessionId = generateSessionId();
+  const sessionAbort = new AbortController();
+  activeSessions.set(sessionId, sessionAbort);
+
+  // Link request.signal (client disconnect) to our session abort
+  request.signal.addEventListener("abort", () => {
+    sessionAbort.abort();
+  });
+
+  // Send sessionId as first event so frontend can use it to abort
+  sendEvent("session", { sessionId });
 
   // Process images in parallel with concurrency limit
   (async () => {
@@ -263,7 +326,7 @@ export async function POST(request: NextRequest) {
       const queue = images.map((img, i) => ({ ...img, index: i }));
 
       async function processNext(): Promise<void> {
-        while (queue.length > 0 && !abortSignal.aborted) {
+        while (queue.length > 0 && !sessionAbort.signal.aborted) {
           const item = queue.shift()!;
 
           await processImage(
@@ -277,7 +340,7 @@ export async function POST(request: NextRequest) {
             triggerWord,
             images.length,
             sendEvent,
-            abortSignal
+            sessionAbort.signal
           );
         }
       }
@@ -290,15 +353,17 @@ export async function POST(request: NextRequest) {
 
       await Promise.all(workers);
 
-      if (!abortSignal.aborted) {
+      if (!sessionAbort.signal.aborted) {
         sendEvent("done", { allComplete: true });
       }
       closeStream();
     } catch (error) {
-      if (!abortSignal.aborted) {
+      if (!sessionAbort.signal.aborted) {
         sendEvent("error", { error: String(error) });
       }
       closeStream();
+    } finally {
+      activeSessions.delete(sessionId);
     }
   })();
 
@@ -309,4 +374,25 @@ export async function POST(request: NextRequest) {
       Connection: "keep-alive",
     },
   });
+}
+
+// ---------------------------------------------------------------------------
+// DELETE - Abort an active session
+// ---------------------------------------------------------------------------
+export async function DELETE(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const sessionId = searchParams.get("sessionId");
+
+  if (!sessionId) {
+    return Response.json({ error: "Missing sessionId" }, { status: 400 });
+  }
+
+  const sessionAbort = activeSessions.get(sessionId);
+  if (!sessionAbort) {
+    return Response.json({ error: "Session not found" }, { status: 404 });
+  }
+
+  sessionAbort.abort();
+  activeSessions.delete(sessionId);
+  return Response.json({ ok: true });
 }

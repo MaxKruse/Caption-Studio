@@ -71,6 +71,7 @@ export function SimpleMode({ serverUrl, onBack }: SimpleModeProps) {
   const [imageCount, setImageCount] = useState(0);
   const [results, setResults] = useState<CaptionResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const sessionIdRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // Cleanup: abort any in-flight request on unmount
@@ -78,6 +79,10 @@ export function SimpleMode({ serverUrl, onBack }: SimpleModeProps) {
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
+      }
+      // Also tell the backend to stop processing
+      if (sessionIdRef.current) {
+        fetch(`/api/caption/simple?sessionId=${sessionIdRef.current}`, { method: "DELETE" }).catch(() => {});
       }
     };
   }, []);
@@ -160,6 +165,13 @@ export function SimpleMode({ serverUrl, onBack }: SimpleModeProps) {
           try {
             data = JSON.parse(eventMatch[2]);
           } catch {
+            continue;
+          }
+
+          // Capture sessionId from backend for explicit abort
+          if (eventType === "session") {
+            const sid = (data as { sessionId: string }).sessionId;
+            if (sid) sessionIdRef.current = sid;
             continue;
           }
 
@@ -360,8 +372,14 @@ export function SimpleMode({ serverUrl, onBack }: SimpleModeProps) {
               variant="danger"
               size="sm"
               onClick={() => {
+                // Abort the frontend fetch
                 if (abortControllerRef.current) {
                   abortControllerRef.current.abort();
+                }
+                // Tell the backend to stop processing
+                if (sessionIdRef.current) {
+                  fetch(`/api/caption/simple?sessionId=${sessionIdRef.current}`, { method: "DELETE" }).catch(() => {});
+                  sessionIdRef.current = null;
                 }
               }}
             >

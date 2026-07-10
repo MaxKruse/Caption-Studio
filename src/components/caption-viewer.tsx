@@ -124,8 +124,8 @@ export function CaptionViewer({ results }: CaptionViewerProps) {
             </div>
           )}
 
-          {/* Reasoning toggle */}
-          {(displayReasoning || (current.reasoningContent && !showReasoning)) && (
+          {/* Reasoning toggle - show when there's reasoning content */}
+          {displayReasoning && (
             <div>
               <button
                 onClick={() => setShowReasoning(!showReasoning)}

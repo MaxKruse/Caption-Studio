@@ -73,6 +73,7 @@ export function MultiStepMode({ serverUrl, onBack }: MultiStepModeProps) {
   const [results, setResults] = useState<CaptionResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentStep, setCurrentStep] = useState<{ image: number; step: number } | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // Cleanup: abort any in-flight request on unmount
@@ -80,6 +81,10 @@ export function MultiStepMode({ serverUrl, onBack }: MultiStepModeProps) {
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
+      }
+      // Also tell the backend to stop processing
+      if (sessionIdRef.current) {
+        fetch(`/api/caption/multi-step?sessionId=${sessionIdRef.current}`, { method: "DELETE" }).catch(() => {});
       }
     };
   }, []);
@@ -163,6 +168,13 @@ export function MultiStepMode({ serverUrl, onBack }: MultiStepModeProps) {
           try {
             data = JSON.parse(eventMatch[2]);
           } catch {
+            continue;
+          }
+
+          // Capture sessionId from backend for explicit abort
+          if (eventType === "session") {
+            const sid = (data as { sessionId: string }).sessionId;
+            if (sid) sessionIdRef.current = sid;
             continue;
           }
 
@@ -382,8 +394,14 @@ export function MultiStepMode({ serverUrl, onBack }: MultiStepModeProps) {
               variant="danger"
               size="sm"
               onClick={() => {
+                // Abort the frontend fetch
                 if (abortControllerRef.current) {
                   abortControllerRef.current.abort();
+                }
+                // Tell the backend to stop processing
+                if (sessionIdRef.current) {
+                  fetch(`/api/caption/multi-step?sessionId=${sessionIdRef.current}`, { method: "DELETE" }).catch(() => {});
+                  sessionIdRef.current = null;
                 }
               }}
             >
