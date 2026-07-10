@@ -7,7 +7,7 @@
  */
 
 import { NextRequest } from "next/server";
-import { normalizeServerUrl } from "@/lib/url-utils";
+import { normalizeServerUrl, toDockerHostUrl } from "@/lib/url-utils";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -20,7 +20,8 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const normalizedUrl = normalizeServerUrl(serverUrl);
+  const dockerUrl = toDockerHostUrl(serverUrl);
+  const normalizedUrl = normalizeServerUrl(dockerUrl);
 
   try {
     const response = await fetch(`${normalizedUrl}/v1/models`, {

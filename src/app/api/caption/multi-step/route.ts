@@ -5,7 +5,7 @@
  */
 
 import { NextRequest } from "next/server";
-import { normalizeServerUrl } from "@/lib/url-utils";
+import { normalizeServerUrl, toDockerHostUrl } from "@/lib/url-utils";
 import { prepareForApi } from "@/lib/image-utils";
 
 interface MultiStepCaptionRequest {
@@ -153,7 +153,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const normalizedUrl = normalizeServerUrl(serverUrl);
+  const normalizedUrl = normalizeServerUrl(toDockerHostUrl(serverUrl));
   const encoder = new TextEncoder();
   let controller: ReadableStreamDefaultController<Uint8Array> | undefined = undefined;
 

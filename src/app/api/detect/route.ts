@@ -6,7 +6,8 @@
 
 import { NextRequest } from "next/server";
 import { prepareForDetection } from "@/lib/image-utils";
-import { normalizeServerUrl } from "@/lib/url-utils";
+import { getModelParallel } from "@/lib/model-utils";
+import { normalizeServerUrl, toDockerHostUrl } from "@/lib/url-utils";
 import { parseDetectionResponse } from "@/lib/detect-parsing";
 import {
   DETECTION_CONCURRENCY,
@@ -67,7 +68,16 @@ export async function POST(request: NextRequest) {
   }
 
   const contentMode = config.contentMode ?? "nsfw";
-  const parallelRequests = config.parallelRequests ?? DETECTION_CONCURRENCY;
+
+  // Determine concurrency: use client value, auto-detect from server, or fall back to default
+  let parallelRequests: number;
+  if (config.parallelRequests && config.parallelRequests > 0) {
+    parallelRequests = config.parallelRequests;
+  } else {
+    const serverParallel = await getModelParallel(config.serverUrl, config.model);
+    parallelRequests = serverParallel ?? DETECTION_CONCURRENCY;
+  }
+  parallelRequests = Math.min(Math.max(parallelRequests, 1), 8);
 
   // Create detection job in store
   const imageNames = imageFiles.map((f) => f.name);
@@ -165,7 +175,7 @@ async function processDetectionJob(
   contentMode: "sfw" | "nsfw",
   parallelRequests: number
 ): Promise<void> {
-  const baseUrl = normalizeServerUrl(serverUrl);
+  const baseUrl = normalizeServerUrl(toDockerHostUrl(serverUrl));
   const { systemPrompt, userPrompt } = getDetectionPrompts(contentMode, model);
   const primaryQueue: File[] = [...imageFiles];
   const retryCount = new Map<string, number>();

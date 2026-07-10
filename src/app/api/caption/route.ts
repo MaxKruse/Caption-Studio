@@ -18,7 +18,8 @@ import {
   type ImageEntry,
 } from "@/lib/store";
 import { prepareForApi } from "@/lib/image-utils";
-import { normalizeServerUrl } from "@/lib/url-utils";
+import { getModelParallel } from "@/lib/model-utils";
+import { normalizeServerUrl, toDockerHostUrl } from "@/lib/url-utils";
 import type { CropRect } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -222,6 +223,16 @@ export async function POST(request: NextRequest) {
       )
     : undefined;
 
+  // Determine concurrency: use client value, auto-detect from server, or fall back to 4
+  let parallelRequests: number;
+  if (config.parallelRequests && Number(config.parallelRequests) > 0) {
+    parallelRequests = Number(config.parallelRequests);
+  } else {
+    const serverParallel = await getModelParallel(config.serverUrl, config.model);
+    parallelRequests = serverParallel ?? 4;
+  }
+  parallelRequests = Math.min(Math.max(parallelRequests, 1), 8);
+
   const jobId = await createJob(
     decodedImages,
     config.serverUrl,
@@ -229,7 +240,7 @@ export async function POST(request: NextRequest) {
     config.systemPrompt || "",
     config.userPrompt || "",
     config.triggerWord || "",
-    Math.min(Math.max(Number(config.parallelRequests) || 4, 1), 8),
+    parallelRequests,
     cropData,
     config.presetId || "",
     config.presetZipName || "",
@@ -334,7 +345,7 @@ async function processJob(jobId: string): Promise<void> {
   const job = getJob(jobId);
   if (!job) return;
 
-  const normalizedUrl = normalizeServerUrl(job.serverUrl);
+  const normalizedUrl = normalizeServerUrl(toDockerHostUrl(job.serverUrl));
   const entries = Array.from(job.images.entries()); // [filename, entry][]
 
   // Process with concurrency limit from job settings
