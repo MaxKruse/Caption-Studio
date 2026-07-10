@@ -26,32 +26,19 @@ interface CaptionResult {
   error?: string;
 }
 
-/** Trigger a ZIP download of image/caption pairs via /api/download. */
-async function triggerDownload(results: CaptionResult[]): Promise<void> {
-  const items = results
-    .filter((r) => r.caption && r.caption.trim())
-    .map((r) => ({
-      name: r.name,
-      imageDataUrl: r.imageDataUrl,
-      caption: r.caption,
-    }));
-
-  if (items.length === 0) return;
+/** Trigger a ZIP download from the server temp files. */
+async function triggerDownload(sessionId: string | null): Promise<void> {
+  if (!sessionId) return;
 
   try {
-    const response = await fetch("/api/download", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items }),
-    });
-
+    const response = await fetch(`/api/download?sessionId=${sessionId}`);
     if (!response.ok) return;
 
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "captions.zip";
+    a.download = `${sessionId}.zip`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -73,6 +60,7 @@ export function MultiStepMode({ serverUrl, onBack }: MultiStepModeProps) {
   const [results, setResults] = useState<CaptionResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentStep, setCurrentStep] = useState<{ image: number; step: number } | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -82,7 +70,6 @@ export function MultiStepMode({ serverUrl, onBack }: MultiStepModeProps) {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
-      // Also tell the backend to stop processing
       if (sessionIdRef.current) {
         fetch(`/api/caption/multi-step?sessionId=${sessionIdRef.current}`, { method: "DELETE" }).catch(() => {});
       }
@@ -94,7 +81,6 @@ export function MultiStepMode({ serverUrl, onBack }: MultiStepModeProps) {
   }, []);
 
   const handleStart = useCallback(async () => {
-    // Initialize results array
     const initialResults: CaptionResult[] = state.images.map((dataUrl, i) => ({
       name: state.imageNames[i] || `image-${i}.jpg`,
       imageDataUrl: dataUrl,
@@ -104,26 +90,31 @@ export function MultiStepMode({ serverUrl, onBack }: MultiStepModeProps) {
     setPhase("processing");
     setIsProcessing(true);
     setCurrentStep(null);
+    setSessionId(null);
+    sessionIdRef.current = null;
 
-    const images = state.images.map((dataUrl, i) => ({
-      imageDataUrl: dataUrl,
-      imageName: state.imageNames[i] || `image-${i}.jpg`,
-    }));
+    // Build FormData with images as files
+    const formData = new FormData();
+    const config = {
+      serverUrl,
+      model: state.model,
+      systemPrompt: state.multiStepSystemPrompt,
+      userMessages: state.multiStepMessages,
+      triggerWordPerson: state.triggerWordPerson,
+      triggerWordOther: state.triggerWordOther,
+    };
+    formData.append("config", JSON.stringify(config));
+    formData.append("imageNames", JSON.stringify(state.imageNames));
+
+    for (let i = 0; i < state.imageFiles.length; i++) {
+      formData.append("images", state.imageFiles[i]);
+    }
 
     try {
       const response = await fetch("/api/caption/multi-step", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        body: formData,
         signal: abortControllerRef.current?.signal,
-        body: JSON.stringify({
-          serverUrl,
-          model: state.model,
-          systemPrompt: state.multiStepSystemPrompt,
-          userMessages: state.multiStepMessages,
-          triggerWordPerson: state.triggerWordPerson,
-          triggerWordOther: state.triggerWordOther,
-          images,
-        }),
       });
 
       if (!response.ok) {
@@ -141,19 +132,14 @@ export function MultiStepMode({ serverUrl, onBack }: MultiStepModeProps) {
       const reader = response.body?.getReader();
       if (!reader) return;
 
-      // Local mutable copy for download trigger (avoids stale closure)
       const localResults = [...initialResults];
-      let isDone = false;
 
       const decoder = new TextDecoder();
       let buffer = "";
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) {
-          isDone = true;
-          break;
-        }
+        if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n\n");
@@ -171,14 +157,15 @@ export function MultiStepMode({ serverUrl, onBack }: MultiStepModeProps) {
             continue;
           }
 
-          // Capture sessionId from backend for explicit abort
           if (eventType === "session") {
             const sid = (data as { sessionId: string }).sessionId;
-            if (sid) sessionIdRef.current = sid;
+            if (sid) {
+              sessionIdRef.current = sid;
+              setSessionId(sid);
+            }
             continue;
           }
 
-          // Update local array
           switch (eventType) {
             case "image_start": {
               const idx = (data as { index: number }).index;
@@ -237,12 +224,10 @@ export function MultiStepMode({ serverUrl, onBack }: MultiStepModeProps) {
             }
           }
 
-          // Sync to React state
           setResults([...localResults]);
         }
       }
 
-      // Clear abort controller ref when done
       if (abortControllerRef.current && abortControllerRef.current.signal.aborted) {
         for (const result of localResults) {
           if (result.status === "queued" || result.status === "processing") {
@@ -251,8 +236,6 @@ export function MultiStepMode({ serverUrl, onBack }: MultiStepModeProps) {
           }
         }
         setResults([...localResults]);
-      } else if (isDone) {
-        void triggerDownload(localResults);
       }
 
       abortControllerRef.current = null;
@@ -284,6 +267,8 @@ export function MultiStepMode({ serverUrl, onBack }: MultiStepModeProps) {
     setResults([]);
     setIsProcessing(false);
     setCurrentStep(null);
+    setSessionId(null);
+    sessionIdRef.current = null;
   }, []);
 
   return (
@@ -368,7 +353,6 @@ export function MultiStepMode({ serverUrl, onBack }: MultiStepModeProps) {
       {/* Processing + Results phases */}
       {(phase === "processing" || phase === "results") && (
         <div className="space-y-4">
-          {/* Current step indicator */}
           {currentStep && isProcessing && (
             <div className="text-center text-sm text-slate-400">
               Processing image {currentStep.image + 1} - Step {currentStep.step + 1} of{" "}
@@ -383,6 +367,12 @@ export function MultiStepMode({ serverUrl, onBack }: MultiStepModeProps) {
               <Button variant="secondary" onClick={handleNewBatch}>
                 New Batch
               </Button>
+              <Button
+                variant="primary"
+                onClick={() => void triggerDownload(sessionId)}
+              >
+                Download ZIP
+              </Button>
               <Button variant="ghost" onClick={() => setPhase("configure")}>
                 Edit Prompts
               </Button>
@@ -394,11 +384,9 @@ export function MultiStepMode({ serverUrl, onBack }: MultiStepModeProps) {
               variant="danger"
               size="sm"
               onClick={() => {
-                // Abort the frontend fetch
                 if (abortControllerRef.current) {
                   abortControllerRef.current.abort();
                 }
-                // Tell the backend to stop processing
                 if (sessionIdRef.current) {
                   fetch(`/api/caption/multi-step?sessionId=${sessionIdRef.current}`, { method: "DELETE" }).catch(() => {});
                   sessionIdRef.current = null;

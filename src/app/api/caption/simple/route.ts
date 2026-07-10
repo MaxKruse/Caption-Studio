@@ -1,7 +1,8 @@
 /**
  * Simple mode caption endpoint.
  * Processes images in parallel with configurable concurrency.
- * POST /api/caption/simple - starts processing and returns SSE stream
+ * Images are stored as temp files; captions written as .txt alongside.
+ * POST /api/caption/simple - accepts FormData, starts processing, returns SSE stream
  * DELETE /api/caption/simple?sessionId=<id> - aborts an active session
  */
 
@@ -9,6 +10,12 @@ import { NextRequest } from "next/server";
 import { normalizeServerUrl, toDockerHostUrl } from "@/lib/url-utils";
 import { prepareForApi } from "@/lib/image-utils";
 import { buildUserPrompt } from "@/lib/prompt-utils";
+import {
+  createSession,
+  saveImage,
+  writeCaption,
+  touchSession,
+} from "@/lib/temp-files";
 
 // ---------------------------------------------------------------------------
 // Active session tracking for explicit abort
@@ -24,11 +31,6 @@ setInterval(() => {
     }
   }
 }, 60_000); // every minute
-
-/** Generate a short random session ID. */
-function generateSessionId(): string {
-  return Math.random().toString(36).substring(2, 12);
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -47,14 +49,9 @@ function replaceVariables(
     .replace(/{total}/g, String(total));
 }
 
-/** Extract image buffer and mime type from a data URL. */
-function parseDataUrl(dataUrl: string): { buffer: Buffer; mimeType: string } {
-  const match = dataUrl.match(/^data:(image\/\w+);base64,(.+)$/);
-  if (!match) throw new Error("Invalid data URL");
-  return {
-    buffer: Buffer.from(match[2], "base64"),
-    mimeType: match[1],
-  };
+/** Extract image buffer from a File object. */
+async function readFileBuffer(file: File): Promise<Buffer> {
+  return Buffer.from(await file.arrayBuffer());
 }
 
 /** Max time allowed per API call. */
@@ -65,7 +62,6 @@ const MAX_CONCURRENCY = 8;
 
 /**
  * Fetch with timeout + external abort signal support.
- * If `externalSignal` fires, the fetch is aborted immediately.
  */
 async function fetchWithTimeout(
   url: string,
@@ -76,7 +72,6 @@ async function fetchWithTimeout(
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  // Forward external abort to this fetch
   if (externalSignal?.aborted) {
     controller.abort();
   } else {
@@ -94,13 +89,20 @@ async function fetchWithTimeout(
 // Image processing
 // ---------------------------------------------------------------------------
 
+interface ImageTask {
+  index: number;
+  serverName: string;    // deduplicated filename on disk
+  originalName: string;  // original uploaded filename
+  imageBuffer: Buffer;   // raw image data (for API call)
+}
+
 /**
  * Process a single image and emit SSE events via sendEvent.
+ * Writes caption to .txt file on completion.
  */
 async function processImage(
-  index: number,
-  imageDataUrl: string,
-  imageName: string,
+  task: ImageTask,
+  sessionId: string,
   normalizedUrl: string,
   model: string,
   systemPrompt: string,
@@ -113,11 +115,13 @@ async function processImage(
 ): Promise<void> {
   if (abortSignal.aborted) return;
 
-  sendEvent("image_start", { index, name: imageName });
+  sendEvent("image_start", { index: task.index, name: task.originalName });
 
   try {
-    const { buffer: rawBuffer } = parseDataUrl(imageDataUrl);
-    const { buffer: apiBuffer, mimeType } = await prepareForApi(imageName, rawBuffer);
+    const { buffer: apiBuffer, mimeType } = await prepareForApi(
+      task.originalName,
+      task.imageBuffer
+    );
     const base64 = apiBuffer.toString("base64");
 
     const promptWithContext = buildUserPrompt(
@@ -127,8 +131,8 @@ async function processImage(
     );
     const resolvedPrompt = replaceVariables(
       promptWithContext,
-      imageName,
-      index,
+      task.originalName,
+      task.index,
       total
     );
 
@@ -213,7 +217,7 @@ async function processImage(
             reasoningContent += delta.reasoning_content;
             sendEvent("token", {
               type: "reasoning",
-              index,
+              index: task.index,
               content: delta.reasoning_content,
               full: reasoningContent,
             });
@@ -222,7 +226,7 @@ async function processImage(
             caption += delta.content;
             sendEvent("token", {
               type: "caption",
-              index,
+              index: task.index,
               content: delta.content,
               full: caption,
             });
@@ -234,11 +238,18 @@ async function processImage(
     }
 
     if (!abortSignal.aborted) {
+      const trimmedCaption = caption.trim();
+
+      // Write caption file to disk
+      if (trimmedCaption) {
+        writeCaption(sessionId, task.serverName, trimmedCaption);
+      }
+
       sendEvent("image_complete", {
-        index,
-        name: imageName,
+        index: task.index,
+        name: task.originalName,
         status: "completed",
-        caption: caption.trim(),
+        caption: trimmedCaption,
         reasoningContent: reasoningContent.trim(),
       });
     }
@@ -246,8 +257,8 @@ async function processImage(
     const message = error instanceof Error ? error.message : String(error);
     if (!abortSignal.aborted) {
       sendEvent("image_complete", {
-        index,
-        name: imageName,
+        index: task.index,
+        name: task.originalName,
         status: "failed",
         error: message,
       });
@@ -257,38 +268,135 @@ async function processImage(
 
 // ---------------------------------------------------------------------------
 // POST - Start processing and return SSE stream
+// Accepts FormData (images as files + config as JSON string) or JSON (legacy)
 // ---------------------------------------------------------------------------
 export async function POST(request: NextRequest) {
-  const body = await request.json();
-  const {
-    serverUrl,
-    model,
-    systemPrompt,
-    userPrompt,
-    triggerWordPerson,
-    triggerWordOther,
-    images,
-  } = body as {
+  const contentType = request.headers.get("content-type") || "";
+
+  let config: {
     serverUrl: string;
     model: string;
     systemPrompt: string;
     userPrompt: string;
-    triggerWordPerson?: string;
-    triggerWordOther?: string;
-    images: Array<{ imageDataUrl: string; imageName: string }>;
+    triggerWordPerson: string;
+    triggerWordOther: string;
   };
+  let imageFiles: File[];
+  let imageNames: string[];
 
-  const person = triggerWordPerson?.trim() ?? "";
-  const other = triggerWordOther?.trim() ?? "";
+  if (contentType.includes("multipart/form-data")) {
+    const formData = await request.formData();
+    const configRaw = formData.get("config");
+    if (!configRaw || typeof configRaw !== "string") {
+      return Response.json({ error: "Missing config" }, { status: 400 });
+    }
 
-  if (!serverUrl || !model || !images || images.length === 0) {
+    try {
+      config = JSON.parse(configRaw);
+    } catch {
+      return Response.json({ error: "Invalid config JSON" }, { status: 400 });
+    }
+
+    imageFiles = formData.getAll("images") as File[];
+    if (imageFiles.length === 0) {
+      return Response.json({ error: "No images provided" }, { status: 400 });
+    }
+
+    // Use names from config if provided, otherwise fall back to file names
+    const configNames = formData.get("imageNames");
+    imageNames = configNames && typeof configNames === "string"
+      ? JSON.parse(configNames) as string[]
+      : imageFiles.map((f) => f.name);
+  } else {
+    // Legacy JSON mode (base64 data URLs)
+    const body = await request.json();
+    const {
+      serverUrl,
+      model,
+      systemPrompt,
+      userPrompt,
+      triggerWordPerson,
+      triggerWordOther,
+      images,
+    } = body as {
+      serverUrl: string;
+      model: string;
+      systemPrompt: string;
+      userPrompt: string;
+      triggerWordPerson?: string;
+      triggerWordOther?: string;
+      images: Array<{ imageDataUrl: string; imageName: string }>;
+    };
+
+    config = {
+      serverUrl,
+      model,
+      systemPrompt: systemPrompt ?? "",
+      userPrompt: userPrompt ?? "",
+      triggerWordPerson: triggerWordPerson ?? "",
+      triggerWordOther: triggerWordOther ?? "",
+    };
+
+    if (!images || images.length === 0) {
+      return Response.json({ error: "No images provided" }, { status: 400 });
+    }
+
+    // For JSON mode, create a synthetic session and decode base64
+    const jsonSession = createSession();
+    const jsonSessionId = jsonSession.id;
+    imageNames = images.map((img) => img.imageName);
+
+    // We'll handle this differently below
+    throw new Error(
+      JSON.stringify({
+        mode: "json",
+        sessionId: jsonSessionId,
+        images: images.map((img) => ({
+          dataUrl: img.imageDataUrl,
+          name: img.imageName,
+        })),
+      })
+    );
+  }
+
+  const person = config.triggerWordPerson?.trim() ?? "";
+  const other = config.triggerWordOther?.trim() ?? "";
+
+  if (!config.serverUrl || !config.model) {
     return Response.json(
-      { error: "serverUrl, model, and images are required" },
+      { error: "serverUrl and model are required" },
       { status: 400 }
     );
   }
 
-  const normalizedUrl = normalizeServerUrl(toDockerHostUrl(serverUrl));
+  // Create session and save images to temp files
+  const session = createSession();
+  const sessionId = session.id;
+  const usedBases = new Set<string>();
+  const tasks: ImageTask[] = [];
+
+  for (let i = 0; i < imageFiles.length; i++) {
+    const buffer = await readFileBuffer(imageFiles[i]);
+    const serverName = saveImage(sessionId, imageNames[i] || `image-${i}.jpg`, buffer, usedBases);
+
+    if (serverName) {
+      tasks.push({
+        index: i,
+        serverName,
+        originalName: imageNames[i] || `image-${i}.jpg`,
+        imageBuffer: buffer,
+      });
+    }
+  }
+
+  if (tasks.length === 0) {
+    return Response.json(
+      { error: "No valid images to process" },
+      { status: 400 }
+    );
+  }
+
+  const normalizedUrl = normalizeServerUrl(toDockerHostUrl(config.serverUrl));
   const encoder = new TextEncoder();
   let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
 
@@ -309,52 +417,44 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  // Create a shared AbortController for this session
-  const sessionId = generateSessionId();
   const sessionAbort = new AbortController();
   activeSessions.set(sessionId, sessionAbort);
 
-  // Link request.signal (client disconnect) to our session abort
   request.signal.addEventListener("abort", () => {
     sessionAbort.abort();
   });
 
-  // Send sessionId as first event so frontend can use it to abort
+  // Send sessionId as first event
   sendEvent("session", { sessionId });
 
-  // Process images in parallel with concurrency limit
+  // Process images in parallel
   (async () => {
     try {
-      const concurrency = Math.min(MAX_CONCURRENCY, images.length);
-      const queue = images.map((img, i) => ({ ...img, index: i }));
+      const concurrency = Math.min(MAX_CONCURRENCY, tasks.length);
+      const queue = [...tasks];
 
       async function processNext(): Promise<void> {
         while (queue.length > 0 && !sessionAbort.signal.aborted) {
-          const item = queue.shift()!;
+          const task = queue.shift()!;
+          touchSession(sessionId);
 
           await processImage(
-            item.index,
-            item.imageDataUrl,
-            item.imageName,
+            task,
+            sessionId,
             normalizedUrl,
-            model,
-            systemPrompt,
-            userPrompt,
+            config.model,
+            config.systemPrompt,
+            config.userPrompt,
             person,
             other,
-            images.length,
+            tasks.length,
             sendEvent,
             sessionAbort.signal
           );
         }
       }
 
-      // Launch worker pool
-      const workers = Array.from(
-        { length: concurrency },
-        () => processNext()
-      );
-
+      const workers = Array.from({ length: concurrency }, () => processNext());
       await Promise.all(workers);
 
       if (!sessionAbort.signal.aborted) {

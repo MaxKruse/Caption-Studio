@@ -17,8 +17,9 @@ export interface SessionState {
   mode: AppMode | null;
   serverUrl: string;
   model: string;
-  images: string[]; // base64 data URLs
+  images: string[]; // base64 data URLs (for preview)
   imageNames: string[];
+  imageFiles: File[]; // raw File objects (for FormData upload)
   // Trigger words (optional, prepended to user prompt if filled)
   triggerWordPerson: string;
   triggerWordOther: string;
@@ -40,6 +41,7 @@ const DEFAULT_STATE: SessionState = {
   model: "",
   images: [],
   imageNames: [],
+  imageFiles: [],
   triggerWordPerson: "",
   triggerWordOther: "",
   systemPrompt: [
@@ -113,7 +115,7 @@ interface SessionContextValue {
   setMode: (mode: AppMode | null) => void;
   setServerUrl: (serverUrl: string) => void;
   setModel: (model: string) => void;
-  addImage: (dataUrl: string, name: string) => void;
+  addImage: (dataUrl: string, name: string, file: File) => void;
   removeImage: (index: number) => void;
   clearImages: () => void;
   setSystemPrompt: (systemPrompt: string) => void;
@@ -149,11 +151,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => ({ ...prev, model }));
   }, []);
 
-  const addImage = useCallback((dataUrl: string, name: string) => {
+  const addImage = useCallback((dataUrl: string, name: string, file: File) => {
     setState((prev) => ({
       ...prev,
       images: [...prev.images, dataUrl],
       imageNames: [...prev.imageNames, name],
+      imageFiles: [...prev.imageFiles, file],
     }));
   }, []);
 
@@ -161,14 +164,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => {
       const newImages = [...prev.images];
       const newNames = [...prev.imageNames];
+      const newFiles = [...prev.imageFiles];
       newImages.splice(index, 1);
       newNames.splice(index, 1);
-      return { ...prev, images: newImages, imageNames: newNames };
+      newFiles.splice(index, 1);
+      return { ...prev, images: newImages, imageNames: newNames, imageFiles: newFiles };
     });
   }, []);
 
   const clearImages = useCallback(() => {
-    setState((prev) => ({ ...prev, images: [], imageNames: [] }));
+    setState((prev) => ({ ...prev, images: [], imageNames: [], imageFiles: [] }));
   }, []);
 
   const setTriggerWordPerson = useCallback((triggerWordPerson: string) => {

@@ -25,32 +25,19 @@ interface CaptionResult {
   error?: string;
 }
 
-/** Trigger a ZIP download of image/caption pairs via /api/download. */
-async function triggerDownload(results: CaptionResult[]): Promise<void> {
-  const items = results
-    .filter((r) => r.caption && r.caption.trim())
-    .map((r) => ({
-      name: r.name,
-      imageDataUrl: r.imageDataUrl,
-      caption: r.caption,
-    }));
-
-  if (items.length === 0) return;
+/** Trigger a ZIP download from the server temp files. */
+async function triggerDownload(sessionId: string | null): Promise<void> {
+  if (!sessionId) return;
 
   try {
-    const response = await fetch("/api/download", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items }),
-    });
-
+    const response = await fetch(`/api/download?sessionId=${sessionId}`);
     if (!response.ok) return;
 
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "captions.zip";
+    a.download = `${sessionId}.zip`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -71,6 +58,7 @@ export function SimpleMode({ serverUrl, onBack }: SimpleModeProps) {
   const [imageCount, setImageCount] = useState(0);
   const [results, setResults] = useState<CaptionResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -80,7 +68,6 @@ export function SimpleMode({ serverUrl, onBack }: SimpleModeProps) {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
-      // Also tell the backend to stop processing
       if (sessionIdRef.current) {
         fetch(`/api/caption/simple?sessionId=${sessionIdRef.current}`, { method: "DELETE" }).catch(() => {});
       }
@@ -101,26 +88,31 @@ export function SimpleMode({ serverUrl, onBack }: SimpleModeProps) {
     setResults(initialResults);
     setPhase("processing");
     setIsProcessing(true);
+    setSessionId(null);
+    sessionIdRef.current = null;
 
-    const images = state.images.map((dataUrl, i) => ({
-      imageDataUrl: dataUrl,
-      imageName: state.imageNames[i] || `image-${i}.jpg`,
-    }));
+    // Build FormData with images as files
+    const formData = new FormData();
+    const config = {
+      serverUrl,
+      model: state.model,
+      systemPrompt: state.systemPrompt,
+      userPrompt: state.userPrompt,
+      triggerWordPerson: state.triggerWordPerson,
+      triggerWordOther: state.triggerWordOther,
+    };
+    formData.append("config", JSON.stringify(config));
+    formData.append("imageNames", JSON.stringify(state.imageNames));
+
+    for (let i = 0; i < state.imageFiles.length; i++) {
+      formData.append("images", state.imageFiles[i]);
+    }
 
     try {
       const response = await fetch("/api/caption/simple", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        body: formData,
         signal: abortControllerRef.current?.signal,
-        body: JSON.stringify({
-          serverUrl,
-          model: state.model,
-          systemPrompt: state.systemPrompt,
-          userPrompt: state.userPrompt,
-          triggerWordPerson: state.triggerWordPerson,
-          triggerWordOther: state.triggerWordOther,
-          images,
-        }),
       });
 
       if (!response.ok) {
@@ -138,19 +130,14 @@ export function SimpleMode({ serverUrl, onBack }: SimpleModeProps) {
       const reader = response.body?.getReader();
       if (!reader) return;
 
-      // Local mutable copy for download trigger (avoids stale closure)
       const localResults = [...initialResults];
-      let isDone = false;
 
       const decoder = new TextDecoder();
       let buffer = "";
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) {
-          isDone = true;
-          break;
-        }
+        if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n\n");
@@ -168,14 +155,15 @@ export function SimpleMode({ serverUrl, onBack }: SimpleModeProps) {
             continue;
           }
 
-          // Capture sessionId from backend for explicit abort
           if (eventType === "session") {
             const sid = (data as { sessionId: string }).sessionId;
-            if (sid) sessionIdRef.current = sid;
+            if (sid) {
+              sessionIdRef.current = sid;
+              setSessionId(sid);
+            }
             continue;
           }
 
-          // Update local array
           switch (eventType) {
             case "image_start": {
               const idx = (data as { index: number }).index;
@@ -228,14 +216,11 @@ export function SimpleMode({ serverUrl, onBack }: SimpleModeProps) {
             }
           }
 
-          // Sync to React state
           setResults([...localResults]);
         }
       }
 
-      // Clear abort controller ref when done
       if (abortControllerRef.current && abortControllerRef.current.signal.aborted) {
-        // User aborted - mark remaining queued as failed
         for (const result of localResults) {
           if (result.status === "queued" || result.status === "processing") {
             result.status = "failed";
@@ -243,18 +228,13 @@ export function SimpleMode({ serverUrl, onBack }: SimpleModeProps) {
           }
         }
         setResults([...localResults]);
-      } else if (isDone) {
-        // Normal completion - auto-download
-        void triggerDownload(localResults);
       }
 
       abortControllerRef.current = null;
       setIsProcessing(false);
       setPhase("results");
     } catch (error) {
-      // Handle abort or network errors
       if (error instanceof DOMException && error.name === "AbortError") {
-        // User clicked stop - already handled by signal.aborted check
         const localResults = initialResults.map((r) => ({
           ...r,
           status: r.status === "queued" || r.status === "processing"
@@ -276,6 +256,8 @@ export function SimpleMode({ serverUrl, onBack }: SimpleModeProps) {
     setPhase("upload");
     setResults([]);
     setIsProcessing(false);
+    setSessionId(null);
+    sessionIdRef.current = null;
   }, []);
 
   return (
@@ -361,6 +343,12 @@ export function SimpleMode({ serverUrl, onBack }: SimpleModeProps) {
               <Button variant="secondary" onClick={handleNewBatch}>
                 New Batch
               </Button>
+              <Button
+                variant="primary"
+                onClick={() => void triggerDownload(sessionId)}
+              >
+                Download ZIP
+              </Button>
               <Button variant="ghost" onClick={() => setPhase("configure")}>
                 Edit Prompts
               </Button>
@@ -372,11 +360,9 @@ export function SimpleMode({ serverUrl, onBack }: SimpleModeProps) {
               variant="danger"
               size="sm"
               onClick={() => {
-                // Abort the frontend fetch
                 if (abortControllerRef.current) {
                   abortControllerRef.current.abort();
                 }
-                // Tell the backend to stop processing
                 if (sessionIdRef.current) {
                   fetch(`/api/caption/simple?sessionId=${sessionIdRef.current}`, { method: "DELETE" }).catch(() => {});
                   sessionIdRef.current = null;

@@ -35,7 +35,10 @@ src/
   app/
     api/
       caption/route.ts   — POST start job + GET SSE progress + DELETE abort
+      caption/simple/    — POST FormData (images + config) → SSE stream
+      caption/multi-step — POST FormData (images + config) → SSE stream
       detect/route.ts    — POST start detection + GET SSE progress
+      download/route.ts  — GET ?sessionId=<id> zip temp dir / POST legacy base64
       models/route.ts    — Model discovery proxy to /v1/models
     globals.css          — Minimal Tailwind v4 import
     layout.tsx           — Root layout
@@ -45,6 +48,7 @@ src/
     types.ts                — ModelInfo, CropRect
     store.ts                — In-memory caption job store (Map-based)
     detect-store.ts         — In-memory detection job store
+    temp-files.ts           — Session temp dir management (upload, dedup, cleanup)
     image-utils.ts          — Image format conversion + resize (sharp)
     detect-parsing.ts       — Bounding box response parser (Gemma + Qwen formats)
     detection-prompts.ts    — Detection prompt builder
@@ -98,13 +102,22 @@ GET /api/models?serverUrl=http://localhost:8080
   → return { models: [...] }
 ```
 
-### Caption Job
+### Caption Job (simple and multi-step modes)
 
 ```
-POST /api/caption  → creates job in memory, spawns async workers, returns { jobId }
-GET  /api/caption  → SSE stream (500ms poll interval), sends progress events
-DELETE /api/caption → aborts job, marks queued as failed, deletes from memory
+POST /api/caption/simple     → FormData (images + JSON config), returns SSE stream
+POST /api/caption/multi-step → FormData (images + JSON config), returns SSE stream
+DELETE ?sessionId=<id>       → aborts session
 ```
+
+**Flow:**
+1. Frontend sends `FormData` with `config` (JSON string), `imageNames` (JSON string), and `images` (File objects)
+2. Server creates temp directory under `/tmp/caption-studio/<sessionId>/`
+3. Images saved to disk with deduplicated names (base-name collision: `1.png` + `1.jpg` → `1.png` + `1_1.jpg`)
+4. First SSE event sends `{ sessionId }` to frontend
+5. Workers process images via API, stream tokens back as SSE events
+6. On completion, caption `.txt` files written next to image files in temp dir
+7. Temp dirs auto-cleaned 30 minutes after last activity (checked every 5 minutes)
 
 Each worker fetches `<serverUrl>/v1/chat/completions` with:
 - `stream: true`
@@ -113,6 +126,15 @@ Each worker fetches `<serverUrl>/v1/chat/completions` with:
 - 5-minute timeout per image via `AbortController`
 
 Streaming response parsed for `delta.reasoning_content` and `delta.content`.
+
+### Download
+
+```
+GET /api/download?sessionId=<id>  → zips temp dir (img/ folder), streams as application/zip
+POST /api/download                → legacy base64 mode (kept for compat)
+```
+
+The GET endpoint reads the temp directory, pairs each image with its `.txt` caption file, places them inside an `img/` folder in the ZIP, and streams the result. Touches the session's last-activity timestamp (extends the 30-minute cleanup window).
 
 ### Detection Job
 
@@ -127,6 +149,15 @@ Detection images scaled to 1024px max. Response parsed by `parseDetectionRespons
 
 - `store.ts` — `Map<string, CaptionJob>` (caption jobs, 24h stale cleanup)
 - `detect-store.ts` — `Map<string, DetectionJob>` (detection jobs, cleaned on SSE close)
+- `temp-files.ts` — `Map<string, SessionMeta>` (temp image sessions, 30min stale cleanup)
+
+### Temp File System (`/tmp/caption-studio/`)
+
+- Each caption session gets a unique directory (`/tmp/caption-studio/<sessionId>/`)
+- Images saved with deduplicated names (base-name collision detection)
+- Caption `.txt` files written alongside images during processing
+- Auto-cleanup: directories removed 30 minutes after last activity
+- Cleanup runs every 5 minutes + on process exit
 
 ### Concurrency
 

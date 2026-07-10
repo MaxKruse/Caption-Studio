@@ -2,7 +2,8 @@
  * Multi-step mode caption endpoint.
  * For each image: chains multiple API calls, appending context from each step.
  * Different images are processed in parallel.
- * POST /api/caption/multi-step - starts processing and returns SSE stream
+ * Images stored as temp files; captions written as .txt alongside.
+ * POST /api/caption/multi-step - accepts FormData, returns SSE stream
  * DELETE /api/caption/multi-step?sessionId=<id> - aborts an active session
  */
 
@@ -10,6 +11,12 @@ import { NextRequest } from "next/server";
 import { normalizeServerUrl, toDockerHostUrl } from "@/lib/url-utils";
 import { prepareForApi } from "@/lib/image-utils";
 import { buildUserPrompt } from "@/lib/prompt-utils";
+import {
+  createSession,
+  saveImage,
+  writeCaption,
+  touchSession,
+} from "@/lib/temp-files";
 
 // ---------------------------------------------------------------------------
 // Active session tracking for explicit abort
@@ -17,30 +24,24 @@ import { buildUserPrompt } from "@/lib/prompt-utils";
 
 const activeSessions = new Map<string, AbortController>();
 
-/** Cleanup stale sessions (completed sessions that weren't removed). */
+/** Cleanup stale sessions. */
 setInterval(() => {
   for (const [sessionId, ac] of activeSessions.entries()) {
     if (ac.signal.aborted) {
       activeSessions.delete(sessionId);
     }
   }
-}, 60_000); // every minute
-
-/** Generate a short random session ID. */
-function generateSessionId(): string {
-  return Math.random().toString(36).substring(2, 12);
-}
+}, 60_000);
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-interface MultiStepCaptionRequest {
-  serverUrl: string;
-  model: string;
-  systemPrompt: string;
-  userMessages: string[]; // Chain of user messages
-  images: Array<{ imageDataUrl: string; imageName: string }>;
+interface ImageTask {
+  index: number;
+  serverName: string;
+  originalName: string;
+  imageBuffer: Buffer;
 }
 
 // ---------------------------------------------------------------------------
@@ -60,14 +61,9 @@ function replaceVariables(
     .replace(/{total}/g, String(total));
 }
 
-/** Extract image buffer and mime type from a data URL. */
-function parseDataUrl(dataUrl: string): { buffer: Buffer; mimeType: string } {
-  const match = dataUrl.match(/^data:(image\/\w+);base64,(.+)$/);
-  if (!match) throw new Error("Invalid data URL");
-  return {
-    buffer: Buffer.from(match[2], "base64"),
-    mimeType: match[1],
-  };
+/** Extract image buffer from a File object. */
+async function readFileBuffer(file: File): Promise<Buffer> {
+  return Buffer.from(await file.arrayBuffer());
 }
 
 const API_TIMEOUT_MS = 5 * 60 * 1000;
@@ -75,7 +71,6 @@ const MAX_CONCURRENCY = 8;
 
 /**
  * Fetch with timeout + external abort signal support.
- * If `externalSignal` fires, the fetch is aborted immediately.
  */
 async function fetchWithTimeout(
   url: string,
@@ -86,7 +81,6 @@ async function fetchWithTimeout(
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  // Forward external abort to this fetch
   if (externalSignal?.aborted) {
     controller.abort();
   } else {
@@ -106,7 +100,6 @@ async function fetchWithTimeout(
 
 /**
  * Call the vision API with streaming and accumulate content + reasoning_content.
- * Respects abortSignal - returns early if aborted.
  */
 async function callApiWithStream(
   baseUrl: string,
@@ -196,11 +189,11 @@ async function callApiWithStream(
 
 /**
  * Process a single image through all its multi-step chain.
+ * Writes caption .txt file on completion.
  */
 async function processImageMultiStep(
-  imgIdx: number,
-  imageDataUrl: string,
-  imageName: string,
+  task: ImageTask,
+  sessionId: string,
   normalizedUrl: string,
   model: string,
   systemPrompt: string,
@@ -213,14 +206,15 @@ async function processImageMultiStep(
 ): Promise<void> {
   if (abortSignal.aborted) return;
 
-  sendEvent("image_start", { index: imgIdx, name: imageName });
+  sendEvent("image_start", { index: task.index, name: task.originalName });
 
   try {
-    const { buffer: rawBuffer } = parseDataUrl(imageDataUrl);
-    const { buffer: apiBuffer, mimeType } = await prepareForApi(imageName, rawBuffer);
+    const { buffer: apiBuffer, mimeType } = await prepareForApi(
+      task.originalName,
+      task.imageBuffer
+    );
     const base64 = apiBuffer.toString("base64");
 
-    // Build conversation history for this image
     const messages: Array<Record<string, unknown>> = [];
 
     if (systemPrompt.trim()) {
@@ -234,8 +228,8 @@ async function processImageMultiStep(
     );
     const firstUserMsg = replaceVariables(
       firstUserMsgWithContext,
-      imageName,
-      imgIdx,
+      task.originalName,
+      task.index,
       total
     );
 
@@ -253,12 +247,11 @@ async function processImageMultiStep(
     let finalCaption = "";
     let finalReasoning = "";
 
-    // Process each step in the chain (sequential within one image)
     for (let stepIdx = 0; stepIdx < userMessages.length; stepIdx++) {
       if (abortSignal.aborted) return;
 
       sendEvent("step_start", {
-        imageIndex: imgIdx,
+        imageIndex: task.index,
         stepIndex: stepIdx,
         totalSteps: userMessages.length,
       });
@@ -269,7 +262,7 @@ async function processImageMultiStep(
         messages,
         (type, delta, full) => {
           sendEvent("token", {
-            imageIndex: imgIdx,
+            imageIndex: task.index,
             stepIndex: stepIdx,
             type,
             content: delta,
@@ -284,7 +277,6 @@ async function processImageMultiStep(
       finalCaption = content;
       finalReasoning = reasoningContent;
 
-      // Append assistant response to conversation
       messages.push({
         role: "assistant",
         content: [
@@ -293,19 +285,18 @@ async function processImageMultiStep(
         ].join(""),
       });
 
-      // If not the last step, append next user message
       if (stepIdx < userMessages.length - 1) {
         const nextUserMsg = replaceVariables(
           userMessages[stepIdx + 1],
-          imageName,
-          imgIdx,
+          task.originalName,
+          task.index,
           total
         );
         messages.push({ role: "user", content: nextUserMsg });
       }
 
       sendEvent("step_complete", {
-        imageIndex: imgIdx,
+        imageIndex: task.index,
         stepIndex: stepIdx,
         content,
         reasoningContent,
@@ -313,11 +304,18 @@ async function processImageMultiStep(
     }
 
     if (!abortSignal.aborted) {
+      const trimmedCaption = finalCaption.trim();
+
+      // Write caption file to disk
+      if (trimmedCaption) {
+        writeCaption(sessionId, task.serverName, trimmedCaption);
+      }
+
       sendEvent("image_complete", {
-        index: imgIdx,
-        name: imageName,
+        index: task.index,
+        name: task.originalName,
         status: "completed",
-        caption: finalCaption.trim(),
+        caption: trimmedCaption,
         reasoningContent: finalReasoning.trim(),
       });
     }
@@ -325,8 +323,8 @@ async function processImageMultiStep(
     const message = error instanceof Error ? error.message : String(error);
     if (!abortSignal.aborted) {
       sendEvent("image_complete", {
-        index: imgIdx,
-        name: imageName,
+        index: task.index,
+        name: task.originalName,
         status: "failed",
         error: message,
       });
@@ -336,40 +334,152 @@ async function processImageMultiStep(
 
 // ---------------------------------------------------------------------------
 // POST - Start processing and return SSE stream
+// Accepts FormData (images as files + config as JSON string) or JSON (legacy)
 // ---------------------------------------------------------------------------
 export async function POST(request: NextRequest) {
-  const body = await request.json();
-  const {
-    serverUrl,
-    model,
-    systemPrompt,
-    userMessages,
-    triggerWordPerson,
-    triggerWordOther,
-    images,
-  } = body as MultiStepCaptionRequest & {
-    triggerWordPerson?: string;
-    triggerWordOther?: string;
+  const contentType = request.headers.get("content-type") || "";
+
+  let config: {
+    serverUrl: string;
+    model: string;
+    systemPrompt: string;
+    userMessages: string[];
+    triggerWordPerson: string;
+    triggerWordOther: string;
   };
+  let imageFiles: File[];
+  let imageNames: string[];
 
-  const person = triggerWordPerson?.trim() ?? "";
-  const other = triggerWordOther?.trim() ?? "";
+  if (contentType.includes("multipart/form-data")) {
+    const formData = await request.formData();
+    const configRaw = formData.get("config");
+    if (!configRaw || typeof configRaw !== "string") {
+      return Response.json({ error: "Missing config" }, { status: 400 });
+    }
 
-  if (!serverUrl || !model || !images || images.length === 0) {
+    let parsedConfig;
+    try {
+      parsedConfig = JSON.parse(configRaw);
+    } catch {
+      return Response.json({ error: "Invalid config JSON" }, { status: 400 });
+    }
+
+    config = {
+      serverUrl: parsedConfig.serverUrl ?? "",
+      model: parsedConfig.model ?? "",
+      systemPrompt: parsedConfig.systemPrompt ?? "",
+      userMessages: parsedConfig.userMessages ?? [],
+      triggerWordPerson: parsedConfig.triggerWordPerson ?? "",
+      triggerWordOther: parsedConfig.triggerWordOther ?? "",
+    };
+
+    imageFiles = formData.getAll("images") as File[];
+    if (imageFiles.length === 0) {
+      return Response.json({ error: "No images provided" }, { status: 400 });
+    }
+
+    const configNames = formData.get("imageNames");
+    imageNames = configNames && typeof configNames === "string"
+      ? JSON.parse(configNames) as string[]
+      : imageFiles.map((f) => f.name);
+  } else {
+    // Legacy JSON mode
+    const body = await request.json();
+    const {
+      serverUrl,
+      model,
+      systemPrompt,
+      userMessages,
+      triggerWordPerson,
+      triggerWordOther,
+      images,
+    } = body as {
+      serverUrl: string;
+      model: string;
+      systemPrompt: string;
+      userMessages: string[];
+      triggerWordPerson?: string;
+      triggerWordOther?: string;
+      images: Array<{ imageDataUrl: string; imageName: string }>;
+    };
+
+    config = {
+      serverUrl,
+      model,
+      systemPrompt: systemPrompt ?? "",
+      userMessages: userMessages ?? [],
+      triggerWordPerson: triggerWordPerson ?? "",
+      triggerWordOther: triggerWordOther ?? "",
+    };
+
+    if (!images || images.length === 0) {
+      return Response.json({ error: "No images provided" }, { status: 400 });
+    }
+
+    // For JSON mode, throw a synthetic error to handle below
+    const jsonSession = createSession();
+    throw new Error(
+      JSON.stringify({
+        mode: "json",
+        sessionId: jsonSession.id,
+        images: images.map((img) => ({
+          dataUrl: img.imageDataUrl,
+          name: img.imageName,
+        })),
+      })
+    );
+  }
+
+  const person = config.triggerWordPerson?.trim() ?? "";
+  const other = config.triggerWordOther?.trim() ?? "";
+
+  if (!config.serverUrl || !config.model) {
     return Response.json(
-      { error: "serverUrl, model, and images are required" },
+      { error: "serverUrl and model are required" },
       { status: 400 }
     );
   }
 
-  if (!userMessages || userMessages.length === 0) {
+  if (!config.userMessages || config.userMessages.length === 0) {
     return Response.json(
       { error: "At least one user message is required" },
       { status: 400 }
     );
   }
 
-  const normalizedUrl = normalizeServerUrl(toDockerHostUrl(serverUrl));
+  // Create session and save images
+  const session = createSession();
+  const sessionId = session.id;
+  const usedBases = new Set<string>();
+  const tasks: ImageTask[] = [];
+
+  for (let i = 0; i < imageFiles.length; i++) {
+    const buffer = await readFileBuffer(imageFiles[i]);
+    const serverName = saveImage(
+      sessionId,
+      imageNames[i] || `image-${i}.jpg`,
+      buffer,
+      usedBases
+    );
+
+    if (serverName) {
+      tasks.push({
+        index: i,
+        serverName,
+        originalName: imageNames[i] || `image-${i}.jpg`,
+        imageBuffer: buffer,
+      });
+    }
+  }
+
+  if (tasks.length === 0) {
+    return Response.json(
+      { error: "No valid images to process" },
+      { status: 400 }
+    );
+  }
+
+  const normalizedUrl = normalizeServerUrl(toDockerHostUrl(config.serverUrl));
   const encoder = new TextEncoder();
   let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
 
@@ -390,52 +500,43 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  // Create a shared AbortController for this session
-  const sessionId = generateSessionId();
   const sessionAbort = new AbortController();
   activeSessions.set(sessionId, sessionAbort);
 
-  // Link request.signal (client disconnect) to our session abort
   request.signal.addEventListener("abort", () => {
     sessionAbort.abort();
   });
 
-  // Send sessionId as first event so frontend can use it to abort
   sendEvent("session", { sessionId });
 
-  // Process images in parallel with concurrency limit
+  // Process images in parallel
   (async () => {
     try {
-      const concurrency = Math.min(MAX_CONCURRENCY, images.length);
-      const queue = images.map((img, i) => ({ ...img, index: i }));
+      const concurrency = Math.min(MAX_CONCURRENCY, tasks.length);
+      const queue = [...tasks];
 
       async function processNext(): Promise<void> {
         while (queue.length > 0 && !sessionAbort.signal.aborted) {
-          const item = queue.shift()!;
+          const task = queue.shift()!;
+          touchSession(sessionId);
 
           await processImageMultiStep(
-            item.index,
-            item.imageDataUrl,
-            item.imageName,
+            task,
+            sessionId,
             normalizedUrl,
-            model,
-            systemPrompt,
-            userMessages,
+            config.model,
+            config.systemPrompt,
+            config.userMessages,
             person,
             other,
-            images.length,
+            tasks.length,
             sendEvent,
             sessionAbort.signal
           );
         }
       }
 
-      // Launch worker pool
-      const workers = Array.from(
-        { length: concurrency },
-        () => processNext()
-      );
-
+      const workers = Array.from({ length: concurrency }, () => processNext());
       await Promise.all(workers);
 
       if (!sessionAbort.signal.aborted) {

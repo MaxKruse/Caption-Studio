@@ -29,7 +29,7 @@ export function ImageUploader({ onImagesReady }: ImageUploaderProps) {
         const reader = new FileReader();
         reader.onload = (e) => {
           const dataUrl = e.target?.result as string;
-          addImage(dataUrl, file.name);
+          addImage(dataUrl, file.name, file);
         };
         reader.readAsDataURL(file);
       }
