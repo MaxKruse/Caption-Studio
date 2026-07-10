@@ -19,7 +19,8 @@ interface ServerCheckProps {
 export function ServerCheck({ onServerReady }: ServerCheckProps) {
   const { state: session } = useSession();
   const { setServerUrl } = useSession();
-  const [inputUrl, setInputUrl] = useState(session.serverUrl || "http://localhost:8080");
+  const defaultUrl = process.env.NEXT_PUBLIC_DEFAULT_SERVER_URL || "http://localhost:8080";
+  const [inputUrl, setInputUrl] = useState(session.serverUrl || defaultUrl);
   const { state: checkState, startPolling, checkServer } = useServerCheck();
   const readyRef = useRef(false);
 
