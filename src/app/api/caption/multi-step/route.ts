@@ -9,6 +9,7 @@
 import { NextRequest } from "next/server";
 import { normalizeServerUrl, toDockerHostUrl } from "@/lib/url-utils";
 import { prepareForApi } from "@/lib/image-utils";
+import { buildUserPrompt } from "@/lib/prompt-utils";
 
 // ---------------------------------------------------------------------------
 // Active session tracking for explicit abort
@@ -51,11 +52,9 @@ function replaceVariables(
   text: string,
   imageName: string,
   index: number,
-  total: number,
-  triggerWord: string
+  total: number
 ): string {
   return text
-    .replace(/{trigger}/g, triggerWord)
     .replace(/{image_name}/g, imageName)
     .replace(/{index}/g, String(index + 1))
     .replace(/{total}/g, String(total));
@@ -206,7 +205,8 @@ async function processImageMultiStep(
   model: string,
   systemPrompt: string,
   userMessages: string[],
-  triggerWord: string,
+  triggerWordPerson: string,
+  triggerWordOther: string,
   total: number,
   sendEvent: (type: string, data: unknown) => void,
   abortSignal: AbortSignal
@@ -227,12 +227,16 @@ async function processImageMultiStep(
       messages.push({ role: "system", content: systemPrompt.trim() });
     }
 
-    const firstUserMsg = replaceVariables(
+    const firstUserMsgWithContext = buildUserPrompt(
       userMessages[0],
+      triggerWordPerson,
+      triggerWordOther
+    );
+    const firstUserMsg = replaceVariables(
+      firstUserMsgWithContext,
       imageName,
       imgIdx,
-      total,
-      triggerWord
+      total
     );
 
     messages.push({
@@ -295,8 +299,7 @@ async function processImageMultiStep(
           userMessages[stepIdx + 1],
           imageName,
           imgIdx,
-          total,
-          triggerWord
+          total
         );
         messages.push({ role: "user", content: nextUserMsg });
       }
@@ -349,9 +352,8 @@ export async function POST(request: NextRequest) {
     triggerWordOther?: string;
   };
 
-  // Build combined trigger word string
-  const triggerParts = [triggerWordPerson, triggerWordOther].filter((p) => p?.trim());
-  const triggerWord = triggerParts.length > 0 ? `${triggerParts.join(" ")} - ` : "";
+  const person = triggerWordPerson?.trim() ?? "";
+  const other = triggerWordOther?.trim() ?? "";
 
   if (!serverUrl || !model || !images || images.length === 0) {
     return Response.json(
@@ -419,7 +421,8 @@ export async function POST(request: NextRequest) {
             model,
             systemPrompt,
             userMessages,
-            triggerWord,
+            person,
+            other,
             images.length,
             sendEvent,
             sessionAbort.signal

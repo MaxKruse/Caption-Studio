@@ -18,6 +18,7 @@ import {
   type ImageEntry,
 } from "@/lib/store";
 import { prepareForApi } from "@/lib/image-utils";
+import { buildUserPrompt } from "@/lib/prompt-utils";
 import { getModelParallel } from "@/lib/model-utils";
 import { normalizeServerUrl, toDockerHostUrl } from "@/lib/url-utils";
 import type { CropRect } from "@/lib/types";
@@ -33,7 +34,8 @@ interface JobConfig {
   userPrompt: string;
   presetId: string;
   presetZipName: string;
-  triggerWord: string;
+  triggerWordPerson: string;
+  triggerWordOther: string;
   parallelRequests: number;
   imageNames: string[];
   cropData?: Record<string, { cropType: string; cropRect: CropRect }>;
@@ -50,7 +52,8 @@ function parseJobConfigFromFormData(formData: FormData): JobConfig | null {
     userPrompt?: string;
     presetId?: string;
     presetZipName?: string;
-    triggerWord?: string;
+    triggerWordPerson?: string;
+    triggerWordOther?: string;
     parallelRequests?: number;
     imageNames: string[];
     cropData?: Record<string, { cropType: string; cropRect: CropRect }>;
@@ -69,7 +72,8 @@ function parseJobConfigFromFormData(formData: FormData): JobConfig | null {
     userPrompt: config.userPrompt ?? "",
     presetId: config.presetId ?? "",
     presetZipName: config.presetZipName ?? "",
-    triggerWord: config.triggerWord ?? "",
+    triggerWordPerson: config.triggerWordPerson ?? "",
+    triggerWordOther: config.triggerWordOther ?? "",
     parallelRequests: config.parallelRequests ?? 4,
     imageNames: config.imageNames,
     cropData: config.cropData as JobConfig["cropData"],
@@ -84,7 +88,8 @@ function parseJobConfigFromBody(rest: Record<string, unknown>): JobConfig {
     userPrompt: (rest.userPrompt as string) ?? "",
     presetId: (rest.presetId as string) ?? "",
     presetZipName: (rest.presetZipName as string) ?? "",
-    triggerWord: (rest.triggerWord as string) ?? "",
+    triggerWordPerson: (rest.triggerWordPerson as string) ?? "",
+    triggerWordOther: (rest.triggerWordOther as string) ?? "",
     parallelRequests: (rest.parallelRequests as number) ?? 4,
     imageNames: [],
     cropData: rest.cropData as JobConfig["cropData"],
@@ -97,14 +102,14 @@ function parseJobConfigFromBody(rest: Record<string, unknown>): JobConfig {
 
 /**
  * Build the user prompt text that gets sent to the vision API.
- * Replaces {trigger} placeholder with the actual trigger word.
+ * Uses shared prompt-utils to replace {trigger} and append contextual sentences.
  */
 function buildPromptText(job: CaptionJob): string {
-  const userPrompt = job.userPrompt.trim();
-  if (!userPrompt) return "";
-
-  // Replace {trigger} placeholder with the actual trigger word
-  return userPrompt.replace(/{trigger}/g, job.triggerWord.trim());
+  return buildUserPrompt(
+    job.userPrompt,
+    job.triggerWordPerson,
+    job.triggerWordOther
+  );
 }
 
 /**
@@ -239,7 +244,8 @@ export async function POST(request: NextRequest) {
     config.model,
     config.systemPrompt || "",
     config.userPrompt || "",
-    config.triggerWord || "",
+    config.triggerWordPerson || "",
+    config.triggerWordOther || "",
     parallelRequests,
     cropData,
     config.presetId || "",

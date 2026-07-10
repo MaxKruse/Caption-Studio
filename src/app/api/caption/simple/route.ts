@@ -8,6 +8,7 @@
 import { NextRequest } from "next/server";
 import { normalizeServerUrl, toDockerHostUrl } from "@/lib/url-utils";
 import { prepareForApi } from "@/lib/image-utils";
+import { buildUserPrompt } from "@/lib/prompt-utils";
 
 // ---------------------------------------------------------------------------
 // Active session tracking for explicit abort
@@ -38,11 +39,9 @@ function replaceVariables(
   text: string,
   imageName: string,
   index: number,
-  total: number,
-  triggerWord: string
+  total: number
 ): string {
   return text
-    .replace(/{trigger}/g, triggerWord)
     .replace(/{image_name}/g, imageName)
     .replace(/{index}/g, String(index + 1))
     .replace(/{total}/g, String(total));
@@ -106,7 +105,8 @@ async function processImage(
   model: string,
   systemPrompt: string,
   userPrompt: string,
-  triggerWord: string,
+  triggerWordPerson: string,
+  triggerWordOther: string,
   total: number,
   sendEvent: (type: string, data: unknown) => void,
   abortSignal: AbortSignal
@@ -120,12 +120,16 @@ async function processImage(
     const { buffer: apiBuffer, mimeType } = await prepareForApi(imageName, rawBuffer);
     const base64 = apiBuffer.toString("base64");
 
-    const resolvedPrompt = replaceVariables(
+    const promptWithContext = buildUserPrompt(
       userPrompt,
+      triggerWordPerson,
+      triggerWordOther
+    );
+    const resolvedPrompt = replaceVariables(
+      promptWithContext,
       imageName,
       index,
-      total,
-      triggerWord
+      total
     );
 
     if (abortSignal.aborted) return;
@@ -274,9 +278,8 @@ export async function POST(request: NextRequest) {
     images: Array<{ imageDataUrl: string; imageName: string }>;
   };
 
-  // Build combined trigger word string
-  const triggerParts = [triggerWordPerson, triggerWordOther].filter((p) => p?.trim());
-  const triggerWord = triggerParts.length > 0 ? `${triggerParts.join(" ")} - ` : "";
+  const person = triggerWordPerson?.trim() ?? "";
+  const other = triggerWordOther?.trim() ?? "";
 
   if (!serverUrl || !model || !images || images.length === 0) {
     return Response.json(
@@ -337,7 +340,8 @@ export async function POST(request: NextRequest) {
             model,
             systemPrompt,
             userPrompt,
-            triggerWord,
+            person,
+            other,
             images.length,
             sendEvent,
             sessionAbort.signal

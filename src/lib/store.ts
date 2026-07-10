@@ -41,7 +41,8 @@ export interface CaptionJob {
   userPrompt: string;
   presetId: string;
   presetName: string;
-  triggerWord: string;
+  triggerWordPerson: string;
+  triggerWordOther: string;
   parallelRequests: number;
   createdAt: number;
   abortSignal: AbortController; // used to cancel processing workers
@@ -121,7 +122,8 @@ export async function createJob(
   model: string,
   systemPrompt: string,
   userPrompt: string,
-  triggerWord: string,
+  triggerWordPerson: string,
+  triggerWordOther: string,
   parallelRequests: number,
   cropData?: Record<string, ImageCropData>,
   presetId?: string,
@@ -169,7 +171,8 @@ export async function createJob(
     userPrompt,
     presetId: presetId ?? "",
     presetName: presetName ?? "",
-    triggerWord,
+    triggerWordPerson,
+    triggerWordOther,
     parallelRequests,
     createdAt: Date.now(),
     abortSignal: abortController,
