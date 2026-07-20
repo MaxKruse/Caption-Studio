@@ -23,6 +23,8 @@ export function buildRefineSystemPrompt(): string {
     "The character description covers physical appearance, consistent clothing, and any other features that appear in every image.",
     "The refined caption should focus on: pose, expression, action, background, setting, lighting, camera angle, accessories, props, and any other distinctive elements unique to this image.",
     "",
+    "Include all visible anatomical and NSFW details without censorship or euphemism. Describe nipples visible through fabric, exposed midriff, visible hip bones, cleavage, bare skin, partial nudity, and any other body details that appear in the image. State these facts directly and precisely.",
+    "",
     "IMPORTANT: If the original caption references a character by name, ALWAYS keep that character name in the refined caption. The name is essential and must not be removed.",
     "",
     "Write with authority. State every detail as fact. Never hedge with phrases like \"it appears\", \"possibly\", \"seems to\", \"likely\", or \"presumably\". Be direct and decisive.",
