@@ -1,7 +1,7 @@
 /**
  * Krea 2 mode orchestrator.
- * Two-phase workflow: initial captioning then sliding-window re-captioning.
- * Guides user through: upload -> configure -> process -> results.
+ * Two-phase workflow: initial captioning then per-image refinement.
+ * Guides user through: upload -> configure -> captioning -> refining -> results.
  */
 
 "use client";
@@ -19,6 +19,8 @@ import { Textarea } from "@/components/ui/textarea";
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+type Phase = "upload" | "configure" | "captioning" | "refining" | "results";
 
 interface CaptionResult {
   name: string;
@@ -68,12 +70,11 @@ interface Krea2ModeProps {
 
 export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
   const { state, setCharacterDescription } = useSession();
-  const [phase, setPhase] = useState<"upload" | "configure" | "processing" | "results">("upload");
+  const [phase, setPhase] = useState<Phase>("upload");
   const [imageCount, setImageCount] = useState(0);
   const [results, setResults] = useState<CaptionResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [currentPhase, setCurrentPhase] = useState<"captioning" | "recaptioning" | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -100,10 +101,9 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
       status: "queued" as const,
     }));
     setResults(initialResults);
-    setPhase("processing");
+    setPhase("captioning");
     setIsProcessing(true);
     setSessionId(null);
-    setCurrentPhase(null);
     sessionIdRef.current = null;
 
     const formData = new FormData();
@@ -139,6 +139,7 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
         }));
         setResults(failed);
         setIsProcessing(false);
+        setPhase("results");
         return;
       }
 
@@ -181,7 +182,10 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
           switch (eventType) {
             case "phase": {
               const phaseData = data as { phase: string };
-              setCurrentPhase(phaseData.phase === "recaptioning" ? "recaptioning" : "captioning");
+              if (phaseData.phase === "refining") {
+                setPhase("refining");
+              }
+              // "captioning" is already the default phase when processing starts
               break;
             }
             case "image_start": {
@@ -197,7 +201,6 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
                 type: string;
                 full: string;
               };
-              // Phase 1 tokens have an index
               if (tokenData.index !== undefined && localResults[tokenData.index]) {
                 localResults[tokenData.index] = {
                   ...localResults[tokenData.index],
@@ -206,7 +209,6 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
                     : "partialCaption"]: tokenData.full,
                 };
               }
-              // Phase 2 tokens (recaption_reasoning / recaption_caption) are bucket-level, skip for per-image display
               break;
             }
             case "image_complete": {
@@ -231,18 +233,36 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
               }
               break;
             }
-            case "recaption_image_updated": {
-              const updatedData = data as {
-                index: number;
-                name: string;
-                oldCaption: string;
-                newCaption: string;
-              };
-              const idx = updatedData.index;
+            case "refine_image_start": {
+              const idx = (data as { index: number }).index;
               if (localResults[idx]) {
                 localResults[idx] = {
                   ...localResults[idx],
-                  caption: updatedData.newCaption,
+                  status: "processing",
+                  partialCaption: undefined,
+                  partialReasoning: undefined,
+                };
+              }
+              break;
+            }
+            case "refine_image_complete": {
+              const completeData = data as {
+                index: number;
+                status: string;
+                caption?: string;
+                reasoningContent?: string;
+                error?: string;
+              };
+              const idx = completeData.index;
+              if (localResults[idx]) {
+                localResults[idx] = {
+                  ...localResults[idx],
+                  status: completeData.status as CaptionResult["status"],
+                  caption: completeData.caption,
+                  reasoningContent: completeData.reasoningContent,
+                  error: completeData.error,
+                  partialCaption: undefined,
+                  partialReasoning: undefined,
                 };
               }
               break;
@@ -268,7 +288,6 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
 
       abortControllerRef.current = null;
       setIsProcessing(false);
-      setCurrentPhase(null);
       setPhase("results");
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
@@ -285,7 +304,6 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
       }
       abortControllerRef.current = null;
       setIsProcessing(false);
-      setCurrentPhase(null);
       setPhase("results");
     }
   }, [state, serverUrl]);
@@ -295,9 +313,10 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
     setResults([]);
     setIsProcessing(false);
     setSessionId(null);
-    setCurrentPhase(null);
     sessionIdRef.current = null;
   }, []);
+
+  const allPhases: Phase[] = ["upload", "configure", "captioning", "refining", "results"];
 
   return (
     <div className="w-full max-w-3xl mx-auto space-y-6">
@@ -306,7 +325,7 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
         <div>
           <h2 className="text-xl font-semibold text-slate-100">Krea 2 Mode</h2>
           <p className="text-sm text-slate-400">
-            Two-phase captioning with character-consistent refinement
+            Caption then refine - remove character-consistent features
           </p>
         </div>
         <Button variant="ghost" size="sm" onClick={onBack}>
@@ -316,7 +335,7 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
 
       {/* Phase indicator */}
       <div className="flex items-center gap-2 text-sm">
-        {(["upload", "configure", "processing", "results"] as const).map((p, i) => (
+        {allPhases.map((p, i) => (
           <div key={p} className="flex items-center gap-2">
             <span
               className={`px-2 py-1 rounded-full ${
@@ -326,11 +345,8 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
               }`}
             >
               {p}
-              {p === "processing" && currentPhase && (
-                <span className="ml-1 text-xs opacity-70">({currentPhase})</span>
-              )}
             </span>
-            {i < 3 && <span className="text-slate-600">{"\u2192"}</span>}
+            {i < allPhases.length - 1 && <span className="text-slate-600">{"\u2192"}</span>}
           </div>
         ))}
       </div>
@@ -364,8 +380,8 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
               </label>
               <p className="text-xs text-slate-500">
                 Describe the character/subject that appears across all images.
-                This helps Phase 2 remove redundant details and focus on what
-                makes each image unique.
+                Phase 2 will remove these consistent features from the captions,
+                leaving only image-unique details.
               </p>
               <Textarea
                 value={state.characterDescription}
@@ -398,9 +414,20 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
         </Card>
       )}
 
-      {/* Processing + Results phases */}
-      {(phase === "processing" || phase === "results") && (
+      {/* Captioning + Refining + Results phases */}
+      {(phase === "captioning" || phase === "refining" || phase === "results") && (
         <div className="space-y-4">
+          {/* Phase label */}
+          {(phase === "captioning" || phase === "refining") && (
+            <div className="text-center">
+              <span className="text-sm font-medium text-indigo-300">
+                {phase === "captioning"
+                  ? "Captioning images..."
+                  : "Refining captions - removing character features..."}
+              </span>
+            </div>
+          )}
+
           <CaptionViewer results={results} />
 
           {phase === "results" && (

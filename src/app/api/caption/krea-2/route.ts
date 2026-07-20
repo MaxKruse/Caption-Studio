@@ -1,9 +1,8 @@
 /**
  * Krea 2 mode caption endpoint.
  * Two-phase workflow:
- *   Phase 1 - Initial captioning (same as simple mode)
- *   Phase 2 - Re-captioning with sliding window (size=8, step=4)
- *             LLM refines captions to exclude character-consistent features
+ *   Phase 1 - Initial captioning (standard captioning with user prompt)
+ *   Phase 2 - Per-image refinement (remove character-consistent features using character description)
  *
  * POST /api/caption/krea-2 - accepts FormData, starts processing, returns SSE stream
  * DELETE /api/caption/krea-2?sessionId=<id> - aborts an active session
@@ -18,14 +17,11 @@ import {
   saveImage,
   writeCaption,
   readCaption,
-  getSession,
   touchSession,
 } from "@/lib/temp-files";
-import { computeSlidingWindows } from "@/lib/krea2-window";
 import {
-  buildRecaptionSystemPrompt,
-  buildRecaptionUserPrompt,
-  type ImageCaptionPair,
+  buildRefineSystemPrompt,
+  buildRefineUserPrompt,
 } from "@/lib/krea2-prompts";
 
 // ---------------------------------------------------------------------------
@@ -41,7 +37,7 @@ setInterval(() => {
       activeSessions.delete(sessionId);
     }
   }
-}, 60_000); // every minute
+}, 60_000);
 
 // ---------------------------------------------------------------------------
 // Types
@@ -52,11 +48,6 @@ interface ImageTask {
   serverName: string;    // deduplicated filename on disk
   originalName: string;  // original uploaded filename
   imageBuffer: Buffer;   // raw image data (for API call)
-}
-
-interface RecaptionResult {
-  index: number;
-  caption: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -116,58 +107,8 @@ async function fetchWithTimeout(
   }
 }
 
-/**
- * Parse re-captioning JSON response from LLM.
- * Handles both clean JSON and JSON embedded in markdown code blocks.
- */
-function parseRecaptionResponse(raw: string): RecaptionResult[] {
-  let cleaned = raw.trim();
-
-  // Strip markdown code block fences if present
-  const codeBlockMatch = cleaned.match(/```(?:json)?\s*\n([\s\S]*?)\n```/);
-  if (codeBlockMatch) {
-    cleaned = codeBlockMatch[1].trim();
-  }
-
-  try {
-    const parsed = JSON.parse(cleaned);
-    if (Array.isArray(parsed)) {
-      return parsed.filter(
-        (item: unknown) =>
-          item != null &&
-          typeof item === "object" &&
-          "index" in item &&
-          "caption" in item
-      ) as RecaptionResult[];
-    }
-  } catch {
-    // Not valid JSON - try line-by-line extraction
-  }
-
-  // Fallback: try to find JSON array in the text
-  const arrayMatch = cleaned.match(/\[\s*\{[\s\S]*\}\s*\]/);
-  if (arrayMatch) {
-    try {
-      const parsed = JSON.parse(arrayMatch[0]);
-      if (Array.isArray(parsed)) {
-        return parsed.filter(
-          (item: unknown) =>
-            item != null &&
-            typeof item === "object" &&
-            "index" in item &&
-            "caption" in item
-        ) as RecaptionResult[];
-      }
-    } catch {
-      // Still not valid
-    }
-  }
-
-  return [];
-}
-
 // ---------------------------------------------------------------------------
-// Phase 1: Initial captioning (same as simple mode)
+// Phase 1: Initial captioning
 // ---------------------------------------------------------------------------
 
 /**
@@ -341,18 +282,17 @@ async function processImage(
 }
 
 // ---------------------------------------------------------------------------
-// Phase 2: Re-captioning with sliding window
+// Phase 2: Per-image refinement
 // ---------------------------------------------------------------------------
 
 /**
- * Process a single re-captioning bucket (sliding window).
- * Sends images + original captions + character description to LLM.
- * Writes updated captions to disk on success.
+ * Refine a single image's caption by removing character-consistent features.
+ * Reads the Phase 1 caption, sends image + caption + character description to LLM,
+ * writes the refined caption to disk on success.
  */
-async function processRecaptionBucket(
-  bucket: number[],
+async function processRefineImage(
+  task: ImageTask,
   sessionId: string,
-  tasks: ImageTask[],
   normalizedUrl: string,
   model: string,
   characterDescription: string,
@@ -361,98 +301,45 @@ async function processRecaptionBucket(
 ): Promise<void> {
   if (abortSignal.aborted) return;
 
-  const meta = getSession(sessionId);
-  if (!meta) {
-    sendEvent("recaption_bucket_complete", {
-      bucket,
-      status: "failed",
-      error: "Session not found",
+  const originalCaption = readCaption(sessionId, task.serverName);
+  if (!originalCaption) {
+    sendEvent("refine_image_complete", {
+      index: task.index,
+      name: task.originalName,
+      status: "skipped",
+      reason: "No original caption found",
     });
     return;
   }
 
-  sendEvent("recaption_bucket_start", {
-    bucket,
-    size: bucket.length,
-  });
+  sendEvent("refine_image_start", { index: task.index, name: task.originalName });
 
   try {
-    // Build image-caption pairs for this bucket
-    const pairs: ImageCaptionPair[] = [];
-
-    for (const idx of bucket) {
-      const task = tasks[idx];
-      if (!task) continue;
-
-      const caption = readCaption(sessionId, task.serverName);
-      pairs.push({
-        index: task.index,
-        name: task.originalName,
-        caption: caption ?? "",
-      });
-    }
-
-    if (pairs.length === 0) {
-      sendEvent("recaption_bucket_complete", {
-        bucket,
-        status: "skipped",
-        reason: "No captions to refine",
-      });
-      return;
-    }
-
-    // Prepare images as base64 data URLs for the API
-    const imagePreps = await Promise.all(
-      bucket.map(async (idx) => {
-        const task = tasks[idx];
-        if (!task) return null;
-        const { buffer, mimeType } = await prepareForApi(
-          task.originalName,
-          task.imageBuffer
-        );
-        return {
-          index: task.index,
-          base64: buffer.toString("base64"),
-          mimeType,
-        };
-      })
+    const { buffer: apiBuffer, mimeType } = await prepareForApi(
+      task.originalName,
+      task.imageBuffer
     );
+    const base64 = apiBuffer.toString("base64");
 
-    const validPreps = imagePreps.filter((p): p is NonNullable<typeof p> => p != null);
+    const systemPrompt = buildRefineSystemPrompt();
+    const userPrompt = buildRefineUserPrompt(originalCaption, characterDescription);
 
-    if (validPreps.length === 0) {
-      sendEvent("recaption_bucket_complete", {
-        bucket,
-        status: "skipped",
-        reason: "No valid images to process",
-      });
-      return;
-    }
+    if (abortSignal.aborted) return;
 
-    // Build messages for the re-captioning API call
-    const systemPrompt = buildRecaptionSystemPrompt();
-    const userPrompt = buildRecaptionUserPrompt(characterDescription, pairs);
+    const messages: Array<Record<string, unknown>> = [
+      { role: "system", content: systemPrompt },
+      {
+        role: "user",
+        content: [
+          {
+            type: "image_url",
+            image_url: { url: `data:${mimeType};base64,${base64}` },
+          },
+          { type: "text", text: userPrompt },
+        ],
+      },
+    ];
 
-    const messages: Array<Record<string, unknown>> = [];
-    messages.push({ role: "system", content: systemPrompt });
-
-    // Build user message with images + text
-    const userContent: Array<Record<string, unknown>> = [];
-
-    // Add all images first
-    for (const prep of validPreps) {
-      userContent.push({
-        type: "image_url",
-        image_url: { url: `data:${prep.mimeType};base64,${prep.base64}` },
-      });
-    }
-
-    // Add the text prompt after all images
-    userContent.push({ type: "text", text: userPrompt });
-
-    messages.push({ role: "user", content: userContent });
-
-    // Call the API
     const response = await fetchWithTimeout(
       `${normalizedUrl}/v1/chat/completions`,
       {
@@ -475,9 +362,8 @@ async function processRecaptionBucket(
       throw new Error(`API ${response.status}: ${errorText}`);
     }
 
-    // Stream the response and accumulate content
-    let fullContent = "";
-    let fullReasoning = "";
+    let caption = "";
+    let reasoningContent = "";
     const body = response.body;
     if (!body) throw new Error("No response body");
 
@@ -513,21 +399,21 @@ async function processRecaptionBucket(
           const chunk = JSON.parse(dataStr);
           const delta = chunk?.choices?.[0]?.delta;
           if (delta?.reasoning_content) {
-            fullReasoning += delta.reasoning_content;
+            reasoningContent += delta.reasoning_content;
             sendEvent("token", {
-              type: "recaption_reasoning",
-              bucket,
+              type: "reasoning",
+              index: task.index,
               content: delta.reasoning_content,
-              full: fullReasoning,
+              full: reasoningContent,
             });
           }
           if (delta?.content) {
-            fullContent += delta.content;
+            caption += delta.content;
             sendEvent("token", {
-              type: "recaption_caption",
-              bucket,
+              type: "caption",
+              index: task.index,
               content: delta.content,
-              full: fullContent,
+              full: caption,
             });
           }
         } catch {
@@ -536,38 +422,28 @@ async function processRecaptionBucket(
       }
     }
 
-    if (abortSignal.aborted) return;
+    if (!abortSignal.aborted) {
+      const trimmedCaption = caption.trim();
 
-    // Parse the re-captioning results
-    const results = parseRecaptionResponse(fullContent);
-
-    // Apply updated captions
-    for (const result of results) {
-      const task = tasks[result.index];
-      if (task && result.caption.trim()) {
-        const oldCaption = readCaption(sessionId, task.serverName) ?? "";
-        writeCaption(sessionId, task.serverName, result.caption.trim());
-
-        sendEvent("recaption_image_updated", {
-          index: task.index,
-          name: task.originalName,
-          oldCaption,
-          newCaption: result.caption.trim(),
-        });
+      // Overwrite caption file with refined version
+      if (trimmedCaption) {
+        writeCaption(sessionId, task.serverName, trimmedCaption);
       }
-    }
 
-    sendEvent("recaption_bucket_complete", {
-      bucket,
-      status: "completed",
-      refinedCount: results.length,
-      reasoningContent: fullReasoning.trim(),
-    });
+      sendEvent("refine_image_complete", {
+        index: task.index,
+        name: task.originalName,
+        status: "completed",
+        caption: trimmedCaption,
+        reasoningContent: reasoningContent.trim(),
+      });
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!abortSignal.aborted) {
-      sendEvent("recaption_bucket_complete", {
-        bucket,
+      sendEvent("refine_image_complete", {
+        index: task.index,
+        name: task.originalName,
         status: "failed",
         error: message,
       });
@@ -752,27 +628,32 @@ export async function POST(request: NextRequest) {
       }
 
       // =========================================================================
-      // Phase 2: Re-captioning with sliding window
+      // Phase 2: Per-image refinement
       // =========================================================================
-      sendEvent("phase", { phase: "recaptioning" });
+      sendEvent("phase", { phase: "refining" });
 
-      const windows = computeSlidingWindows(tasks.length);
+      const refineConcurrency = Math.min(MAX_CONCURRENCY, tasks.length);
+      const refineQueue = [...tasks];
 
-      for (const window of windows) {
-        if (sessionAbort.signal.aborted) break;
-        touchSession(sessionId);
+      async function refineNext(): Promise<void> {
+        while (refineQueue.length > 0 && !sessionAbort.signal.aborted) {
+          const task = refineQueue.shift()!;
+          touchSession(sessionId);
 
-        await processRecaptionBucket(
-          window,
-          sessionId,
-          tasks,
-          normalizedUrl,
-          config.model,
-          config.characterDescription,
-          sendEvent,
-          sessionAbort.signal
-        );
+          await processRefineImage(
+            task,
+            sessionId,
+            normalizedUrl,
+            config.model,
+            config.characterDescription,
+            sendEvent,
+            sessionAbort.signal
+          );
+        }
       }
+
+      const refineWorkers = Array.from({ length: refineConcurrency }, () => refineNext());
+      await Promise.all(refineWorkers);
 
       if (!sessionAbort.signal.aborted) {
         sendEvent("done", { allComplete: true });
