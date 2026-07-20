@@ -10,13 +10,13 @@ import { Card } from "@/components/ui/card";
 
 interface ModeSelectorProps {
   serverUrl: string;
-  onModeSelected: (mode: "simple" | "multi-step") => void;
+  onModeSelected: (mode: "simple" | "multi-step" | "for-anima") => void;
 }
 
 export function ModeSelector({ onModeSelected }: ModeSelectorProps) {
   const { setMode } = useSession();
 
-  const handleSelect = (mode: "simple" | "multi-step") => {
+  const handleSelect = (mode: "simple" | "multi-step" | "for-anima") => {
     setMode(mode);
     onModeSelected(mode);
   };
@@ -77,6 +77,33 @@ export function ModeSelector({ onModeSelected }: ModeSelectorProps) {
                 <li>Final output becomes caption</li>
               </ul>
               <Button className="w-full mt-2">Start Multi-step Mode</Button>
+            </div>
+          </button>
+        </Card>
+
+        {/* For Anima Mode */}
+        <Card variant="elevated" className="cursor-pointer hover:border-indigo-500 transition-colors md:col-span-2">
+          <button
+            onClick={() => handleSelect("for-anima")}
+            className="w-full text-left"
+          >
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">A</span>
+                <h3 className="text-lg font-semibold text-slate-100">For Anima Mode</h3>
+              </div>
+              <p className="text-sm text-slate-400">
+                Enhance existing danbooru-style tags (from taggui) with natural
+                language descriptions. The LLM adds spatial relationships, mood,
+                and atmosphere that tags alone cannot express.
+              </p>
+              <ul className="text-xs text-slate-500 space-y-1 list-disc list-inside">
+                <li>Upload images + caption files (.txt booru tags)</li>
+                <li>LLM generates natural language additions</li>
+                <li>Final caption = tags + LLM addition</li>
+                <li>Optimized for Anima (CircleStone Labs 2B anime model)</li>
+              </ul>
+              <Button className="w-full mt-2">Start For Anima Mode</Button>
             </div>
           </button>
         </Card>

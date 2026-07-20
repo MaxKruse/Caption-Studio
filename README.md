@@ -8,7 +8,7 @@ Web app for batch captioning images with llama.cpp vision models. Upload a folde
 - Auto-discover loaded vision models
 - Upload images in bulk (drag-and-drop or file picker)
 - Generate detailed captions with streaming token feedback
-- Two prompt modes: **Simple** (one-shot) and **Multi-step** (conversational refinement)
+- Four prompt modes: **Simple** (one-shot), **Multi-step** (conversational refinement), **Krea 2** (de-duplicated captions with character description), and **For Anima** (booru tag enhancement)
 - Optional trigger word injection for character/subject naming
 - Download all images + captions as a ZIP file
 
@@ -123,6 +123,8 @@ Click **Next** when the server is available.
 |------|----------|
 | **Simple** | Quick captioning - one prompt, one result per image |
 | **Multi-step** | Refined captions - the model analyzes first, then writes the final caption |
+| **Krea 2** | Dataset captioning with character-aware de-duplication - removes repetitive character traits from captions |
+| **For Anima** | Dataset captioning with existing booru tags - enriches taggui output with natural language |
 
 ### Step 3: Upload Images
 
@@ -155,6 +157,135 @@ You can **Stop** processing mid-batch if needed.
 ### Step 6: Download Results
 
 When all images are processed, click **Download ZIP**. The ZIP contains an `img/` folder with all original images plus matching `.txt` caption files.
+
+## For Anima Mode
+
+This mode is designed for creating high-quality dataset captions for the [Anima](https://github.com/CircleStone-Labs/Anima) text-to-image model. It combines automated booru tagging with LLM-generated natural language descriptions.
+
+### Workflow
+
+1. **Generate booru tags with taggui:** Use the [taggui](https://github.com/jhc13/taggui) app with the `SmilingWolf/wd-convnext-tagger-v3` model to create initial danbooru-style tags for your images.
+2. **Upload to Caption Studio:** In the For Anima mode, upload both your images and their corresponding caption files (`.txt` files containing the booru tags).
+3. **LLM enhancement:** The vision model analyzes each image alongside its booru tags and generates a natural language addition that describes spatial relationships, mood, atmosphere, and details that tags alone cannot express.
+4. **Final caption:** The output caption combines the original booru tags with the LLM-generated addition.
+
+### Example
+
+**Input booru tags:**
+```
+1girl, long hair, blue eyes, forest, sunlight, standing
+```
+
+**LLM addition:**
+```
+a girl with flowing blue hair stands in a sunlit forest clearing, dappled light filtering through the canopy above her, tall trees framing the scene on both sides
+```
+
+**Final caption:**
+```
+1girl, long hair, blue eyes, forest, sunlight, standing a girl with flowing blue hair stands in a sunlit forest clearing, dappled light filtering through the canopy above her, tall trees framing the scene on both sides
+```
+
+### API Endpoint
+
+```
+POST /api/caption/for-anima
+```
+
+**FormData fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `config` | string (JSON) | `{"serverUrl": "...", "model": "..."}` |
+| `images` | File[] | Image files to process |
+| `captions` | File[] | Caption files (booru tags), paired by index with images |
+| `imageNames` | string (JSON) | Optional: `string[]` of display names for images |
+
+**SSE events:** Same as simple mode (`session`, `image_start`, `token`, `image_complete`, `done`).
+
+The `image_complete` event includes additional fields:
+- `booruTags`: The original booru tags from the caption file
+- `llmAddition`: The LLM-generated natural language addition
+
+## Krea 2 Mode
+
+This mode is designed for creating high-quality dataset captions where repetitive character descriptions are removed. It works in two phases:
+
+### Phase 1: Initial Captioning
+
+Identical to Simple mode - each image is captioned independently using the configured prompt.
+
+### Phase 2: Re-captioning with Sliding Window
+
+After all initial captions are generated, a second pass refines them:
+
+1. **Sliding window** of size 8 with overlap 4 (step = 4) iterates through all images
+2. For each window, the LLM receives:
+   - All 8 images (as vision input)
+   - All 8 original captions
+   - The user-provided character description
+3. The LLM produces refined captions that **exclude features consistent with the character description** (hair color, eye color, body type, etc.) and **focus on what is unique** in each image (pose, expression, background, lighting, accessories, etc.)
+4. Windows are processed sequentially - later windows overwrite earlier captions for overlapping images, so the final caption for each image comes from its last window
+
+### Character Description
+
+The `characterDescription` field is a natural language description of what defines the character across all images. For example:
+
+```
+A young woman with long blonde hair, blue eyes, and fair skin. She has a slim build and often wears elegant dresses.
+```
+
+The LLM uses this to identify which features to exclude from individual captions.
+
+### Example
+
+**Character description:**
+```
+A young woman with long blonde hair, blue eyes, and fair skin.
+```
+
+**Phase 1 caption (image 3):**
+```
+A young woman with long blonde hair and blue eyes standing by the ocean, wearing a white sundress, golden sunset lighting
+```
+
+**Phase 2 refined caption (image 3):**
+```
+Standing by the ocean in a white sundress, golden sunset lighting casting warm tones across the scene
+```
+
+The refined caption excludes "long blonde hair" and "blue eyes" because they are consistent across all images and implied by the character description.
+
+### API Endpoint
+
+```
+POST /api/caption/krea-2
+```
+
+**FormData fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `config` | string (JSON) | `{"serverUrl": "...", "model": "...", "systemPrompt": "...", "userPrompt": "...", "characterDescription": "...", "triggerWordPerson": "...", "triggerWordOther": "..."}` |
+| `images` | File[] | Image files to process |
+| `imageNames` | string (JSON) | Optional: `string[]` of display names for images |
+
+**Required config fields:** `serverUrl`, `model`, `characterDescription`
+
+**SSE events:**
+
+| Event | Data | Description |
+|-------|------|-------------|
+| `session` | `{ sessionId }` | Session started |
+| `phase` | `{ phase: "captioning" \| "recaptioning" }` | Current processing phase |
+| `image_start` | `{ index, name }` | Image captioning started |
+| `token` | `{ type, index, content, full }` | Streaming token (caption/reasoning) |
+| `image_complete` | `{ index, name, status, caption, reasoningContent }` | Image captioning complete |
+| `recaption_bucket_start` | `{ bucket, size }` | Re-captioning window started |
+| `recaption_bucket_complete` | `{ bucket, status, refinedCount }` | Re-captioning window complete |
+| `recaption_image_updated` | `{ index, name, oldCaption, newCaption }` | Individual caption refined |
+| `done` | `{ allComplete: true }` | All processing complete |
+| `error` | `{ error }` | Error occurred |
 
 ## Prompt Variables
 
@@ -212,6 +343,19 @@ Browser                          Server (Next.js)                 llama.cpp
    |    image_start / token /        |    (stream: true)             |
    |    image_complete / done        | <-- streaming tokens -------- |
    |                                  |                               |
+   |-- POST /api/caption/for-anima-> | (saves images to /tmp)       |
+   |    (FormData: images + captions)|                               |
+   |<-- SSE stream ----------------- | -- POST /v1/chat/completions -> |
+   |    image_start / token /        |    (stream: true)             |
+   |    image_complete / done        | <-- streaming tokens -------- |
+   |                                  |                               |
+   |-- POST /api/caption/krea-2 ---> | (saves images to /tmp)       |
+   |    (FormData: images + config)  |                               |
+   |<-- SSE stream ----------------- | -- POST /v1/chat/completions -> |
+   |    phase / image_start /        |    (phase 1: caption each)    |
+   |    token / image_complete /     |                               |
+   |    recaption_* / done           | -- POST /v1/chat/completions -> |
+   |                                  |    (phase 2: sliding window)  |
    |-- GET /api/download?sessionId -> | (zips /tmp/session/)         |
    |<-- .zip file ------------------ |                               |
 ```

@@ -14,6 +14,7 @@ import { ServerCheck } from "@/components/server-check";
 import { ModeSelector } from "@/components/mode-selector";
 import { SimpleMode } from "@/components/simple-mode";
 import { MultiStepMode } from "@/components/multi-step-mode";
+import { ForAnimaMode } from "@/components/for-anima-mode";
 import { SessionProvider } from "@/hooks/use-session";
 import type { AppMode } from "@/hooks/use-session";
 
@@ -96,6 +97,10 @@ export function HomeClient({ defaultServerUrl }: HomeClientProps) {
 
         {appPhase === "working" && selectedMode === "multi-step" && (
           <MultiStepMode serverUrl={serverUrl} onBack={handleBackToModes} />
+        )}
+
+        {appPhase === "working" && selectedMode === "for-anima" && (
+          <ForAnimaMode serverUrl={serverUrl} onBack={handleBackToModes} />
         )}
       </main>
 

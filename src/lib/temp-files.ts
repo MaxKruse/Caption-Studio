@@ -158,6 +158,26 @@ export function writeCaption(
 }
 
 /**
+ * Read a caption text file from the session directory.
+ * Returns null if the session or caption file not found.
+ */
+export function readCaption(
+  sessionId: string,
+  imageServerName: string
+): string | null {
+  const meta = sessions.get(sessionId);
+  if (!meta) return null;
+
+  const lastDot = imageServerName.lastIndexOf(".");
+  const base = lastDot === -1 ? imageServerName : imageServerName.slice(0, lastDot);
+  const captionPath = path.join(meta.dir, `${base}.txt`);
+
+  if (!fs.existsSync(captionPath)) return null;
+
+  return fs.readFileSync(captionPath, "utf-8");
+}
+
+/**
  * Get session metadata by ID. Touches the last-activity timestamp.
  */
 export function getSession(sessionId: string): SessionMeta | null {

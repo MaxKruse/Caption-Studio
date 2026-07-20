@@ -12,29 +12,63 @@ import { Button } from "@/components/ui/button";
 
 interface ImageUploaderProps {
   onImagesReady: (count: number) => void;
+  /** Also accept .txt files and pass them via this callback (for-anima mode). */
+  acceptCaptions?: boolean;
+  onCaptionsReady?: (files: File[]) => void;
 }
 
-export function ImageUploader({ onImagesReady }: ImageUploaderProps) {
+export function ImageUploader({ onImagesReady, acceptCaptions, onCaptionsReady }: ImageUploaderProps) {
   const { state, addImage, removeImage, clearImages } = useSession();
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [captionMap, setCaptionMap] = useState<Map<string, string>>(new Map()); // stem -> caption text
+
+  /** Strip extension from filename to get the stem for pairing. */
+  const getStem = (name: string): string => {
+    const lastDot = name.lastIndexOf(".");
+    return lastDot > 0 ? name.slice(0, lastDot) : name;
+  };
 
   const processFiles = useCallback(
-    (files: FileList | File[]) => {
-      const imageFiles = Array.from(files).filter((f) =>
+    async (files: FileList | File[]) => {
+      const allFiles = Array.from(files);
+      const imageFiles = allFiles.filter((f) =>
         f.type.startsWith("image/")
       );
+      const txtFiles = allFiles.filter(
+        (f) => f.name.endsWith(".txt") || f.type === "text/plain"
+      );
 
+      // Build stem -> caption text map from .txt files
+      const currentCaptionMap = new Map<string, string>(captionMap);
+      if (acceptCaptions && txtFiles.length > 0) {
+        for (const txtFile of txtFiles) {
+          const stem = getStem(txtFile.name);
+          const text = await txtFile.text();
+          currentCaptionMap.set(stem, text);
+        }
+        setCaptionMap(currentCaptionMap);
+
+        // Notify parent with caption files (for backward compat)
+        if (onCaptionsReady) {
+          onCaptionsReady(txtFiles);
+        }
+      }
+
+      // Add images, pairing with caption by stem
       for (const file of imageFiles) {
+        const stem = getStem(file.name);
+
         const reader = new FileReader();
         reader.onload = (e) => {
           const dataUrl = e.target?.result as string;
-          addImage(dataUrl, file.name, file);
+          const pairedCaption = currentCaptionMap.get(stem);
+          addImage(dataUrl, file.name, file, pairedCaption);
         };
         reader.readAsDataURL(file);
       }
     },
-    [addImage]
+    [addImage, acceptCaptions, onCaptionsReady, captionMap]
   );
 
   const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
@@ -97,7 +131,7 @@ export function ImageUploader({ onImagesReady }: ImageUploaderProps) {
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept={acceptCaptions ? "image/*,.txt" : "image/*"}
             multiple
             className="hidden"
             onChange={handleFileChange}
@@ -107,8 +141,10 @@ export function ImageUploader({ onImagesReady }: ImageUploaderProps) {
           </span>
           <p className="text-sm text-slate-400">
             {isDragging
-              ? "Drop images here"
-              : "Drag & drop images here, or click to browse"}
+              ? "Drop files here"
+              : acceptCaptions
+                ? "Drag & drop images + .txt caption files here, or click to browse"
+                : "Drag & drop images here, or click to browse"}
           </p>
         </div>
 
@@ -129,34 +165,43 @@ export function ImageUploader({ onImagesReady }: ImageUploaderProps) {
               </Button>
             </div>
 
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2 max-h-48 overflow-y-auto">
-              {state.images.map((dataUrl, index) => (
-                <div
-                  key={index}
-                  className="relative group aspect-square rounded-lg overflow-hidden border border-slate-600"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={dataUrl}
-                    alt={state.imageNames[index] || `Image ${index + 1}`}
-                    className="w-full h-full object-cover"
-                  />
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeImage(index);
-                    }}
-                    className="absolute top-1 right-1 bg-red-500/80 hover:bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2 max-h-64 overflow-y-auto">
+              {state.images.map((dataUrl, index) => {
+                const caption = state.imageCaptions[index];
+                return (
+                  <div
+                    key={index}
+                    className="relative group aspect-square rounded-lg overflow-hidden border border-slate-600 flex flex-col"
                   >
-                    x
-                  </button>
-                  <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-1 py-0.5">
-                    <span className="text-[10px] text-slate-300 truncate block">
-                      {state.imageNames[index]}
-                    </span>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={dataUrl}
+                      alt={state.imageNames[index] || `Image ${index + 1}`}
+                      className="w-full h-full object-cover flex-shrink-0"
+                    />
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeImage(index);
+                      }}
+                      className="absolute top-1 right-1 bg-red-500/80 hover:bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      x
+                    </button>
+                    <div className="absolute bottom-0 left-0 right-0 bg-black/80 px-1 py-0.5 space-y-0.5">
+                      <span className="text-[10px] text-slate-300 truncate block">
+                        {state.imageNames[index]}
+                      </span>
+                      {caption && (
+                        <span className="text-[9px] text-emerald-400 line-clamp-2 leading-tight block" title={caption}>
+                          {caption.trim().slice(0, 120)}
+                          {caption.trim().length > 120 ? "..." : ""}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

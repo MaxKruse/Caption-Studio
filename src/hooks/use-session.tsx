@@ -11,7 +11,7 @@ import { useState, useCallback, createContext, useContext } from "react";
 // Types
 // ---------------------------------------------------------------------------
 
-export type AppMode = "simple" | "multi-step";
+export type AppMode = "simple" | "multi-step" | "for-anima";
 
 export interface SessionState {
   mode: AppMode | null;
@@ -20,6 +20,7 @@ export interface SessionState {
   images: string[]; // base64 data URLs (for preview)
   imageNames: string[];
   imageFiles: File[]; // raw File objects (for FormData upload)
+  imageCaptions: string[]; // paired caption text (booru tags) for each image
   // Trigger words (optional, prepended to user prompt if filled)
   triggerWordPerson: string;
   triggerWordOther: string;
@@ -42,6 +43,7 @@ const DEFAULT_STATE: SessionState = {
   images: [],
   imageNames: [],
   imageFiles: [],
+  imageCaptions: [],
   triggerWordPerson: "",
   triggerWordOther: "",
   systemPrompt: [
@@ -115,7 +117,7 @@ interface SessionContextValue {
   setMode: (mode: AppMode | null) => void;
   setServerUrl: (serverUrl: string) => void;
   setModel: (model: string) => void;
-  addImage: (dataUrl: string, name: string, file: File) => void;
+  addImage: (dataUrl: string, name: string, file: File, caption?: string) => void;
   removeImage: (index: number) => void;
   clearImages: () => void;
   setSystemPrompt: (systemPrompt: string) => void;
@@ -151,12 +153,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => ({ ...prev, model }));
   }, []);
 
-  const addImage = useCallback((dataUrl: string, name: string, file: File) => {
+  const addImage = useCallback((dataUrl: string, name: string, file: File, caption?: string) => {
     setState((prev) => ({
       ...prev,
       images: [...prev.images, dataUrl],
       imageNames: [...prev.imageNames, name],
       imageFiles: [...prev.imageFiles, file],
+      imageCaptions: [...prev.imageCaptions, caption ?? ""],
     }));
   }, []);
 
@@ -165,15 +168,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       const newImages = [...prev.images];
       const newNames = [...prev.imageNames];
       const newFiles = [...prev.imageFiles];
+      const newCaptions = [...prev.imageCaptions];
       newImages.splice(index, 1);
       newNames.splice(index, 1);
       newFiles.splice(index, 1);
-      return { ...prev, images: newImages, imageNames: newNames, imageFiles: newFiles };
+      newCaptions.splice(index, 1);
+      return { ...prev, images: newImages, imageNames: newNames, imageFiles: newFiles, imageCaptions: newCaptions };
     });
   }, []);
 
   const clearImages = useCallback(() => {
-    setState((prev) => ({ ...prev, images: [], imageNames: [], imageFiles: [] }));
+    setState((prev) => ({ ...prev, images: [], imageNames: [], imageFiles: [], imageCaptions: [] }));
   }, []);
 
   const setTriggerWordPerson = useCallback((triggerWordPerson: string) => {
