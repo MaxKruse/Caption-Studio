@@ -15,6 +15,7 @@ import { ModeSelector } from "@/components/mode-selector";
 import { SimpleMode } from "@/components/simple-mode";
 import { MultiStepMode } from "@/components/multi-step-mode";
 import { ForAnimaMode } from "@/components/for-anima-mode";
+import { Krea2Mode } from "@/components/krea2-mode";
 import { SessionProvider } from "@/hooks/use-session";
 import type { AppMode } from "@/hooks/use-session";
 
@@ -101,6 +102,10 @@ export function HomeClient({ defaultServerUrl }: HomeClientProps) {
 
         {appPhase === "working" && selectedMode === "for-anima" && (
           <ForAnimaMode serverUrl={serverUrl} onBack={handleBackToModes} />
+        )}
+
+        {appPhase === "working" && selectedMode === "krea-2" && (
+          <Krea2Mode serverUrl={serverUrl} onBack={handleBackToModes} />
         )}
       </main>
 

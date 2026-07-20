@@ -10,13 +10,13 @@ import { Card } from "@/components/ui/card";
 
 interface ModeSelectorProps {
   serverUrl: string;
-  onModeSelected: (mode: "simple" | "multi-step" | "for-anima") => void;
+  onModeSelected: (mode: "simple" | "multi-step" | "for-anima" | "krea-2") => void;
 }
 
 export function ModeSelector({ onModeSelected }: ModeSelectorProps) {
   const { setMode } = useSession();
 
-  const handleSelect = (mode: "simple" | "multi-step" | "for-anima") => {
+  const handleSelect = (mode: "simple" | "multi-step" | "for-anima" | "krea-2") => {
     setMode(mode);
     onModeSelected(mode);
   };
@@ -104,6 +104,34 @@ export function ModeSelector({ onModeSelected }: ModeSelectorProps) {
                 <li>Optimized for Anima (CircleStone Labs 2B anime model)</li>
               </ul>
               <Button className="w-full mt-2">Start For Anima Mode</Button>
+            </div>
+          </button>
+        </Card>
+
+        {/* Krea 2 Mode */}
+        <Card variant="elevated" className="cursor-pointer hover:border-indigo-500 transition-colors md:col-span-2">
+          <button
+            onClick={() => handleSelect("krea-2")}
+            className="w-full text-left"
+          >
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">K</span>
+                <h3 className="text-lg font-semibold text-slate-100">Krea 2 Mode</h3>
+              </div>
+              <p className="text-sm text-slate-400">
+                Two-phase captioning for character-consistent image sets. Phase 1
+                captions each image individually, then Phase 2 refines captions
+                by removing character-consistent features and highlighting what
+                makes each image unique.
+              </p>
+              <ul className="text-xs text-slate-500 space-y-1 list-disc list-inside">
+                <li>Phase 1: caption all images with the same prompt</li>
+                <li>Phase 2: sliding window re-captioning (size=8, step=4)</li>
+                <li>Requires character description for refinement</li>
+                <li>Optimized for batches of images of the same character</li>
+              </ul>
+              <Button className="w-full mt-2">Start Krea 2 Mode</Button>
             </div>
           </button>
         </Card>

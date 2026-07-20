@@ -11,7 +11,7 @@ import { useState, useCallback, createContext, useContext } from "react";
 // Types
 // ---------------------------------------------------------------------------
 
-export type AppMode = "simple" | "multi-step" | "for-anima";
+export type AppMode = "simple" | "multi-step" | "for-anima" | "krea-2";
 
 export interface SessionState {
   mode: AppMode | null;
@@ -24,6 +24,8 @@ export interface SessionState {
   // Trigger words (optional, prepended to user prompt if filled)
   triggerWordPerson: string;
   triggerWordOther: string;
+  // Krea 2 mode
+  characterDescription: string;
   // Simple mode
   systemPrompt: string;
   userPrompt: string;
@@ -46,6 +48,7 @@ const DEFAULT_STATE: SessionState = {
   imageCaptions: [],
   triggerWordPerson: "",
   triggerWordOther: "",
+  characterDescription: "",
   systemPrompt: [
     "You are an expert at writing detailed, precise image generation prompts optimized for Krea-2 and Qwen Image models.",
     "",
@@ -124,6 +127,7 @@ interface SessionContextValue {
   setUserPrompt: (userPrompt: string) => void;
   setTriggerWordPerson: (triggerWordPerson: string) => void;
   setTriggerWordOther: (triggerWordOther: string) => void;
+  setCharacterDescription: (characterDescription: string) => void;
   setMultiStepSystemPrompt: (prompt: string) => void;
   setMultiStepMessages: (messages: string[]) => void;
   updateMultiStepMessage: (index: number, content: string) => void;
@@ -189,6 +193,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => ({ ...prev, triggerWordOther }));
   }, []);
 
+  const setCharacterDescription = useCallback((characterDescription: string) => {
+    setState((prev) => ({ ...prev, characterDescription }));
+  }, []);
+
   const setSystemPrompt = useCallback((systemPrompt: string) => {
     setState((prev) => ({ ...prev, systemPrompt }));
   }, []);
@@ -244,6 +252,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setUserPrompt,
     setTriggerWordPerson,
     setTriggerWordOther,
+    setCharacterDescription,
     setMultiStepSystemPrompt,
     setMultiStepMessages,
     updateMultiStepMessage,
