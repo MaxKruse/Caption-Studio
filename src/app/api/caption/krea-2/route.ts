@@ -296,6 +296,8 @@ async function processRefineImage(
   normalizedUrl: string,
   model: string,
   characterDescription: string,
+  triggerWordPerson: string,
+  triggerWordOther: string,
   sendEvent: (type: string, data: unknown) => void,
   abortSignal: AbortSignal
 ): Promise<void> {
@@ -322,7 +324,12 @@ async function processRefineImage(
     const base64 = apiBuffer.toString("base64");
 
     const systemPrompt = buildRefineSystemPrompt();
-    const userPrompt = buildRefineUserPrompt(originalCaption, characterDescription);
+    const userPrompt = buildRefineUserPrompt(
+      originalCaption,
+      characterDescription,
+      triggerWordPerson,
+      triggerWordOther
+    );
 
     if (abortSignal.aborted) return;
 
@@ -646,6 +653,8 @@ export async function POST(request: NextRequest) {
             normalizedUrl,
             config.model,
             config.characterDescription,
+            person,
+            other,
             sendEvent,
             sessionAbort.signal
           );

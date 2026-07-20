@@ -184,6 +184,12 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
               const phaseData = data as { phase: string };
               if (phaseData.phase === "refining") {
                 setPhase("refining");
+                // Reset all Phase 1 completed images to "queued" (awaiting refinement)
+                for (const result of localResults) {
+                  if (result.status === "completed") {
+                    result.status = "queued";
+                  }
+                }
               }
               // "captioning" is already the default phase when processing starts
               break;

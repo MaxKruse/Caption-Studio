@@ -80,13 +80,17 @@ export function CaptionViewer({ results }: CaptionViewerProps) {
         <div className="space-y-4">
           {/* Image and status header */}
           <div className="flex items-start gap-4">
-            <div className="flex-1">
+            <div className="flex-1 relative">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={current.imageDataUrl}
                 alt={current.name}
                 className="max-h-64 rounded-lg object-contain bg-slate-900"
               />
+              {/* Grey backdrop for images awaiting refinement */}
+              {current.status === "queued" && (
+                <div className="absolute inset-0 rounded-lg bg-slate-800/60 pointer-events-none" />
+              )}
             </div>
             <div className="text-right shrink-0">
               <p className="text-sm font-medium text-slate-200">{current.name}</p>
