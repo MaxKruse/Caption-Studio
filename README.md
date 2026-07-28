@@ -209,23 +209,31 @@ The `image_complete` event includes additional fields:
 
 ## Krea 2 Mode
 
-This mode is designed for creating high-quality dataset captions where repetitive character descriptions are removed. It works in two phases:
+This mode is designed for creating high-quality dataset captions optimized for the Krea 2 text-to-image model. It works in three phases, all within a **single multi-turn conversation** per image:
+
+### Multi-turn Conversation (KV Cache Reuse)
+
+Each image is processed through all 3 phases as one continuous conversation:
+
+1. **Phase 1 message:** Image + user prompt -> initial caption (assistant responds)
+2. **Phase 2 message:** Refine instructions + character description -> refined caption (assistant responds)
+3. **Phase 3 message:** Distill instructions -> distilled prompt (assistant responds)
+
+The image is only sent in the first message. Phases 2 and 3 reuse the conversation context, so the **image encoding is cached by the KV cache** and only the new text tokens need processing. This significantly reduces latency compared to separate API calls per phase.
 
 ### Phase 1: Initial Captioning
 
-Identical to Simple mode - each image is captioned independently using the configured prompt.
+Identical to Simple mode - the vision model captions the image using the configured prompt.
 
-### Phase 2: Re-captioning with Sliding Window
+### Phase 2: Per-image Refinement
 
-After all initial captions are generated, a second pass refines them:
+The conversation continues with refinement instructions. The LLM produces a caption that **excludes features consistent with the character description** (hair color, eye color, body type, etc.) and **focuses on what is unique** in each image (pose, expression, background, lighting, accessories, etc.).
 
-1. **Sliding window** of size 8 with overlap 4 (step = 4) iterates through all images
-2. For each window, the LLM receives:
-   - All 8 images (as vision input)
-   - All 8 original captions
-   - The user-provided character description
-3. The LLM produces refined captions that **exclude features consistent with the character description** (hair color, eye color, body type, etc.) and **focus on what is unique** in each image (pose, expression, background, lighting, accessories, etc.)
-4. Windows are processed sequentially - later windows overwrite earlier captions for overlapping images, so the final caption for each image comes from its last window
+### Phase 3: Krea 2 Prompt Distillation
+
+The conversation continues with distillation instructions. The LLM produces a **simplified prompt** that preserves all essential visual information while removing redundancy, verbose phrasing, and hedging language. The output is a tight, flowing prose paragraph (60-150 words) optimized for Krea 2's text-to-image model.
+
+This phase is the **inverse of prompt expansion**: instead of taking a simple prompt and enriching it with style, lighting, and composition details, it takes a verbose caption and distills it down to a practical T2I prompt.
 
 ### Character Description
 
@@ -246,15 +254,20 @@ A young woman with long blonde hair, blue eyes, and fair skin.
 
 **Phase 1 caption (image 3):**
 ```
-A young woman with long blonde hair and blue eyes standing by the ocean, wearing a white sundress, golden sunset lighting
+A young woman with long blonde hair and blue eyes standing by the ocean, wearing a white sundress, golden sunset lighting illuminating her figure as the waves crash behind her
 ```
 
 **Phase 2 refined caption (image 3):**
 ```
-Standing by the ocean in a white sundress, golden sunset lighting casting warm tones across the scene
+Standing by the ocean in a white sundress, golden sunset lighting casting warm tones across the scene, waves crashing along the shore behind her figure
 ```
 
-The refined caption excludes "long blonde hair" and "blue eyes" because they are consistent across all images and implied by the character description.
+**Phase 3 distilled prompt (image 3):**
+```
+Standing by the ocean in a white sundress, golden sunset lighting, waves crashing along the shore
+```
+
+The distilled prompt removes redundancy ("casting warm tones across the scene", "behind her figure") while preserving all key visual elements.
 
 ### API Endpoint
 
@@ -277,13 +290,12 @@ POST /api/caption/krea-2
 | Event | Data | Description |
 |-------|------|-------------|
 | `session` | `{ sessionId }` | Session started |
-| `phase` | `{ phase: "captioning" \| "recaptioning" }` | Current processing phase |
-| `image_start` | `{ index, name }` | Image captioning started |
-| `token` | `{ type, index, content, full }` | Streaming token (caption/reasoning) |
-| `image_complete` | `{ index, name, status, caption, reasoningContent }` | Image captioning complete |
-| `recaption_bucket_start` | `{ bucket, size }` | Re-captioning window started |
-| `recaption_bucket_complete` | `{ bucket, status, refinedCount }` | Re-captioning window complete |
-| `recaption_image_updated` | `{ index, name, oldCaption, newCaption }` | Individual caption refined |
+| `image_start` | `{ index, name }` | Image processing started |
+| `phase` | `{ phase: "captioning" \| "refining" \| "distilling", index }` | Current phase for an image |
+| `token` | `{ type, phase, index, content, full }` | Streaming token (caption/reasoning) |
+| `image_complete` | `{ index, name, phase, status, caption, reasoningContent }` | Phase 1 complete |
+| `refine_image_complete` | `{ index, name, status, caption, reasoningContent }` | Phase 2 complete |
+| `distill_image_complete` | `{ index, name, status, caption, reasoningContent }` | Phase 3 complete (final caption) |
 | `done` | `{ allComplete: true }` | All processing complete |
 | `error` | `{ error }` | Error occurred |
 
@@ -352,10 +364,13 @@ Browser                          Server (Next.js)                 llama.cpp
    |-- POST /api/caption/krea-2 ---> | (saves images to /tmp)       |
    |    (FormData: images + config)  |                               |
    |<-- SSE stream ----------------- | -- POST /v1/chat/completions -> |
-   |    phase / image_start /        |    (phase 1: caption each)    |
+   |    image_start / phase /        |    (turn 1: image + prompt)   |
    |    token / image_complete /     |                               |
-   |    recaption_* / done           | -- POST /v1/chat/completions -> |
-   |                                  |    (phase 2: sliding window)  |
+   |    refine_* / distill_* / done  | -- POST /v1/chat/completions -> |
+   |                                  |    (turn 2: refine, reuse ctx) |
+   |                                  |                               |
+   |                                  | -- POST /v1/chat/completions -> |
+   |                                  |    (turn 3: distill, reuse ctx)|
    |-- GET /api/download?sessionId -> | (zips /tmp/session/)         |
    |<-- .zip file ------------------ |                               |
 ```

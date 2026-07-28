@@ -127,6 +127,23 @@ Each worker fetches `<serverUrl>/v1/chat/completions` with:
 
 Streaming response parsed for `delta.reasoning_content` and `delta.content`.
 
+### Krea 2 Mode (3-phase multi-turn pipeline)
+
+```
+POST /api/caption/krea-2 → FormData (images + JSON config), returns SSE stream
+DELETE ?sessionId=<id>   → aborts session
+```
+
+Each image is processed through all 3 phases as a **single multi-turn conversation**:
+
+**Turn 1 (Phase 1 - Captioning):** Image + user prompt -> initial caption. Image is sent as vision input.
+
+**Turn 2 (Phase 2 - Refinement):** Conversation history + refine user message (references Phase 1 caption + character description). LLM strips character-consistent features. Image NOT re-sent - KV cache reuses the encoding from turn 1.
+
+**Turn 3 (Phase 3 - Distillation):** Conversation history + distill user message (references Phase 2 caption). LLM distills into a concise (60-150 word) krea2-optimized prompt. This is the **inverse of prompt expansion**.
+
+Parallel workers (up to 8 concurrent) each process one image through all 3 turns. Config requires `characterDescription`.
+
 ### Download
 
 ```

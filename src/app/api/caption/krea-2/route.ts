@@ -1,8 +1,12 @@
 /**
  * Krea 2 mode caption endpoint.
- * Two-phase workflow:
- *   Phase 1 - Initial captioning (standard captioning with user prompt)
- *   Phase 2 - Per-image refinement (remove character-consistent features using character description)
+ * Three-phase multi-turn conversation per image (shared KV cache):
+ *   Phase 1 - Initial captioning (image + user prompt)
+ *   Phase 2 - Refinement (remove character-consistent features)
+ *   Phase 3 - Distillation (simplify for krea2 t2i)
+ *
+ * All 3 phases share the same conversation context so the image encoding
+ * is cached by the KV cache and only new text tokens need processing.
  *
  * POST /api/caption/krea-2 - accepts FormData, starts processing, returns SSE stream
  * DELETE /api/caption/krea-2?sessionId=<id> - aborts an active session
@@ -16,12 +20,11 @@ import {
   createSession,
   saveImage,
   writeCaption,
-  readCaption,
   touchSession,
 } from "@/lib/temp-files";
 import {
-  buildRefineSystemPrompt,
   buildRefineUserPrompt,
+  buildDistillUserPrompt,
 } from "@/lib/krea2-prompts";
 
 // ---------------------------------------------------------------------------
@@ -30,7 +33,7 @@ import {
 
 const activeSessions = new Map<string, AbortController>();
 
-/** Cleanup stale sessions (completed sessions that weren't removed). */
+/** Cleanup stale sessions (completed sessions that were not removed). */
 setInterval(() => {
   for (const [sessionId, ac] of activeSessions.entries()) {
     if (ac.signal.aborted) {
@@ -54,7 +57,7 @@ interface ImageTask {
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Max time allowed per API call. */
+/** Max time allowed per API call (all 3 phases share one call, so generous). */
 const API_TIMEOUT_MS = 5 * 60 * 1000;
 
 /** Default max concurrency for parallel image processing. */
@@ -107,15 +110,97 @@ async function fetchWithTimeout(
   }
 }
 
+/**
+ * Stream an API response and emit SSE token events.
+ * Returns the full caption and reasoning content on completion.
+ */
+async function streamResponse(
+  response: Response,
+  phase: string,
+  index: number,
+  sendEvent: (type: string, data: unknown) => void,
+  abortSignal: AbortSignal
+): Promise<{ caption: string; reasoningContent: string } | null> {
+  let caption = "";
+  let reasoningContent = "";
+  const body = response.body;
+  if (!body) throw new Error("No response body");
+
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let sseBuffer = "";
+
+  while (true) {
+    if (abortSignal.aborted) {
+      reader.cancel();
+      return null;
+    }
+
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    sseBuffer += decoder.decode(value, { stream: true });
+    const lines = sseBuffer.split("\n");
+    sseBuffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (abortSignal.aborted) {
+        reader.cancel();
+        return null;
+      }
+
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data: ")) continue;
+      const dataStr = trimmed.slice(6);
+      if (dataStr === "[DONE]") continue;
+
+      try {
+        const chunk = JSON.parse(dataStr);
+        const delta = chunk?.choices?.[0]?.delta;
+        if (delta?.reasoning_content) {
+          reasoningContent += delta.reasoning_content;
+          sendEvent("token", {
+            type: "reasoning",
+            phase,
+            index,
+            content: delta.reasoning_content,
+            full: reasoningContent,
+          });
+        }
+        if (delta?.content) {
+          caption += delta.content;
+          sendEvent("token", {
+            type: "caption",
+            phase,
+            index,
+            content: delta.content,
+            full: caption,
+          });
+        }
+      } catch {
+        // skip malformed
+      }
+    }
+  }
+
+  return { caption: caption.trim(), reasoningContent: reasoningContent.trim() };
+}
+
 // ---------------------------------------------------------------------------
-// Phase 1: Initial captioning
+// Multi-turn image processing (all 3 phases, single conversation)
 // ---------------------------------------------------------------------------
 
 /**
- * Process a single image and emit SSE events via sendEvent.
- * Writes caption to .txt file on completion.
+ * Process a single image through all 3 phases as a multi-turn conversation.
+ *
+ * Phase 1: Image + user prompt -> initial caption
+ * Phase 2: Conversation + refine instructions -> refined caption
+ * Phase 3: Conversation + distill instructions -> distilled prompt
+ *
+ * The image is only in the first user message. Subsequent phases reuse
+ * the conversation context (KV cache) so only new text tokens are processed.
  */
-async function processImage(
+async function processImageAllPhases(
   task: ImageTask,
   sessionId: string,
   normalizedUrl: string,
@@ -124,6 +209,7 @@ async function processImage(
   userPrompt: string,
   triggerWordPerson: string,
   triggerWordOther: string,
+  characterDescription: string,
   total: number,
   sendEvent: (type: string, data: unknown) => void,
   abortSignal: AbortSignal
@@ -133,11 +219,24 @@ async function processImage(
   sendEvent("image_start", { index: task.index, name: task.originalName });
 
   try {
+    // Prepare image once (used in first message of the conversation)
     const { buffer: apiBuffer, mimeType } = await prepareForApi(
       task.originalName,
       task.imageBuffer
     );
     const base64 = apiBuffer.toString("base64");
+
+    // Build conversation history (shared across all phases)
+    const messages: Array<Record<string, unknown>> = [];
+
+    if (systemPrompt.trim()) {
+      messages.push({ role: "system", content: systemPrompt.trim() });
+    }
+
+    // =========================================================================
+    // Phase 1: Initial captioning
+    // =========================================================================
+    sendEvent("phase", { phase: "captioning", index: task.index });
 
     const promptWithContext = buildUserPrompt(
       userPrompt,
@@ -151,14 +250,6 @@ async function processImage(
       total
     );
 
-    if (abortSignal.aborted) return;
-
-    const messages: Array<Record<string, unknown>> = [];
-
-    if (systemPrompt.trim()) {
-      messages.push({ role: "system", content: systemPrompt.trim() });
-    }
-
     messages.push({
       role: "user",
       content: [
@@ -170,7 +261,9 @@ async function processImage(
       ],
     });
 
-    const response = await fetchWithTimeout(
+    if (abortSignal.aborted) return;
+
+    const response1 = await fetchWithTimeout(
       `${normalizedUrl}/v1/chat/completions`,
       {
         method: "POST",
@@ -187,167 +280,53 @@ async function processImage(
       abortSignal
     );
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API ${response.status}: ${errorText}`);
+    if (!response1.ok) {
+      const errorText = await response1.text();
+      throw new Error(`API ${response1.status}: ${errorText}`);
     }
 
-    let caption = "";
-    let reasoningContent = "";
-    const body = response.body;
-    if (!body) throw new Error("No response body");
+    const result1 = await streamResponse(
+      response1,
+      "captioning",
+      task.index,
+      sendEvent,
+      abortSignal
+    );
 
-    const reader = body.getReader();
-    const decoder = new TextDecoder();
-    let sseBuffer = "";
+    if (!result1) return;
 
-    while (true) {
-      if (abortSignal.aborted) {
-        reader.cancel();
-        return;
-      }
+    // Add assistant response to conversation
+    messages.push({ role: "assistant", content: result1.caption });
 
-      const { done, value } = await reader.read();
-      if (done) break;
+    // Write Phase 1 caption to disk
+    writeCaption(sessionId, task.serverName, result1.caption);
 
-      sseBuffer += decoder.decode(value, { stream: true });
-      const lines = sseBuffer.split("\n");
-      sseBuffer = lines.pop() ?? "";
-
-      for (const line of lines) {
-        if (abortSignal.aborted) {
-          reader.cancel();
-          return;
-        }
-
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data: ")) continue;
-        const dataStr = trimmed.slice(6);
-        if (dataStr === "[DONE]") continue;
-
-        try {
-          const chunk = JSON.parse(dataStr);
-          const delta = chunk?.choices?.[0]?.delta;
-          if (delta?.reasoning_content) {
-            reasoningContent += delta.reasoning_content;
-            sendEvent("token", {
-              type: "reasoning",
-              index: task.index,
-              content: delta.reasoning_content,
-              full: reasoningContent,
-            });
-          }
-          if (delta?.content) {
-            caption += delta.content;
-            sendEvent("token", {
-              type: "caption",
-              index: task.index,
-              content: delta.content,
-              full: caption,
-            });
-          }
-        } catch {
-          // skip malformed
-        }
-      }
-    }
-
-    if (!abortSignal.aborted) {
-      const trimmedCaption = caption.trim();
-
-      // Write caption file to disk
-      if (trimmedCaption) {
-        writeCaption(sessionId, task.serverName, trimmedCaption);
-      }
-
-      sendEvent("image_complete", {
-        index: task.index,
-        name: task.originalName,
-        status: "completed",
-        caption: trimmedCaption,
-        reasoningContent: reasoningContent.trim(),
-      });
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (!abortSignal.aborted) {
-      sendEvent("image_complete", {
-        index: task.index,
-        name: task.originalName,
-        status: "failed",
-        error: message,
-      });
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Phase 2: Per-image refinement
-// ---------------------------------------------------------------------------
-
-/**
- * Refine a single image's caption by removing character-consistent features.
- * Reads the Phase 1 caption, sends image + caption + character description to LLM,
- * writes the refined caption to disk on success.
- */
-async function processRefineImage(
-  task: ImageTask,
-  sessionId: string,
-  normalizedUrl: string,
-  model: string,
-  characterDescription: string,
-  triggerWordPerson: string,
-  triggerWordOther: string,
-  sendEvent: (type: string, data: unknown) => void,
-  abortSignal: AbortSignal
-): Promise<void> {
-  if (abortSignal.aborted) return;
-
-  const originalCaption = readCaption(sessionId, task.serverName);
-  if (!originalCaption) {
-    sendEvent("refine_image_complete", {
+    sendEvent("image_complete", {
       index: task.index,
       name: task.originalName,
-      status: "skipped",
-      reason: "No original caption found",
+      phase: "captioning",
+      status: "completed",
+      caption: result1.caption,
+      reasoningContent: result1.reasoningContent,
     });
-    return;
-  }
 
-  sendEvent("refine_image_start", { index: task.index, name: task.originalName });
+    // =========================================================================
+    // Phase 2: Per-image refinement
+    // =========================================================================
+    sendEvent("phase", { phase: "refining", index: task.index });
 
-  try {
-    const { buffer: apiBuffer, mimeType } = await prepareForApi(
-      task.originalName,
-      task.imageBuffer
-    );
-    const base64 = apiBuffer.toString("base64");
-
-    const systemPrompt = buildRefineSystemPrompt();
-    const userPrompt = buildRefineUserPrompt(
-      originalCaption,
+    const refineUserPrompt = buildRefineUserPrompt(
+      result1.caption,
       characterDescription,
       triggerWordPerson,
       triggerWordOther
     );
 
+    messages.push({ role: "user", content: refineUserPrompt });
+
     if (abortSignal.aborted) return;
 
-    const messages: Array<Record<string, unknown>> = [
-      { role: "system", content: systemPrompt },
-      {
-        role: "user",
-        content: [
-          {
-            type: "image_url",
-            image_url: { url: `data:${mimeType};base64,${base64}` },
-          },
-          { type: "text", text: userPrompt },
-        ],
-      },
-    ];
-
-    const response = await fetchWithTimeout(
+    const response2 = await fetchWithTimeout(
       `${normalizedUrl}/v1/chat/completions`,
       {
         method: "POST",
@@ -364,91 +343,96 @@ async function processRefineImage(
       abortSignal
     );
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API ${response.status}: ${errorText}`);
+    if (!response2.ok) {
+      const errorText = await response2.text();
+      throw new Error(`API ${response2.status}: ${errorText}`);
     }
 
-    let caption = "";
-    let reasoningContent = "";
-    const body = response.body;
-    if (!body) throw new Error("No response body");
+    const result2 = await streamResponse(
+      response2,
+      "refining",
+      task.index,
+      sendEvent,
+      abortSignal
+    );
 
-    const reader = body.getReader();
-    const decoder = new TextDecoder();
-    let sseBuffer = "";
+    if (!result2) return;
 
-    while (true) {
-      if (abortSignal.aborted) {
-        reader.cancel();
-        return;
-      }
+    // Add assistant response to conversation
+    messages.push({ role: "assistant", content: result2.caption });
 
-      const { done, value } = await reader.read();
-      if (done) break;
+    // Write Phase 2 caption to disk
+    writeCaption(sessionId, task.serverName, result2.caption);
 
-      sseBuffer += decoder.decode(value, { stream: true });
-      const lines = sseBuffer.split("\n");
-      sseBuffer = lines.pop() ?? "";
+    sendEvent("refine_image_complete", {
+      index: task.index,
+      name: task.originalName,
+      status: "completed",
+      caption: result2.caption,
+      reasoningContent: result2.reasoningContent,
+    });
 
-      for (const line of lines) {
-        if (abortSignal.aborted) {
-          reader.cancel();
-          return;
-        }
+    // =========================================================================
+    // Phase 3: Krea 2 prompt distillation
+    // =========================================================================
+    sendEvent("phase", { phase: "distilling", index: task.index });
 
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data: ")) continue;
-        const dataStr = trimmed.slice(6);
-        if (dataStr === "[DONE]") continue;
+    const distillUserPrompt = buildDistillUserPrompt(
+      result2.caption,
+      triggerWordPerson,
+      triggerWordOther
+    );
 
-        try {
-          const chunk = JSON.parse(dataStr);
-          const delta = chunk?.choices?.[0]?.delta;
-          if (delta?.reasoning_content) {
-            reasoningContent += delta.reasoning_content;
-            sendEvent("token", {
-              type: "reasoning",
-              index: task.index,
-              content: delta.reasoning_content,
-              full: reasoningContent,
-            });
-          }
-          if (delta?.content) {
-            caption += delta.content;
-            sendEvent("token", {
-              type: "caption",
-              index: task.index,
-              content: delta.content,
-              full: caption,
-            });
-          }
-        } catch {
-          // skip malformed
-        }
-      }
+    messages.push({ role: "user", content: distillUserPrompt });
+
+    if (abortSignal.aborted) return;
+
+    const response3 = await fetchWithTimeout(
+      `${normalizedUrl}/v1/chat/completions`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          messages,
+          stream: true,
+          stream_options: { include_usage: true },
+        }),
+        cache: "no-store",
+      },
+      API_TIMEOUT_MS,
+      abortSignal
+    );
+
+    if (!response3.ok) {
+      const errorText = await response3.text();
+      throw new Error(`API ${response3.status}: ${errorText}`);
     }
 
-    if (!abortSignal.aborted) {
-      const trimmedCaption = caption.trim();
+    const result3 = await streamResponse(
+      response3,
+      "distilling",
+      task.index,
+      sendEvent,
+      abortSignal
+    );
 
-      // Overwrite caption file with refined version
-      if (trimmedCaption) {
-        writeCaption(sessionId, task.serverName, trimmedCaption);
-      }
+    if (!result3) return;
 
-      sendEvent("refine_image_complete", {
-        index: task.index,
-        name: task.originalName,
-        status: "completed",
-        caption: trimmedCaption,
-        reasoningContent: reasoningContent.trim(),
-      });
-    }
+    // Write Phase 3 (final) caption to disk
+    writeCaption(sessionId, task.serverName, result3.caption);
+
+    sendEvent("distill_image_complete", {
+      index: task.index,
+      name: task.originalName,
+      status: "completed",
+      caption: result3.caption,
+      reasoningContent: result3.reasoningContent,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!abortSignal.aborted) {
-      sendEvent("refine_image_complete", {
+      sendEvent("image_complete", {
         index: task.index,
         name: task.originalName,
         status: "failed",
@@ -594,14 +578,9 @@ export async function POST(request: NextRequest) {
   // Send sessionId as first event
   sendEvent("session", { sessionId });
 
-  // Process both phases
+  // Process all images (each image goes through all 3 phases sequentially)
   (async () => {
     try {
-      // =========================================================================
-      // Phase 1: Initial captioning
-      // =========================================================================
-      sendEvent("phase", { phase: "captioning" });
-
       const concurrency = Math.min(MAX_CONCURRENCY, tasks.length);
       const queue = [...tasks];
 
@@ -610,7 +589,7 @@ export async function POST(request: NextRequest) {
           const task = queue.shift()!;
           touchSession(sessionId);
 
-          await processImage(
+          await processImageAllPhases(
             task,
             sessionId,
             normalizedUrl,
@@ -619,6 +598,7 @@ export async function POST(request: NextRequest) {
             config.userPrompt,
             person,
             other,
+            config.characterDescription,
             tasks.length,
             sendEvent,
             sessionAbort.signal
@@ -628,41 +608,6 @@ export async function POST(request: NextRequest) {
 
       const workers = Array.from({ length: concurrency }, () => processNext());
       await Promise.all(workers);
-
-      if (sessionAbort.signal.aborted) {
-        closeStream();
-        return;
-      }
-
-      // =========================================================================
-      // Phase 2: Per-image refinement
-      // =========================================================================
-      sendEvent("phase", { phase: "refining" });
-
-      const refineConcurrency = Math.min(MAX_CONCURRENCY, tasks.length);
-      const refineQueue = [...tasks];
-
-      async function refineNext(): Promise<void> {
-        while (refineQueue.length > 0 && !sessionAbort.signal.aborted) {
-          const task = refineQueue.shift()!;
-          touchSession(sessionId);
-
-          await processRefineImage(
-            task,
-            sessionId,
-            normalizedUrl,
-            config.model,
-            config.characterDescription,
-            person,
-            other,
-            sendEvent,
-            sessionAbort.signal
-          );
-        }
-      }
-
-      const refineWorkers = Array.from({ length: refineConcurrency }, () => refineNext());
-      await Promise.all(refineWorkers);
 
       if (!sessionAbort.signal.aborted) {
         sendEvent("done", { allComplete: true });
