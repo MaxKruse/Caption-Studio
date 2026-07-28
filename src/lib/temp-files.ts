@@ -73,13 +73,11 @@ export function deduplicateFileName(
 
   // Collision - find next available suffix
   let suffix = 1;
-  let candidate = `${base}_${suffix}${ext}`;
-  const candidateBase = `${base}_${suffix}`;
-  while (usedBases.has(candidateBase)) {
+  while (usedBases.has(`${base}_${suffix}`)) {
     suffix++;
-    candidate = `${base}_${suffix}${ext}`;
   }
-  usedBases.add(candidateBase);
+  const candidate = `${base}_${suffix}${ext}`;
+  usedBases.add(`${base}_${suffix}`);
   return candidate;
 }
 
