@@ -14,13 +14,6 @@ import { describe, it, expect } from "bun:test";
 // Helper: build a mock NextRequest
 // ---------------------------------------------------------------------------
 
-function buildFormDataRequest(formData: FormData): Request {
-  return new Request("http://localhost/api/caption/krea-2", {
-    method: "POST",
-    body: formData,
-  });
-}
-
 function buildJsonRequest(body: Record<string, unknown>): Request {
   return new Request("http://localhost/api/caption/krea-2", {
     method: "POST",

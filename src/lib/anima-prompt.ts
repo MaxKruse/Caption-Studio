@@ -101,6 +101,6 @@ export function assembleFinalCaption(
   if (!addition) return tags;
   if (!tags) return addition;
 
-  // Join with a space: tags first, then the natural language addition
-  return `${tags} ${addition}`;
+  // Join with a period separator: tags first, then the natural language addition
+  return `${tags}. ${addition}`;
 }

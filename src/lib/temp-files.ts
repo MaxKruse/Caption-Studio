@@ -156,6 +156,27 @@ export function writeCaption(
 }
 
 /**
+ * Write a tags-only text file next to an image in the session directory.
+ * Used for embedding clean (tags-only) metadata into LoRA files.
+ */
+export function writeTags(
+  sessionId: string,
+  imageServerName: string,
+  tags: string
+): boolean {
+  const meta = sessions.get(sessionId);
+  if (!meta) return false;
+
+  const lastDot = imageServerName.lastIndexOf(".");
+  const base = lastDot === -1 ? imageServerName : imageServerName.slice(0, lastDot);
+  const tagsPath = path.join(meta.dir, `${base}.tags`);
+
+  fs.writeFileSync(tagsPath, tags);
+  meta.lastActivityAt = Date.now();
+  return true;
+}
+
+/**
  * Read a caption text file from the session directory.
  * Returns null if the session or caption file not found.
  */

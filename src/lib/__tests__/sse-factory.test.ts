@@ -15,7 +15,6 @@ function createSseStream(): [
   () => void,
 ] {
   let controller: ReadableStreamDefaultController<string> | undefined;
-  const encoder = new TextEncoder();
 
   const sendEvent = (type: string, data: unknown) => {
     if (controller) {

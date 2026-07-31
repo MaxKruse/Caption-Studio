@@ -22,6 +22,7 @@ import {
   createSession,
   saveImage,
   writeCaption,
+  writeTags,
   touchSession,
 } from "@/lib/temp-files";
 
@@ -245,9 +246,15 @@ async function processImage(
       // Assemble final caption: booru tags + LLM addition
       const finalCaption = assembleFinalCaption(task.booruTags, trimmedAddition);
 
-      // Write caption file to disk
+      // Write caption file to disk (full: booru tags + LLM addition)
       if (finalCaption) {
         writeCaption(sessionId, task.serverName, finalCaption);
+      }
+
+      // Write tags-only file for clean LoRA metadata embedding
+      const trimmedTags = task.booruTags.trim();
+      if (trimmedTags) {
+        writeTags(sessionId, task.serverName, trimmedTags);
       }
 
       sendEvent("image_complete", {

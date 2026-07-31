@@ -81,7 +81,7 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
   }, []);
 
   // Captions are paired with images in session state (state.imageCaptions)
-  const handleCaptionFilesReady = useCallback((_files: File[]) => {
+  const handleCaptionFilesReady = useCallback(() => {
     // No-op: captions are already paired via ImageUploader -> addImage
   }, []);
 
