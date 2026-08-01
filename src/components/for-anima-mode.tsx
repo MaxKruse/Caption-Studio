@@ -16,6 +16,7 @@ import { useSession } from "@/hooks/use-session";
 import { ImageUploader } from "@/components/image-uploader";
 import { ModelSelector } from "@/components/model-selector";
 import { CaptionViewer } from "@/components/caption-viewer";
+import { TagStats } from "@/components/tag-stats";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -517,53 +518,62 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
       {/* Tag review phase */}
       {/* ----------------------------------------------------------------------- */}
       {appPhase === "tag-review" && (
-        <Card>
-          <div className="space-y-4">
-            <h3 className="text-sm font-medium text-slate-300">Generated Tags</h3>
+        <div className="space-y-4">
+          {/* Tag stats overview */}
+          <TagStats
+            tagLists={tagResults.map((tr) => tr.tags)}
+            totalImages={tagResults.length}
+          />
 
-            <div className="space-y-3 max-h-96 overflow-y-auto">
-              {tagResults.map((tr, i) => (
-                <div key={i} className="flex gap-3 items-start border-b border-slate-700/50 pb-3">
-                  <div className="w-16 h-16 flex-shrink-0">
-                    <img
-                      src={state.images[i]}
-                      alt={state.imageNames[i]}
-                      className="w-full h-full object-cover rounded"
-                    />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-slate-400 mb-1 truncate">
-                      {state.imageNames[i] || `image-${i}`}
-                    </p>
-                    {tr.status === "error" ? (
-                      <span className="text-xs text-red-400">Error: {tr.error}</span>
-                    ) : (
-                      <div className="flex flex-wrap gap-1">
-                        {tr.tags.map((tag, j) => (
-                          <span
-                            key={j}
-                            className="text-xs bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded"
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+          {/* Per-image tag review */}
+          <Card>
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium text-slate-300">Generated Tags Per Image</h3>
 
-            <div className="flex justify-center gap-3">
-              <Button variant="secondary" onClick={handleRedoTagging}>
-                Redo Tagging
-              </Button>
-              <Button variant="primary" onClick={handleContinueToLlm}>
-                Continue to LLM Tagging
-              </Button>
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {tagResults.map((tr, i) => (
+                  <div key={i} className="flex gap-3 items-start border-b border-slate-700/50 pb-3">
+                    <div className="w-16 h-16 flex-shrink-0">
+                      <img
+                        src={state.images[i]}
+                        alt={state.imageNames[i]}
+                        className="w-full h-full object-cover rounded"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-slate-400 mb-1 truncate">
+                        {state.imageNames[i] || `image-${i}`}
+                      </p>
+                      {tr.status === "error" ? (
+                        <span className="text-xs text-red-400">Error: {tr.error}</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {tr.tags.map((tag, j) => (
+                            <span
+                              key={j}
+                              className="text-xs bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex justify-center gap-3">
+                <Button variant="secondary" onClick={handleRedoTagging}>
+                  Redo Tagging
+                </Button>
+                <Button variant="primary" onClick={handleContinueToLlm}>
+                  Continue to LLM Tagging
+                </Button>
+              </div>
             </div>
-          </div>
-        </Card>
+          </Card>
+        </div>
       )}
 
       {/* ----------------------------------------------------------------------- */}
