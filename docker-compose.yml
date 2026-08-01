@@ -8,12 +8,10 @@ services:
       - DEFAULT_SERVER_URL=http://host.docker.internal:8080
       - TAG_SERVICE_URL=http://tag-service:8801
     restart: unless-stopped
-    volumes:
-      - ${HF_HOME:-$HOME/.cache/huggingface}:/root/.cache/huggingface:ro
 
   tag-service:
     build:
       context: ./tag-service
     restart: unless-stopped
     volumes:
-      - ${HF_HOME:-$HOME/.cache/huggingface}:/root/.cache/huggingface:ro
+      - C:/Users/maxkr/.cache/huggingface:/root/.cache/huggingface:ro
