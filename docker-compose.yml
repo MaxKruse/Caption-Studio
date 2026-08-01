@@ -14,8 +14,6 @@ services:
   tag-service:
     build:
       context: ./tag-service
-    ports:
-      - "8801:8801"
     restart: unless-stopped
     volumes:
       - ${HF_HOME:-$HOME/.cache/huggingface}:/root/.cache/huggingface:ro

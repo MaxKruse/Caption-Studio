@@ -1,0 +1,3 @@
+[test]
+# Exclude Playwright e2e tests - run with `npx playwright test`
+root = "./src"
