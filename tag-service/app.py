@@ -259,9 +259,11 @@ def tag():
     max_tags = int(data.get("maxTags", 50))
     encourage_raw = (data.get("tagsToEncourage") or "").strip()
     exclude_raw = (data.get("tagsToExclude") or "").strip()
+    custom_raw = (data.get("customTags") or "").strip()
 
     tags_to_encourage = [t.strip() for t in encourage_raw.split(",") if t.strip()] if encourage_raw else []
     tags_to_exclude = [t.strip() for t in exclude_raw.split(",") if t.strip()] if exclude_raw else []
+    custom_tags = [t.strip() for t in custom_raw.split(",") if t.strip()] if custom_raw else []
 
     # Select tags
     selected = _select_tags(
@@ -272,7 +274,8 @@ def tag():
         tags_to_exclude=tags_to_exclude,
     )
 
-    tags = [t for t, _ in selected]
+    # Append custom tags to the list
+    tags = [t for t, _ in selected] + custom_tags
     tags_with_probs = [{"tag": t, "probability": round(float(p), 4)} for t, p in selected]
 
     return jsonify({
@@ -320,9 +323,11 @@ def tag_batch():
     max_tags = int(data.get("maxTags", 50))
     encourage_raw = (data.get("tagsToEncourage") or "").strip()
     exclude_raw = (data.get("tagsToExclude") or "").strip()
+    custom_raw = (data.get("customTags") or "").strip()
 
     tags_to_encourage = [t.strip() for t in encourage_raw.split(",") if t.strip()] if encourage_raw else []
     tags_to_exclude = [t.strip() for t in exclude_raw.split(",") if t.strip()] if exclude_raw else []
+    custom_tags = [t.strip() for t in custom_raw.split(",") if t.strip()] if custom_raw else []
 
     # Preprocess all images and stack into a single batch
     arrays = []
@@ -355,7 +360,7 @@ def tag_batch():
             tags_to_encourage=tags_to_encourage,
             tags_to_exclude=tags_to_exclude,
         )
-        tags = [t for t, _ in selected]
+        tags = [t for t, _ in selected] + custom_tags
         tags_with_probs = [
             {"tag": t, "probability": round(float(p), 4)} for t, p in selected
         ]

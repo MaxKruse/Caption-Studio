@@ -80,7 +80,7 @@ interface ForAnimaModeProps {
 }
 
 export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
-  const { state, setTagMinProbability, setTagMaxTags, setTagEncourage, setTagExclude } = useSession();
+  const { state, setTagMinProbability, setTagMaxTags, setTagEncourage, setTagExclude, setTagCustomTags } = useSession();
 
   const [appPhase, setAppPhase] = useState<AppPhase>("upload");
   const [imageCount, setImageCount] = useState(0);
@@ -150,6 +150,7 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
             image: base64Images[i],
             minProbability: state.tagMinProbability,
             maxTags: state.tagMaxTags,
+            customTags: state.tagCustomTags,
             tagsToEncourage: state.tagEncourage,
             tagsToExclude: state.tagExclude,
           }),
@@ -483,16 +484,18 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
               </div>
             )}
 
-            {/* Collapsible tag parameters */}
+            {/* Tag parameters */}
             <TagParameters
               minProbability={state.tagMinProbability}
               maxTags={state.tagMaxTags}
               encourage={state.tagEncourage}
               exclude={state.tagExclude}
+              customTags={state.tagCustomTags}
               onMinProbability={setTagMinProbability}
               onMaxTags={setTagMaxTags}
               onEncourage={setTagEncourage}
               onExclude={setTagExclude}
+              onCustomTags={setTagCustomTags}
             />
 
             <div className="flex justify-between">
@@ -642,7 +645,7 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
 }
 
 // ---------------------------------------------------------------------------
-// Tag parameters collapsible
+// Tag parameters panel
 // ---------------------------------------------------------------------------
 
 interface TagParametersProps {
@@ -650,10 +653,12 @@ interface TagParametersProps {
   maxTags: number;
   encourage: string;
   exclude: string;
+  customTags: string;
   onMinProbability: (v: number) => void;
   onMaxTags: (v: number) => void;
   onEncourage: (v: string) => void;
   onExclude: (v: string) => void;
+  onCustomTags: (v: string) => void;
 }
 
 function TagParameters({
@@ -661,79 +666,80 @@ function TagParameters({
   maxTags,
   encourage,
   exclude,
+  customTags,
   onMinProbability,
   onMaxTags,
   onEncourage,
   onExclude,
+  onCustomTags,
 }: TagParametersProps) {
-  const [isOpen, setIsOpen] = useState(false);
-
   return (
-    <div className="border border-slate-700 rounded-lg">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between px-3 py-2 text-sm text-slate-300 hover:text-slate-200"
-      >
-        <span>WD Tagger Settings</span>
-        <span className={`text-xs transition-transform ${isOpen ? "rotate-90" : ""}`}>{"\u25B6"}</span>
-      </button>
+    <div className="border border-slate-700 rounded-lg px-3 py-3 space-y-3">
+      <h3 className="text-sm font-medium text-slate-300">WD Tagger Settings</h3>
 
-      {isOpen && (
-        <div className="px-3 pb-3 space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-slate-400 block mb-1">
-                Min Probability ({minProbability})
-              </label>
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.05}
-                value={minProbability}
-                onChange={(e) => onMinProbability(parseFloat(e.target.value))}
-                className="w-full"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-slate-400 block mb-1">
-                Max Tags ({maxTags})
-              </label>
-              <input
-                type="range"
-                min={1}
-                max={100}
-                step={1}
-                value={maxTags}
-                onChange={(e) => onMaxTags(parseInt(e.target.value))}
-                className="w-full"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs text-slate-400 block mb-1">
-              Tags to Encourage (comma-separated)
-            </label>
-            <Input
-              value={encourage}
-              onChange={(e) => onEncourage(e.target.value)}
-              placeholder="e.g. 1girl, solo, long hair"
-            />
-          </div>
-
-          <div>
-            <label className="text-xs text-slate-400 block mb-1">
-              Tags to Exclude (comma-separated)
-            </label>
-            <Input
-              value={exclude}
-              onChange={(e) => onExclude(e.target.value)}
-              placeholder="e.g. low quality, blurry"
-            />
-          </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs text-slate-400 block mb-1">
+            Min Probability ({minProbability})
+          </label>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={minProbability}
+            onChange={(e) => onMinProbability(parseFloat(e.target.value))}
+            className="w-full"
+          />
         </div>
-      )}
+        <div>
+          <label className="text-xs text-slate-400 block mb-1">
+            Max Tags ({maxTags})
+          </label>
+          <input
+            type="range"
+            min={1}
+            max={100}
+            step={1}
+            value={maxTags}
+            onChange={(e) => onMaxTags(parseInt(e.target.value))}
+            className="w-full"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="text-xs text-slate-400 block mb-1">
+          Custom Tags (comma-separated)
+        </label>
+        <Input
+          value={customTags}
+          onChange={(e) => onCustomTags(e.target.value)}
+          placeholder="e.g. character name, artist name"
+        />
+      </div>
+
+      <div>
+        <label className="text-xs text-slate-400 block mb-1">
+          Tags to Encourage (comma-separated)
+        </label>
+        <Input
+          value={encourage}
+          onChange={(e) => onEncourage(e.target.value)}
+          placeholder="e.g. 1girl, solo, long hair"
+        />
+      </div>
+
+      <div>
+        <label className="text-xs text-slate-400 block mb-1">
+          Tags to Exclude (comma-separated)
+        </label>
+        <Input
+          value={exclude}
+          onChange={(e) => onExclude(e.target.value)}
+          placeholder="e.g. low quality, blurry"
+        />
+      </div>
     </div>
   );
 }

@@ -34,6 +34,7 @@ export interface SessionState {
   tagMaxTags: number;
   tagEncourage: string;
   tagExclude: string;
+  tagCustomTags: string; // user-defined tags (character name, artist name, etc.)
 }
 
 // ---------------------------------------------------------------------------
@@ -93,6 +94,7 @@ const DEFAULT_STATE: SessionState = {
   tagMaxTags: 50,
   tagEncourage: "",
   tagExclude: "",
+  tagCustomTags: "",
 };
 
 // ---------------------------------------------------------------------------
@@ -117,6 +119,7 @@ interface SessionContextValue {
   setTagMaxTags: (v: number) => void;
   setTagEncourage: (v: string) => void;
   setTagExclude: (v: string) => void;
+  setTagCustomTags: (v: string) => void;
   reset: () => void;
 }
 
@@ -197,6 +200,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => ({ ...prev, tagExclude: v }));
   }, []);
 
+  const setTagCustomTags = useCallback((v: string) => {
+    setState((prev) => ({ ...prev, tagCustomTags: v }));
+  }, []);
+
   const setSystemPrompt = useCallback((systemPrompt: string) => {
     setState((prev) => ({ ...prev, systemPrompt }));
   }, []);
@@ -226,6 +233,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setTagMaxTags,
     setTagEncourage,
     setTagExclude,
+    setTagCustomTags,
     reset,
   };
 

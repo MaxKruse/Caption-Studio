@@ -47,10 +47,11 @@ export async function POST(request: NextRequest) {
 
 async function handleSingle(request: NextRequest) {
   const body = await request.json();
-  const { image, minProbability, maxTags, tagsToEncourage, tagsToExclude } = body as {
+  const { image, minProbability, maxTags, customTags, tagsToEncourage, tagsToExclude } = body as {
     image: string;
     minProbability?: number;
     maxTags?: number;
+    customTags?: string;
     tagsToEncourage?: string;
     tagsToExclude?: string;
   };
@@ -67,6 +68,7 @@ async function handleSingle(request: NextRequest) {
         image,
         minProbability,
         maxTags,
+        customTags,
         tagsToEncourage,
         tagsToExclude,
       }),
@@ -86,10 +88,11 @@ async function handleSingle(request: NextRequest) {
 
 async function handleBatch(request: NextRequest) {
   const body = await request.json();
-  const { images, minProbability, maxTags, tagsToEncourage, tagsToExclude } = body as {
+  const { images, minProbability, maxTags, customTags, tagsToEncourage, tagsToExclude } = body as {
     images: string[];
     minProbability?: number;
     maxTags?: number;
+    customTags?: string;
     tagsToEncourage?: string;
     tagsToExclude?: string;
   };
@@ -106,6 +109,7 @@ async function handleBatch(request: NextRequest) {
         images,
         minProbability,
         maxTags,
+        customTags,
         tagsToEncourage,
         tagsToExclude,
       }),
