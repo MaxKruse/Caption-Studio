@@ -11,7 +11,7 @@ import { useState, useCallback, createContext, useContext } from "react";
 // Types
 // ---------------------------------------------------------------------------
 
-export type AppMode = "simple" | "multi-step" | "for-anima" | "krea-2";
+export type AppMode = "for-anima" | "krea-2";
 
 export interface SessionState {
   mode: AppMode | null;
@@ -26,12 +26,9 @@ export interface SessionState {
   triggerWordOther: string;
   // Krea 2 mode
   characterDescription: string;
-  // Simple mode
+  // Shared prompts (used by Krea 2 phase 1)
   systemPrompt: string;
   userPrompt: string;
-  // Multi-step mode
-  multiStepMessages: string[]; // user messages in order
-  multiStepSystemPrompt: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -87,28 +84,6 @@ const DEFAULT_STATE: SessionState = {
     + `weave patterns, and trim details (braiding, embroidery, frayed edges, piping, buttons, buckles, belts). `
     + `Transcribe any visible text verbatim in double quotes. `
     + `Include positive constraints where relevant (sharp focus, clean background, correct anatomy, no watermark, no logos).`,
-  multiStepMessages: [
-    "Analyze this image and list every distinct visual element you detect. For each element, provide a short label and a confidence score from 0.0 to 1.0 reflecting how clearly and prominently it appears. Include: subjects and their actions, facial expressions, body language, clothing and accessories, fabric types and textures, objects and props, background features and setting, lighting sources and quality, mood and atmosphere, composition and camera angle, color palette, visible text, weather, and environmental details. Be thorough - list even minor elements. Format each entry as: \"LABEL | confidence: X.X\". One element per line.",
-    "Now write a single, cohesive image generation prompt using ONLY the elements with confidence scores above 0.4. Write in natural, descriptive prose - flowing sentences, not tags or keyword lists. Describe in this order: main subject(s) and their actions first, then clothing/appearance with fabric and texture details, then environment/background, then composition/camera, then lighting (be specific about source, direction, quality, and color), then mood/atmosphere, then style/medium, then fine details and textures. Use precise, concrete language. Be decisive - no hedging. Start directly with the subject. Enclose any visible text in double quotes. Output a single paragraph with no labels, no scores, no bullet points, no markdown.",
-  ],
-  multiStepSystemPrompt: [
-    "You are a vision analysis and image prompt engineering expert, specializing in prompts for Krea-2 and Qwen Image generation models.",
-    "",
-    "When asked to analyze an image:",
-    "- Detect and label every distinct visual element.",
-    "- Assign honest confidence scores (0.0-1.0) based on how clearly and prominently each element appears.",
-    "- Be thorough: include subjects, actions, poses, expressions, body language, clothing, accessories, props, background, setting, lighting sources and quality, mood, atmosphere, weather, composition, camera angle, color palette, visible text, textures, and fabric details.",
-    "- Note textures, fabric types and structures (silk, velvet, leather, lace, denim, wool, cotton, satin, mesh), weave patterns (herringbone, cable knit, ribbed), and trim details (braiding, embroidery, frayed hems, piping, buttons, zippers, buckles, belts).",
-    "",
-    "When asked to write a generation prompt:",
-    "- Use only high-confidence elements (above the stated threshold).",
-    "- Follow the structure: subject -> scene/environment -> composition/camera -> lighting -> mood/atmosphere -> style/medium -> details/textures.",
-    "- Write in natural, descriptive prose. Use flowing sentences - not comma-separated tags or keyword lists.",
-    "- Lighting is the most impactful visual variable - describe it with precision (source, direction, quality, color temperature).",
-    "- Use precise, concrete language. Describe textures, fabric structures, and trim details (e.g. \"velvet cape with gold braided trim\", \"denim jacket with frayed hem\"). Avoid vague adjectives and generic quality tokens.",
-    "- Enclose any visible text in double quotes.",
-    "- Output a single cohesive paragraph. No preamble, no labels, no scores, no markdown.",
-  ].join("\n"),
 };
 
 // ---------------------------------------------------------------------------
@@ -128,11 +103,6 @@ interface SessionContextValue {
   setTriggerWordPerson: (triggerWordPerson: string) => void;
   setTriggerWordOther: (triggerWordOther: string) => void;
   setCharacterDescription: (characterDescription: string) => void;
-  setMultiStepSystemPrompt: (prompt: string) => void;
-  setMultiStepMessages: (messages: string[]) => void;
-  updateMultiStepMessage: (index: number, content: string) => void;
-  addMultiStepMessage: (content?: string) => void;
-  removeMultiStepMessage: (index: number) => void;
   reset: () => void;
 }
 
@@ -205,37 +175,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => ({ ...prev, userPrompt }));
   }, []);
 
-  const setMultiStepSystemPrompt = useCallback((prompt: string) => {
-    setState((prev) => ({ ...prev, multiStepSystemPrompt: prompt }));
-  }, []);
-
-  const setMultiStepMessages = useCallback((messages: string[]) => {
-    setState((prev) => ({ ...prev, multiStepMessages: messages }));
-  }, []);
-
-  const updateMultiStepMessage = useCallback((index: number, content: string) => {
-    setState((prev) => {
-      const msgs = [...prev.multiStepMessages];
-      msgs[index] = content;
-      return { ...prev, multiStepMessages: msgs };
-    });
-  }, []);
-
-  const addMultiStepMessage = useCallback((content: string = "") => {
-    setState((prev) => ({
-      ...prev,
-      multiStepMessages: [...prev.multiStepMessages, content],
-    }));
-  }, []);
-
-  const removeMultiStepMessage = useCallback((index: number) => {
-    setState((prev) => {
-      const msgs = [...prev.multiStepMessages];
-      msgs.splice(index, 1);
-      return { ...prev, multiStepMessages: msgs };
-    });
-  }, []);
-
   const reset = useCallback(() => {
     setState({ ...DEFAULT_STATE });
   }, []);
@@ -253,11 +192,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setTriggerWordPerson,
     setTriggerWordOther,
     setCharacterDescription,
-    setMultiStepSystemPrompt,
-    setMultiStepMessages,
-    updateMultiStepMessage,
-    addMultiStepMessage,
-    removeMultiStepMessage,
     reset,
   };
 

@@ -34,9 +34,8 @@ Scaffolding for a new app. Retains only the **llama.cpp server connectivity** la
 src/
   app/
     api/
-      caption/route.ts   — POST start job + GET SSE progress + DELETE abort
-      caption/simple/    — POST FormData (images + config) → SSE stream
-      caption/multi-step — POST FormData (images + config) → SSE stream
+      caption/for-anima/ — POST FormData (images + captions + config) → SSE stream
+      caption/krea-2     — POST FormData (images + config) → SSE stream
       detect/route.ts    — POST start detection + GET SSE progress
       download/route.ts  — GET ?sessionId=<id> zip temp dir / POST legacy base64
       models/route.ts    — Model discovery proxy to /v1/models
@@ -46,13 +45,15 @@ src/
   lib/
     url-utils.ts            — normalizeServerUrl() (strip /v1 and trailing /)
     types.ts                — ModelInfo, CropRect
-    store.ts                — In-memory caption job store (Map-based)
+    store.ts                — In-memory caption job store (Map-based, legacy)
     detect-store.ts         — In-memory detection job store
     temp-files.ts           — Session temp dir management (upload, dedup, cleanup)
     image-utils.ts          — Image format conversion + resize (sharp)
     detect-parsing.ts       — Bounding box response parser (Gemma + Qwen formats)
     detection-prompts.ts    — Detection prompt builder
     string-utils.ts         — getExtension()
+    krea2-prompts.ts        — Phase 2 (refine) and Phase 3 (distill) prompt builders
+    anima-prompt.ts         — System + user prompt builders for For Anima mode
 ```
 
 ## TypeScript Configuration
@@ -102,15 +103,10 @@ GET /api/models?serverUrl=http://localhost:8080
   → return { models: [...] }
 ```
 
-### Caption Job (simple and multi-step modes)
+### Caption Job (shared flow for For Anima and Krea 2 modes)
 
-```
-POST /api/caption/simple     → FormData (images + JSON config), returns SSE stream
-POST /api/caption/multi-step → FormData (images + JSON config), returns SSE stream
-DELETE ?sessionId=<id>       → aborts session
-```
+Both modes share the same base flow:
 
-**Flow:**
 1. Frontend sends `FormData` with `config` (JSON string), `imageNames` (JSON string), and `images` (File objects)
 2. Server creates temp directory under `/tmp/caption-studio/<sessionId>/`
 3. Images saved to disk with deduplicated names (base-name collision: `1.png` + `1.jpg` → `1.png` + `1_1.jpg`)
@@ -126,6 +122,15 @@ Each worker fetches `<serverUrl>/v1/chat/completions` with:
 - 5-minute timeout per image via `AbortController`
 
 Streaming response parsed for `delta.reasoning_content` and `delta.content`.
+
+### For Anima Mode
+
+```
+POST /api/caption/for-anima → FormData (images + caption files + JSON config), returns SSE stream
+DELETE ?sessionId=<id>      → aborts session
+```
+
+Takes images + existing booru tag caption files. LLM generates natural language additions. Final caption = original tags + LLM addition.
 
 ### Krea 2 Mode (3-phase multi-turn pipeline)
 

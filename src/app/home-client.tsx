@@ -3,7 +3,7 @@
  *
  * Flow:
  * 1. Server check (auto-polls every 3s until server found)
- * 2. Mode selection (Simple or Multi-step)
+ * 2. Mode selection (For Anima or Krea 2)
  * 3. Mode-specific workflow (upload -> configure -> process -> results)
  */
 
@@ -12,8 +12,6 @@
 import { useState, useCallback } from "react";
 import { ServerCheck } from "@/components/server-check";
 import { ModeSelector } from "@/components/mode-selector";
-import { SimpleMode } from "@/components/simple-mode";
-import { MultiStepMode } from "@/components/multi-step-mode";
 import { ForAnimaMode } from "@/components/for-anima-mode";
 import { Krea2Mode } from "@/components/krea2-mode";
 import { SessionProvider } from "@/hooks/use-session";
@@ -90,14 +88,6 @@ export function HomeClient({ defaultServerUrl }: HomeClientProps) {
               onModeSelected={handleModeSelected}
             />
           </div>
-        )}
-
-        {appPhase === "working" && selectedMode === "simple" && (
-          <SimpleMode serverUrl={serverUrl} onBack={handleBackToModes} />
-        )}
-
-        {appPhase === "working" && selectedMode === "multi-step" && (
-          <MultiStepMode serverUrl={serverUrl} onBack={handleBackToModes} />
         )}
 
         {appPhase === "working" && selectedMode === "for-anima" && (

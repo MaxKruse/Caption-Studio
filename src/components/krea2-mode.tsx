@@ -419,7 +419,7 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
         <Card>
           <div className="space-y-4">
             <ModelSelector serverUrl={serverUrl} />
-            <PromptEditor mode="simple" />
+            <PromptEditor />
 
             {/* Character description (required for Krea 2) */}
             <div className="space-y-2">

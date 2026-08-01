@@ -1,5 +1,5 @@
 /**
- * Mode selection screen - lets the user choose between Simple and Multi-step modes.
+ * Mode selection screen - lets the user choose between For Anima and Krea 2 modes.
  */
 
 "use client";
@@ -10,13 +10,13 @@ import { Card } from "@/components/ui/card";
 
 interface ModeSelectorProps {
   serverUrl: string;
-  onModeSelected: (mode: "simple" | "multi-step" | "for-anima" | "krea-2") => void;
+  onModeSelected: (mode: "for-anima" | "krea-2") => void;
 }
 
 export function ModeSelector({ onModeSelected }: ModeSelectorProps) {
   const { setMode } = useSession();
 
-  const handleSelect = (mode: "simple" | "multi-step" | "for-anima" | "krea-2") => {
+  const handleSelect = (mode: "for-anima" | "krea-2") => {
     setMode(mode);
     onModeSelected(mode);
   };
@@ -31,58 +31,8 @@ export function ModeSelector({ onModeSelected }: ModeSelectorProps) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Simple Mode */}
-        <Card variant="elevated" className="cursor-pointer hover:border-indigo-500 transition-colors">
-          <button
-            onClick={() => handleSelect("simple")}
-            className="w-full text-left"
-          >
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">S</span>
-                <h3 className="text-lg font-semibold text-slate-100">Simple Mode</h3>
-              </div>
-              <p className="text-sm text-slate-400">
-                Upload images, set a system message and a user prompt. Each image
-                gets captioned with the same prompt in one step.
-              </p>
-              <ul className="text-xs text-slate-500 space-y-1 list-disc list-inside">
-                <li>One prompt per image</li>
-                <li>System + User message</li>
-                <li>Quick and straightforward</li>
-              </ul>
-              <Button className="w-full mt-2">Start Simple Mode</Button>
-            </div>
-          </button>
-        </Card>
-
-        {/* Multi-step Mode */}
-        <Card variant="elevated" className="cursor-pointer hover:border-indigo-500 transition-colors">
-          <button
-            onClick={() => handleSelect("multi-step")}
-            className="w-full text-left"
-          >
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">M</span>
-                <h3 className="text-lg font-semibold text-slate-100">Multi-step Mode</h3>
-              </div>
-              <p className="text-sm text-slate-400">
-                Upload images, set a system message, then chain multiple user
-                messages. Each response builds context for the next.
-              </p>
-              <ul className="text-xs text-slate-500 space-y-1 list-disc list-inside">
-                <li>Conversational refinement</li>
-                <li>Configurable message chain</li>
-                <li>Final output becomes caption</li>
-              </ul>
-              <Button className="w-full mt-2">Start Multi-step Mode</Button>
-            </div>
-          </button>
-        </Card>
-
         {/* For Anima Mode */}
-        <Card variant="elevated" className="cursor-pointer hover:border-indigo-500 transition-colors md:col-span-2">
+        <Card variant="elevated" className="cursor-pointer hover:border-indigo-500 transition-colors">
           <button
             onClick={() => handleSelect("for-anima")}
             className="w-full text-left"
@@ -109,7 +59,7 @@ export function ModeSelector({ onModeSelected }: ModeSelectorProps) {
         </Card>
 
         {/* Krea 2 Mode */}
-        <Card variant="elevated" className="cursor-pointer hover:border-indigo-500 transition-colors md:col-span-2">
+        <Card variant="elevated" className="cursor-pointer hover:border-indigo-500 transition-colors">
           <button
             onClick={() => handleSelect("krea-2")}
             className="w-full text-left"
@@ -120,16 +70,17 @@ export function ModeSelector({ onModeSelected }: ModeSelectorProps) {
                 <h3 className="text-lg font-semibold text-slate-100">Krea 2 Mode</h3>
               </div>
               <p className="text-sm text-slate-400">
-                Two-phase captioning for character-consistent image sets. Phase 1
-                captions each image individually, then Phase 2 refines captions
-                by removing character-consistent features and highlighting what
-                makes each image unique.
+                Three-phase captioning for character-consistent image sets.
+                Phase 1 captions each image, Phase 2 removes character-consistent
+                features, and Phase 3 distills the result into a concise krea2
+                prompt. Each image goes through all 3 phases as a single
+                multi-turn conversation.
               </p>
               <ul className="text-xs text-slate-500 space-y-1 list-disc list-inside">
-                <li>Phase 1: caption all images with the same prompt</li>
-                <li>Phase 2: sliding window re-captioning (size=8, step=4)</li>
+                <li>Phase 1: caption each image individually</li>
+                <li>Phase 2: per-image refinement (remove consistent features)</li>
+                <li>Phase 3: distill to a concise krea2 prompt (60-150 words)</li>
                 <li>Requires character description for refinement</li>
-                <li>Optimized for batches of images of the same character</li>
               </ul>
               <Button className="w-full mt-2">Start Krea 2 Mode</Button>
             </div>

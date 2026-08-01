@@ -8,7 +8,7 @@ Web app for batch captioning images with llama.cpp vision models. Upload a folde
 - Auto-discover loaded vision models
 - Upload images in bulk (drag-and-drop or file picker)
 - Generate detailed captions with streaming token feedback
-- Four prompt modes: **Simple** (one-shot), **Multi-step** (conversational refinement), **Krea 2** (de-duplicated captions with character description), and **For Anima** (booru tag enhancement)
+- Two prompt modes: **Krea 2** (three-phase captioning with character description), and **For Anima** (booru tag enhancement)
 - Optional trigger word injection for character/subject naming
 - Download all images + captions as a ZIP file
 
@@ -121,9 +121,7 @@ Click **Next** when the server is available.
 
 | Mode | Best For |
 |------|----------|
-| **Simple** | Quick captioning - one prompt, one result per image |
-| **Multi-step** | Refined captions - the model analyzes first, then writes the final caption |
-| **Krea 2** | Dataset captioning with character-aware de-duplication - removes repetitive character traits from captions |
+| **Krea 2** | Dataset captioning with character-aware de-duplication - three-phase pipeline removes repetitive character traits and distills to a concise prompt |
 | **For Anima** | Dataset captioning with existing booru tags - enriches taggui output with natural language |
 
 ### Step 3: Upload Images
@@ -140,9 +138,7 @@ Drag and drop images or click to browse. Supports any common image format (PNG, 
 - **Person:** Character name - injected as "The Character in question is called 'Alice'."
 - **Other:** Object, style, or concept name - injected with context about what it refers to
 
-**User message(s):**
-- *Simple mode:* Single prompt applied to each image
-- *Multi-step mode:* Chain of messages - each response builds context for the next. The final step's output becomes the caption. Default: Step 1 analyzes and lists elements with confidence scores; Step 2 writes the final prompt using only high-confidence elements
+**User message:** Single prompt applied to each image (used as Phase 1 in Krea 2 mode).
 
 ### Step 5: Start Captioning
 
@@ -301,7 +297,7 @@ POST /api/caption/krea-2
 
 ## Prompt Variables
 
-Both modes support these placeholders that are replaced per-image:
+Krea 2 mode supports these placeholders that are replaced per-image:
 
 | Variable | Replaced With |
 |----------|--------------|
@@ -348,12 +344,6 @@ Browser                          Server (Next.js)                 llama.cpp
    |                                  |                               |
    |-- GET /api/models ------------> | -- GET /v1/models ---------> |
    |<-- { models: [...] } ---------- | <-- model list ------------- |
-   |                                  |                               |
-   |-- POST /api/caption/simple ---> | (saves images to /tmp)       |
-   |    (FormData: images + config)  |                               |
-   |<-- SSE stream ----------------- | -- POST /v1/chat/completions -> |
-   |    image_start / token /        |    (stream: true)             |
-   |    image_complete / done        | <-- streaming tokens -------- |
    |                                  |                               |
    |-- POST /api/caption/for-anima-> | (saves images to /tmp)       |
    |    (FormData: images + captions)|                               |
