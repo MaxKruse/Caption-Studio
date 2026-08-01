@@ -21,7 +21,7 @@ from onnxruntime import (
     SessionOptions,
     get_available_providers,
 )
-from PIL import Image
+from PIL import Image, ImageOps
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -239,7 +239,7 @@ def tag():
     try:
         image_bytes = io.BytesIO(__import__("base64").b64decode(data["image"]))
         pil_image = Image.open(image_bytes)
-        pil_image = Image.ImageOps.exif_transpose(pil_image)
+        pil_image = ImageOps.exif_transpose(pil_image)
     except Exception as e:
         logger.error("Failed to decode image: %s", e)
         return jsonify({"error": f"Failed to decode image: {e}"}), 400
@@ -335,7 +335,7 @@ def tag_batch():
         try:
             image_bytes = io.BytesIO(__import__("base64").b64decode(b64))
             pil_image = Image.open(image_bytes)
-            pil_image = Image.ImageOps.exif_transpose(pil_image)
+            pil_image = ImageOps.exif_transpose(pil_image)
             arrays.append(_preprocess_image(pil_image))
         except Exception as e:
             logger.error("Failed to decode image: %s", e)
