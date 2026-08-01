@@ -29,6 +29,11 @@ export interface SessionState {
   // Shared prompts (used by Krea 2 phase 1)
   systemPrompt: string;
   userPrompt: string;
+  // WD Tagger (For Anima auto-tagging)
+  tagMinProbability: number;
+  tagMaxTags: number;
+  tagEncourage: string;
+  tagExclude: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -84,6 +89,10 @@ const DEFAULT_STATE: SessionState = {
     + `weave patterns, and trim details (braiding, embroidery, frayed edges, piping, buttons, buckles, belts). `
     + `Transcribe any visible text verbatim in double quotes. `
     + `Include positive constraints where relevant (sharp focus, clean background, correct anatomy, no watermark, no logos).`,
+  tagMinProbability: 0.35,
+  tagMaxTags: 50,
+  tagEncourage: "",
+  tagExclude: "",
 };
 
 // ---------------------------------------------------------------------------
@@ -103,6 +112,11 @@ interface SessionContextValue {
   setTriggerWordPerson: (triggerWordPerson: string) => void;
   setTriggerWordOther: (triggerWordOther: string) => void;
   setCharacterDescription: (characterDescription: string) => void;
+  // WD Tagger
+  setTagMinProbability: (v: number) => void;
+  setTagMaxTags: (v: number) => void;
+  setTagEncourage: (v: string) => void;
+  setTagExclude: (v: string) => void;
   reset: () => void;
 }
 
@@ -167,6 +181,22 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => ({ ...prev, characterDescription }));
   }, []);
 
+  const setTagMinProbability = useCallback((v: number) => {
+    setState((prev) => ({ ...prev, tagMinProbability: v }));
+  }, []);
+
+  const setTagMaxTags = useCallback((v: number) => {
+    setState((prev) => ({ ...prev, tagMaxTags: v }));
+  }, []);
+
+  const setTagEncourage = useCallback((v: string) => {
+    setState((prev) => ({ ...prev, tagEncourage: v }));
+  }, []);
+
+  const setTagExclude = useCallback((v: string) => {
+    setState((prev) => ({ ...prev, tagExclude: v }));
+  }, []);
+
   const setSystemPrompt = useCallback((systemPrompt: string) => {
     setState((prev) => ({ ...prev, systemPrompt }));
   }, []);
@@ -192,6 +222,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setTriggerWordPerson,
     setTriggerWordOther,
     setCharacterDescription,
+    setTagMinProbability,
+    setTagMaxTags,
+    setTagEncourage,
+    setTagExclude,
     reset,
   };
 

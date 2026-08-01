@@ -1,0 +1,5 @@
+flask==3.1.*
+onnxruntime==1.20.*
+pillow==11.*
+huggingface-hub==0.28.*
+numpy==2.2.*

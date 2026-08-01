@@ -6,4 +6,16 @@ services:
     environment:
       - NODE_ENV=production
       - DEFAULT_SERVER_URL=http://host.docker.internal:8080
+      - TAG_SERVICE_URL=http://tag-service:8801
     restart: unless-stopped
+    volumes:
+      - ${HF_HOME:-$HOME/.cache/huggingface}:/root/.cache/huggingface:ro
+
+  tag-service:
+    build:
+      context: ./tag-service
+    ports:
+      - "8801:8801"
+    restart: unless-stopped
+    volumes:
+      - ${HF_HOME:-$HOME/.cache/huggingface}:/root/.cache/huggingface:ro
