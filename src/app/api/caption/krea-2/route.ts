@@ -14,6 +14,7 @@
 
 import { NextRequest } from "next/server";
 import { normalizeServerUrl, toDockerHostUrl } from "@/lib/url-utils";
+import { getModelParallel } from "@/lib/model-utils";
 import { prepareForApi } from "@/lib/image-utils";
 import { buildUserPrompt } from "@/lib/prompt-utils";
 import {
@@ -400,6 +401,13 @@ export async function POST(request: NextRequest) {
   const normalizedUrl = normalizeServerUrl(toDockerHostUrl(config.serverUrl));
   const [stream, sendEvent, closeStream] = createSseStream();
 
+  // Detect server parallelism to avoid overloading llama.cpp
+  const serverParallel = await getModelParallel(config.serverUrl, config.model);
+  const maxConcurrency = Math.min(
+    serverParallel ?? MAX_CONCURRENCY,
+    MAX_CONCURRENCY
+  );
+
   const sessionAbort = new AbortController();
   registerSession(sessionId, sessionAbort);
 
@@ -413,7 +421,7 @@ export async function POST(request: NextRequest) {
   // Process all images (each image goes through all 3 phases sequentially)
   (async () => {
     try {
-      const concurrency = Math.min(MAX_CONCURRENCY, tasks.length);
+      const concurrency = Math.min(maxConcurrency, tasks.length);
       const queue = [...tasks];
 
       async function processNext(): Promise<void> {
