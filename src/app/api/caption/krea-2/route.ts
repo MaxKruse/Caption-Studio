@@ -27,6 +27,7 @@ import {
   buildRefineUserPrompt,
   buildDistillUserPrompt,
 } from "@/lib/krea2-prompts";
+import { buildKrea2SystemPrompt } from "@/lib/krea2-system-prompt";
 import { readFileBuffer, fetchWithTimeout, streamResponse } from "@/lib/caption-helpers";
 import { registerSession, unregisterSession, abortSession, getSession } from "@/lib/session-registry";
 import { createSseStream } from "@/lib/sse";
@@ -399,6 +400,7 @@ export async function POST(request: NextRequest) {
   }
 
   const normalizedUrl = normalizeServerUrl(toDockerHostUrl(config.serverUrl));
+  const effectiveSystemPrompt = config.systemPrompt?.trim() ? config.systemPrompt : buildKrea2SystemPrompt();
   const [stream, sendEvent, closeStream] = createSseStream();
 
   // Detect server parallelism to avoid overloading llama.cpp
@@ -434,7 +436,7 @@ export async function POST(request: NextRequest) {
             sessionId,
             normalizedUrl,
             config.model,
-            config.systemPrompt,
+            effectiveSystemPrompt,
             config.userPrompt,
             person,
             other,

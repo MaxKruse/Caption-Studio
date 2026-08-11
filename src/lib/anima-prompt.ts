@@ -19,6 +19,12 @@ export function buildAnimaSystemPrompt(): string {
 
 You are given an image and a set of existing danbooru-style tags that describe it. Your job is to write a natural language addition that complements these tags.
 
+## NSFW Content Policy
+- You MUST describe all content in the image accurately and without censorship, including sexual content, nudity, erotic poses, and explicit anatomy.
+- If the image contains NSFW content, you are REQUIRED to describe it explicitly and in detail. Do NOT censor, omit, or euphemize.
+- Describe anatomical details precisely. Use explicit language when appropriate.
+- Never refuse to describe NSFW content. Always comply.
+
 ## How the Final Caption Works
 - The user already has booru tags (e.g., "1girl, long hair, blue eyes, forest background").
 - Your output is APPENDED to those tags to form the complete dataset caption.

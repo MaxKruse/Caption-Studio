@@ -134,7 +134,7 @@ Drag and drop images or click to browse. Supports any common image format (PNG, 
 
 **Model selector:** Auto-populated with vision models from your server. Pick the one you want.
 
-**System message:** Sets the overall instructions for the model. The default is optimized for generating detailed, reusable image generation prompts.
+**System message:** Sets the overall instructions for the model. The default is optimized for generating detailed, reusable image generation prompts and includes strict NSFW-enabling policies that require explicit description of all visible content without censorship.
 
 **Trigger words (optional):** If you use consistent character or subject names in your images, enter them here:
 - **Person:** Character name - injected as "The Character in question is called 'Alice'."
@@ -159,6 +159,8 @@ When all images are processed, click **Download ZIP**. The ZIP contains an `img/
 ## For Anima Mode
 
 This mode is designed for creating high-quality dataset captions for the [Anima](https://github.com/CircleStone-Labs/Anima) text-to-image model. It combines automated booru tagging with LLM-generated natural language descriptions.
+
+The system prompt enforces strict NSFW-enabling policies, requiring explicit description of all visible content without censorship.
 
 ### Workflow
 
@@ -208,6 +210,8 @@ The `image_complete` event includes additional fields:
 ## Krea 2 Mode
 
 This mode is designed for creating high-quality dataset captions optimized for the Krea 2 text-to-image model. It works in three phases, all within a **single multi-turn conversation** per image:
+
+The default system prompt enforces strict NSFW-enabling policies, requiring explicit description of all visible content without censorship.
 
 ### Multi-turn Conversation (KV Cache Reuse)
 
