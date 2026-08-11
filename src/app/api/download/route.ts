@@ -6,6 +6,7 @@
 
 import fs from "fs";
 import path from "path";
+import { PassThrough } from "stream";
 import { ZipArchive } from "archiver";
 import { getSession, touchSession } from "@/lib/temp-files";
 
@@ -38,24 +39,16 @@ function getExtension(filename: string): string {
 }
 
 /**
- * Create a ZIP archive from a temp directory and return as Buffer.
+ * Create a streaming ZIP archive from a temp directory.
+ * Returns a Node.js Readable stream that can be piped to HTTP response.
  * Preserves the original file layout (image + .txt pairs).
  */
-async function zipDirectory(dirPath: string): Promise<Buffer> {
-  const chunks: Uint8Array[] = [];
+function streamDirectory(dirPath: string): NodeJS.ReadableStream {
   const archive = new ZipArchive({ zlib: { level: 6 } });
-
-  // Pipe to a writable stream adapter that collects chunks
-  archive.on("data", (chunk: Uint8Array) => {
-    chunks.push(chunk);
-  });
-
-  // Must resume to start flowing data (ReadableStream starts paused)
-  archive.resume();
+  const passThrough = new PassThrough();
+  archive.pipe(passThrough);
 
   const files = fs.readdirSync(dirPath);
-
-  // Group files: for each image, pair it with its .txt caption
   const processed = new Set<string>();
 
   for (const file of files) {
@@ -65,11 +58,10 @@ async function zipDirectory(dirPath: string): Promise<Buffer> {
     const stat = fs.statSync(filePath);
     if (stat.isDirectory()) continue;
 
-    // Place files inside an img/ folder in the ZIP
-    archive.append(fs.readFileSync(filePath), { name: `img/${file}` });
+    // Stream file instead of buffering entire file into memory
+    archive.append(fs.createReadStream(filePath), { name: `img/${file}`, stats: stat });
     processed.add(file);
 
-    // Look for a matching .txt caption
     const lastDot = file.lastIndexOf(".");
     if (lastDot === -1) continue;
 
@@ -78,22 +70,14 @@ async function zipDirectory(dirPath: string): Promise<Buffer> {
     const txtPath = path.join(dirPath, txtFile);
 
     if (fs.existsSync(txtPath) && !processed.has(txtFile)) {
-      archive.append(fs.readFileSync(txtPath), { name: `img/${txtFile}` });
+      const txtStat = fs.statSync(txtPath);
+      archive.append(fs.createReadStream(txtPath), { name: `img/${txtFile}`, stats: txtStat });
       processed.add(txtFile);
     }
   }
 
-  await archive.finalize();
-
-  // Wait for stream to finish
-  await new Promise<void>((resolve, reject) => {
-    archive.on("end", () => resolve());
-    archive.on("error", (err: Error) => reject(err));
-    // Safety timeout - if finalize was so fast that "end" already fired
-    setTimeout(resolve, 2000);
-  });
-
-  return Buffer.concat(chunks.map((c) => Buffer.from(c)));
+  archive.finalize();
+  return passThrough;
 }
 
 // ---------------------------------------------------------------------------
@@ -131,9 +115,18 @@ export async function GET(request: Request) {
   }
 
   try {
-    const zipBuffer = await zipDirectory(meta.dir);
+    const zipStream = streamDirectory(meta.dir);
 
-    return new Response(zipBuffer as unknown as BodyInit, {
+    // Convert Node.js stream to Web ReadableStream
+    const webStream = new ReadableStream({
+      start(controller) {
+        zipStream.on("data", (chunk) => controller.enqueue(chunk));
+        zipStream.on("end", () => controller.close());
+        zipStream.on("error", (err) => controller.error(err));
+      },
+    });
+
+    return new Response(webStream, {
       headers: {
         "Content-Type": "application/zip",
         "Content-Disposition": `attachment; filename="${sessionId}.zip"`,
