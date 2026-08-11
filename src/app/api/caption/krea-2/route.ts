@@ -373,7 +373,7 @@ export async function POST(request: NextRequest) {
 
   for (let i = 0; i < imageFiles.length; i++) {
     const buffer = await readFileBuffer(imageFiles[i]);
-    const serverName = saveImage(
+    const serverName = await saveImage(
       sessionId,
       imageNames[i] || `image-${i}.jpg`,
       buffer,

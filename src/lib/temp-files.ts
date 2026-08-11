@@ -222,12 +222,12 @@ export async function createSession(): Promise<SessionMeta> {
  * Save an image buffer to the session directory.
  * Returns the server-assigned filename (may be deduplicated).
  */
-export function saveImage(
+export async function saveImage(
   sessionId: string,
   originalName: string,
   data: Buffer,
   usedBases: Set<string>
-): string | null {
+): Promise<string | null> {
   const meta = sessions.get(sessionId);
   if (!meta) return null;
 
@@ -250,7 +250,7 @@ export function saveImage(
   const serverName = deduplicateFileName(sanitizedName, usedBases);
   const filePath = path.join(meta.dir, serverName);
 
-  fs.writeFileSync(filePath, data);
+  await fsp.writeFile(filePath, data);
   meta.lastActivityAt = Date.now();
   meta.imageCount++;
 
