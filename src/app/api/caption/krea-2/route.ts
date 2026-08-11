@@ -28,6 +28,7 @@ import {
 } from "@/lib/krea2-prompts";
 import { readFileBuffer, fetchWithTimeout, streamResponse } from "@/lib/caption-helpers";
 import { registerSession, unregisterSession, abortSession, getSession } from "@/lib/session-registry";
+import { createSseStream } from "@/lib/sse";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -416,25 +417,7 @@ export async function POST(request: NextRequest) {
   }
 
   const normalizedUrl = normalizeServerUrl(toDockerHostUrl(config.serverUrl));
-  const encoder = new TextEncoder();
-  let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
-
-  const sendEvent = (type: string, data: unknown) => {
-    if (controller) {
-      const line = `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
-      controller.enqueue(encoder.encode(line));
-    }
-  };
-
-  const closeStream = () => {
-    if (controller) controller.close();
-  };
-
-  const stream = new ReadableStream({
-    start(c) {
-      controller = c;
-    },
-  });
+  const [stream, sendEvent, closeStream] = createSseStream();
 
   const sessionAbort = new AbortController();
   registerSession(sessionId, sessionAbort);

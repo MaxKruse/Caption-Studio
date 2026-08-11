@@ -4,56 +4,23 @@
  */
 
 import { describe, it, expect } from "bun:test";
-
-// ---------------------------------------------------------------------------
-// Inline the current implementation (same pattern in all 4 route files)
-// ---------------------------------------------------------------------------
-
-function createSseStream(): [
-  ReadableStream<string>,
-  (type: string, data: unknown) => void,
-  () => void,
-] {
-  let controller: ReadableStreamDefaultController<string> | undefined;
-
-  const sendEvent = (type: string, data: unknown) => {
-    if (controller) {
-      const line = `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
-      controller.enqueue(line);
-    }
-  };
-
-  const closeStream = () => {
-    if (controller) {
-      try {
-        controller.close();
-      } catch {
-        // Already closed - idempotent no-op
-      }
-    }
-  };
-
-  const stream = new ReadableStream({
-    start(c) {
-      controller = c;
-    },
-  });
-
-  return [stream, sendEvent, closeStream];
-}
+import { createSseStream } from "@/lib/sse";
 
 // ---------------------------------------------------------------------------
 // Helper: read all chunks from a stream
 // ---------------------------------------------------------------------------
 
-async function readStream(stream: ReadableStream<string>): Promise<string> {
+async function readStream(stream: ReadableStream<Uint8Array>): Promise<string> {
   const reader = stream.getReader();
+  const decoder = new TextDecoder();
   let result = "";
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    result += value;
+    result += decoder.decode(value, { stream: true });
   }
+  // Flush remaining
+  result += decoder.decode();
   return result;
 }
 
