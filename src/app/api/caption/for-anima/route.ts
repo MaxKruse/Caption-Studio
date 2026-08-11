@@ -223,26 +223,35 @@ export async function POST(request: NextRequest) {
   const usedBases = new Set<string>();
   const tasks: ImageTask[] = [];
 
-  for (let i = 0; i < imageFiles.length; i++) {
-    const imageBuffer = await readFileBuffer(imageFiles[i]);
+  // Read image buffers and caption texts in parallel
+  const readItems = await Promise.all(
+    imageFiles.map(async (file, i) => {
+      const [imageBuffer, booruTags] = await Promise.all([
+        readFileBuffer(file),
+        captionFiles[i] ? captionFiles[i].text() : Promise.resolve(""),
+      ]);
+      return {
+        i,
+        imageBuffer,
+        booruTags,
+        originalName: imageNames[i] || `image-${i}.jpg`,
+      };
+    })
+  );
+
+  for (const { i, imageBuffer, booruTags, originalName } of readItems) {
     const serverName = await saveImage(
       sessionId,
-      imageNames[i] || `image-${i}.jpg`,
+      originalName,
       imageBuffer,
       usedBases
     );
-
-    // Read corresponding caption file (booru tags), or use empty string
-    let booruTags = "";
-    if (captionFiles[i]) {
-      booruTags = await captionFiles[i].text();
-    }
 
     if (serverName) {
       tasks.push({
         index: i,
         serverName,
-        originalName: imageNames[i] || `image-${i}.jpg`,
+        originalName,
         imageBuffer,
         booruTags,
       });
