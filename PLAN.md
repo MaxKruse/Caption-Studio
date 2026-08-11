@@ -1,10 +1,94 @@
-# Refactor Testing Plan
+# Caption Studio - Living Improvement Plan
 
-## Goal
+This document tracks technical, UI/UX and prompting improvements identified during repo analysis.
+Items are prioritized roughly: Stability > Performance > UX > Prompting.
 
-Verify the shared-utilities refactor (commit `34ec9cb`) does not break any behavior.
-Strategy: write unit tests against the **current** (pre-refactor) code, confirm they pass,
-then apply the refactor and confirm they still pass.
+## Completed
+
+- [x] Extract shared caption helpers to `src/lib/caption-helpers.ts`: `readFileBuffer`, `fetchWithTimeout`, `streamResponse`
+- [x] Remove duplicated `replaceVariables` implementation from routes and tests. Placeholder replacement is deprecated - prompts are used as-is
+- [x] Update `for-anima` and `krea-2` routes to import from shared helpers
+- [x] Update `caption-helpers.test.ts` to import from shared lib
+
+## Technical - Stability & Maintainability
+
+### Code duplication
+- [ ] Extract `activeSessions` registry to `src/lib/session-registry.ts` with `registerSession`, `unregisterSession`, `abortSession`. Remove duplicated `Map` + interval from all routes
+- [ ] Extract SSE stream factory `createSseStream()` to `src/lib/sse.ts`. Currently each route builds its own `ReadableStream` and `sendEvent`. Unify format
+- [ ] Extract `createSseStream` tests: verify event formatting, close behavior, no-op before start
+
+### File I/O
+- [ ] Replace sync `fs` calls in `temp-files.ts` with `fs.promises`. Avoid blocking event loop during batch uploads
+- [ ] Add magic-byte validation for images before saving, not just extension
+- [ ] Enforce per-session file size limits and max image count. Return 413 with clear message
+- [ ] Make temp dir cleanup resilient to SIGKILL: persist session meta to a small JSON index so restart can resume cleanup
+
+### API robustness
+- [ ] Add Zod validation for all FormData configs. Return structured errors
+- [ ] Add request ID and structured logging for SSE streams and API calls
+- [ ] Implement retry with exponential backoff for 5xx/429 from llama.cpp. Currently only one retry for detection
+- [ ] Use `AbortSignal.timeout` where possible instead of manual timeout controller
+- [ ] Add health endpoint `GET /api/health` with temp dir writable check and cleanup status
+- [ ] Add rate limiting per IP for model discovery and caption endpoints
+
+### Performance
+- [ ] Parallelise WD Tagger calls in For Anima mode. Currently sequential `for i` loop
+- [ ] Stream ZIP download instead of buffering entire archive in memory
+- [ ] Add per-image timeout per phase in Krea 2 to avoid 15 min worst case
+- [ ] Add concurrency tuning UI: allow user to set parallel requests, cap at server parallel
+
+### Security
+- [ ] Sanitize filenames to prevent path traversal. Current dedup uses base name but not full sanitization
+- [ ] Validate image dimensions before loading into Sharp to avoid decompression bombs
+
+## Technical - Testing
+
+- [ ] Unit tests for `session-registry` and `createSseStream`
+- [ ] Integration tests for `for-anima` route with mocked llama.cpp
+- [ ] Add property tests for `deduplicateFileName` edge cases
+- [ ] Add e2e Playwright tests for error states: server down, model missing, abort mid-batch
+
+## UI / UX
+
+### Progress & feedback
+- [ ] Add progress bar with ETA using average processing time from `store.ts`
+- [ ] Show per-image status icons, copy button, and inline edit for captions
+- [ ] Show reasoning panel toggle per image, with token count
+- [ ] Toast notifications for API errors, abort, and download complete
+- [ ] Server check UI: show latency, model count, last successful poll
+
+### Workflow
+- [ ] Drag to reorder images, with re-numbering of captions
+- [ ] Allow editing prompts per image batch and save as preset
+- [ ] Prompt presets UI with import/export JSON
+- [ ] Keyboard shortcuts: Ctrl+Enter start, Esc stop, Ctrl+S download
+- [ ] Image zoom modal and preview during processing
+- [ ] For Anima: allow skip tagging, use existing .txt files directly
+
+### Accessibility & polish
+- [ ] Add aria labels, focus rings, color-blind safe status indicators
+- [ ] Mobile responsive phase indicator - horizontal scroll
+- [ ] Autosave prompts and trigger words to localStorage
+- [ ] Better empty states and error messages
+
+## Prompting
+
+### Krea 2
+- [ ] Make system and user prompts configurable per preset, with prompt versioning
+- [ ] Add temperature / top_p / max_tokens controls in UI, expose in API
+- [ ] Truncate or summarize `characterDescription` and warn if > ~800 tokens
+- [ ] Improve `buildRefineUserPrompt` with explicit negative instructions and example
+- [ ] Add prompt preview with variable substitution removed - show final prompt before start
+
+### For Anima
+- [ ] Make system prompt editable per preset
+- [ ] Normalize punctuation in `assembleFinalCaption` to avoid `..`
+- [ ] Add linter for booru tags: warn on underscores vs spaces
+
+### General
+- [ ] Add prompt library UI with search and tags
+- [ ] Log prompt version with session metadata for reproducibility
+- [ ] Consider structured output for detection to reduce parsing fragility
 
 ## What to Test
 

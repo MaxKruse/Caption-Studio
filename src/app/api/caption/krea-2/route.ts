@@ -26,6 +26,7 @@ import {
   buildRefineUserPrompt,
   buildDistillUserPrompt,
 } from "@/lib/krea2-prompts";
+import { readFileBuffer, fetchWithTimeout, streamResponse } from "@/lib/caption-helpers";
 
 // ---------------------------------------------------------------------------
 // Active session tracking for explicit abort
@@ -67,124 +68,6 @@ const MAX_CONCURRENCY = 8;
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Replace variable placeholders in prompt text. */
-function replaceVariables(
-  text: string,
-  imageName: string,
-  index: number,
-  total: number
-): string {
-  return text
-    .replace(/{image_name}/g, imageName)
-    .replace(/{index}/g, String(index + 1))
-    .replace(/{total}/g, String(total));
-}
-
-/** Extract image buffer from a File object. */
-async function readFileBuffer(file: File): Promise<Buffer> {
-  return Buffer.from(await file.arrayBuffer());
-}
-
-/**
- * Fetch with timeout + external abort signal support.
- */
-async function fetchWithTimeout(
-  url: string,
-  options: RequestInit,
-  timeoutMs: number,
-  externalSignal?: AbortSignal
-): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-  if (externalSignal?.aborted) {
-    controller.abort();
-  } else {
-    externalSignal?.addEventListener("abort", () => controller.abort(), { once: true });
-  }
-
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-/**
- * Stream an API response and emit SSE token events.
- * Returns the full caption and reasoning content on completion.
- */
-async function streamResponse(
-  response: Response,
-  phase: string,
-  index: number,
-  sendEvent: (type: string, data: unknown) => void,
-  abortSignal: AbortSignal
-): Promise<{ caption: string; reasoningContent: string } | null> {
-  let caption = "";
-  let reasoningContent = "";
-  const body = response.body;
-  if (!body) throw new Error("No response body");
-
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let sseBuffer = "";
-
-  while (true) {
-    if (abortSignal.aborted) {
-      reader.cancel();
-      return null;
-    }
-
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    sseBuffer += decoder.decode(value, { stream: true });
-    const lines = sseBuffer.split("\n");
-    sseBuffer = lines.pop() ?? "";
-
-    for (const line of lines) {
-      if (abortSignal.aborted) {
-        reader.cancel();
-        return null;
-      }
-
-      const trimmed = line.trim();
-      if (!trimmed.startsWith("data: ")) continue;
-      const dataStr = trimmed.slice(6);
-      if (dataStr === "[DONE]") continue;
-
-      try {
-        const chunk = JSON.parse(dataStr);
-        const delta = chunk?.choices?.[0]?.delta;
-        if (delta?.reasoning_content) {
-          reasoningContent += delta.reasoning_content;
-          sendEvent("token", {
-            type: "reasoning",
-            phase,
-            index,
-            content: delta.reasoning_content,
-            full: reasoningContent,
-          });
-        }
-        if (delta?.content) {
-          caption += delta.content;
-          sendEvent("token", {
-            type: "caption",
-            phase,
-            index,
-            content: delta.content,
-            full: caption,
-          });
-        }
-      } catch {
-        // skip malformed
-      }
-    }
-  }
-
-  return { caption: caption.trim(), reasoningContent: reasoningContent.trim() };
-}
 
 // ---------------------------------------------------------------------------
 // Multi-turn image processing (all 3 phases, single conversation)
@@ -243,12 +126,7 @@ async function processImageAllPhases(
       triggerWordPerson,
       triggerWordOther
     );
-    const resolvedPrompt = replaceVariables(
-      promptWithContext,
-      task.originalName,
-      task.index,
-      total
-    );
+    const resolvedPrompt = promptWithContext;
 
     messages.push({
       role: "user",

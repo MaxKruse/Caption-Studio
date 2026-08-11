@@ -25,6 +25,7 @@ import {
   writeTags,
   touchSession,
 } from "@/lib/temp-files";
+import { readFileBuffer, fetchWithTimeout } from "@/lib/caption-helpers";
 
 // ---------------------------------------------------------------------------
 // Active session tracking for explicit abort
@@ -45,54 +46,11 @@ setInterval(() => {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Replace variable placeholders in prompt text. */
-function replaceVariables(
-  text: string,
-  imageName: string,
-  index: number,
-  total: number
-): string {
-  return text
-    .replace(/{image_name}/g, imageName)
-    .replace(/{index}/g, String(index + 1))
-    .replace(/{total}/g, String(total));
-}
-
-/** Extract text buffer from a File object. */
-async function readFileBuffer(file: File): Promise<Buffer> {
-  return Buffer.from(await file.arrayBuffer());
-}
-
 /** Max time allowed per API call. */
 const API_TIMEOUT_MS = 5 * 60 * 1000;
 
 /** Default max concurrency for parallel image processing. */
 const MAX_CONCURRENCY = 8;
-
-/**
- * Fetch with timeout + external abort signal support.
- */
-async function fetchWithTimeout(
-  url: string,
-  options: RequestInit,
-  timeoutMs: number,
-  externalSignal?: AbortSignal
-): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-  if (externalSignal?.aborted) {
-    controller.abort();
-  } else {
-    externalSignal?.addEventListener("abort", () => controller.abort(), { once: true });
-  }
-
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Image processing
@@ -132,12 +90,7 @@ async function processImage(
     const base64 = apiBuffer.toString("base64");
 
     const userPrompt = buildAnimaUserPrompt(task.booruTags, task.originalName);
-    const resolvedPrompt = replaceVariables(
-      userPrompt,
-      task.originalName,
-      task.index,
-      total
-    );
+    const resolvedPrompt = userPrompt;
 
     if (abortSignal.aborted) return;
 
