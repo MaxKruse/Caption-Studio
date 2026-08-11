@@ -1,6 +1,8 @@
 # Caption Studio
 
-Web app for batch captioning images with llama.cpp vision models. Upload a folder of images, configure prompts, and get streaming captions with reasoning support.
+API-only scaffolding for batch captioning images with llama.cpp vision models. The UI layer has been removed; this repository now provides the connectivity layer (API routes + lib utilities) for integration with external clients.
+
+> **Note**: UI layer removed. See [AGENTS.md](AGENTS.md) for current architecture.
 
 ## What It Does
 

@@ -25,7 +25,7 @@ import {
   writeTags,
   touchSession,
 } from "@/lib/temp-files";
-import { readFileBuffer, fetchWithTimeout } from "@/lib/caption-helpers";
+import { readFileBuffer, fetchWithTimeout, streamResponse } from "@/lib/caption-helpers";
 import { registerSession, unregisterSession, abortSession, getSession } from "@/lib/session-registry";
 import { createSseStream } from "@/lib/sse";
 
@@ -124,93 +124,34 @@ async function processImage(
       throw new Error(`API ${response.status}: ${errorText}`);
     }
 
-    let llmAddition = "";
-    let reasoningContent = "";
-    const body = response.body;
-    if (!body) throw new Error("No response body");
+    const result = await streamResponse(response, "captioning", task.index, sendEvent, abortSignal);
+    if (!result || abortSignal.aborted) return;
 
-    const reader = body.getReader();
-    const decoder = new TextDecoder();
-    let sseBuffer = "";
+    const trimmedAddition = result.caption.trim();
 
-    while (true) {
-      if (abortSignal.aborted) {
-        reader.cancel();
-        return;
-      }
+    // Assemble final caption: booru tags + LLM addition
+    const finalCaption = assembleFinalCaption(task.booruTags, trimmedAddition);
 
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      sseBuffer += decoder.decode(value, { stream: true });
-      const lines = sseBuffer.split("\n");
-      sseBuffer = lines.pop() ?? "";
-
-      for (const line of lines) {
-        if (abortSignal.aborted) {
-          reader.cancel();
-          return;
-        }
-
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data: ")) continue;
-        const dataStr = trimmed.slice(6);
-        if (dataStr === "[DONE]") continue;
-
-        try {
-          const chunk = JSON.parse(dataStr);
-          const delta = chunk?.choices?.[0]?.delta;
-          if (delta?.reasoning_content) {
-            reasoningContent += delta.reasoning_content;
-            sendEvent("token", {
-              type: "reasoning",
-              index: task.index,
-              content: delta.reasoning_content,
-              full: reasoningContent,
-            });
-          }
-          if (delta?.content) {
-            llmAddition += delta.content;
-            sendEvent("token", {
-              type: "caption",
-              index: task.index,
-              content: delta.content,
-              full: llmAddition,
-            });
-          }
-        } catch {
-          // skip malformed
-        }
-      }
+    // Write caption file to disk (full: booru tags + LLM addition)
+    if (finalCaption) {
+      await writeCaption(sessionId, task.serverName, finalCaption);
     }
 
-    if (!abortSignal.aborted) {
-      const trimmedAddition = llmAddition.trim();
-
-      // Assemble final caption: booru tags + LLM addition
-      const finalCaption = assembleFinalCaption(task.booruTags, trimmedAddition);
-
-      // Write caption file to disk (full: booru tags + LLM addition)
-      if (finalCaption) {
-        await writeCaption(sessionId, task.serverName, finalCaption);
-      }
-
-      // Write tags-only file for clean LoRA metadata embedding
-      const trimmedTags = task.booruTags.trim();
-      if (trimmedTags) {
-        await writeTags(sessionId, task.serverName, trimmedTags);
-      }
-
-      sendEvent("image_complete", {
-        index: task.index,
-        name: task.originalName,
-        status: "completed",
-        caption: finalCaption,
-        booruTags: task.booruTags.trim(),
-        llmAddition: trimmedAddition,
-        reasoningContent: reasoningContent.trim(),
-      });
+    // Write tags-only file for clean LoRA metadata embedding
+    const trimmedTags = task.booruTags.trim();
+    if (trimmedTags) {
+      await writeTags(sessionId, task.serverName, trimmedTags);
     }
+
+    sendEvent("image_complete", {
+      index: task.index,
+      name: task.originalName,
+      status: "completed",
+      caption: finalCaption,
+      booruTags: task.booruTags.trim(),
+      llmAddition: trimmedAddition,
+      reasoningContent: result.reasoningContent.trim(),
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!abortSignal.aborted) {
