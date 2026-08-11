@@ -14,7 +14,7 @@ describe("temp-files size limits", () => {
     const name = await saveImage(session.id, "big.png", bigBuffer, usedBases);
     // Should be rejected due to size limit
     expect(name).toBeNull();
-    deleteSession(session.id);
+    await deleteSession(session.id);
   });
 
   it("accepts image within size limit", async () => {
@@ -23,7 +23,7 @@ describe("temp-files size limits", () => {
     const smallBuffer = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00]);
     const name = await saveImage(session.id, "small.png", smallBuffer, usedBases);
     expect(name).toBe("small.png");
-    deleteSession(session.id);
+    await deleteSession(session.id);
   });
 
   it("rejects when max image count exceeded", async () => {
@@ -38,6 +38,6 @@ describe("temp-files size limits", () => {
     // 101st should be rejected
     const name = await saveImage(session.id, "img101.png", png, usedBases);
     expect(name).toBeNull();
-    deleteSession(session.id);
+    await deleteSession(session.id);
   });
 });

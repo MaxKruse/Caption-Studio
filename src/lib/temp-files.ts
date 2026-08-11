@@ -302,10 +302,10 @@ export async function writeTags(
  * Read a caption text file from the session directory.
  * Returns null if the session or caption file not found.
  */
-export function readCaption(
+export async function readCaption(
   sessionId: string,
   imageServerName: string
-): string | null {
+): Promise<string | null> {
   const meta = sessions.get(sessionId);
   if (!meta) return null;
 
@@ -313,9 +313,12 @@ export function readCaption(
   const base = lastDot === -1 ? imageServerName : imageServerName.slice(0, lastDot);
   const captionPath = path.join(meta.dir, `${base}.txt`);
 
-  if (!fs.existsSync(captionPath)) return null;
-
-  return fs.readFileSync(captionPath, "utf-8");
+  try {
+    const data = await fsp.readFile(captionPath, "utf-8");
+    return data;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -331,21 +334,25 @@ export function getSession(sessionId: string): SessionMeta | null {
 /**
  * Get all files in a session directory. Returns null if session not found.
  */
-export function listSessionFiles(sessionId: string): string[] | null {
+export async function listSessionFiles(sessionId: string): Promise<string[] | null> {
   const meta = getSession(sessionId);
   if (!meta) return null;
-  return fs.readdirSync(meta.dir);
+  try {
+    return await fsp.readdir(meta.dir);
+  } catch {
+    return null;
+  }
 }
 
 /**
  * Delete a session directory and remove from tracking.
  */
-export function deleteSession(sessionId: string): boolean {
+export async function deleteSession(sessionId: string): Promise<boolean> {
   const meta = sessions.get(sessionId);
   if (!meta) return false;
 
   try {
-    fs.rmSync(meta.dir, { recursive: true, force: true });
+    await fsp.rm(meta.dir, { recursive: true, force: true });
   } catch {
     // Best effort - directory may already be gone
   }

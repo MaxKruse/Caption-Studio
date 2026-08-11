@@ -8,7 +8,7 @@ describe("temp-files saveImage validation", () => {
     const png = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00]);
     const name = await saveImage(session.id, "test.png", png, usedBases);
     expect(name).toBe("test.png");
-    deleteSession(session.id);
+    await deleteSession(session.id);
   });
 
   it("rejects invalid image buffer", async () => {
@@ -17,7 +17,7 @@ describe("temp-files saveImage validation", () => {
     const txt = Buffer.from("hello world");
     const name = await saveImage(session.id, "test.txt", txt, usedBases);
     expect(name).toBeNull();
-    deleteSession(session.id);
+    await deleteSession(session.id);
   });
 
   it("rejects empty buffer", async () => {
@@ -26,6 +26,6 @@ describe("temp-files saveImage validation", () => {
     const empty = Buffer.from([]);
     const name = await saveImage(session.id, "empty.jpg", empty, usedBases);
     expect(name).toBeNull();
-    deleteSession(session.id);
+    await deleteSession(session.id);
   });
 });
