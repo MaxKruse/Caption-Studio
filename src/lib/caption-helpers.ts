@@ -20,6 +20,7 @@ export async function readFileBuffer(file: File): Promise<Buffer> {
 
 /**
  * Fetch with timeout + external abort signal support.
+ * Uses AbortSignal.timeout where available.
  */
 export async function fetchWithTimeout(
   url: string,
@@ -27,19 +28,23 @@ export async function fetchWithTimeout(
   timeoutMs: number,
   externalSignal?: AbortSignal
 ): Promise<Response> {
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  if (externalSignal?.aborted) {
+  const onAbort = () => controller.abort();
+  timeoutSignal.addEventListener("abort", onAbort, { once: true });
+  externalSignal?.addEventListener("abort", onAbort, { once: true });
+
+  // Immediate abort if already aborted
+  if (timeoutSignal.aborted || externalSignal?.aborted) {
     controller.abort();
-  } else {
-    externalSignal?.addEventListener("abort", () => controller.abort(), { once: true });
   }
 
   try {
     return await fetch(url, { ...options, signal: controller.signal });
   } finally {
-    clearTimeout(timeoutId);
+    timeoutSignal.removeEventListener("abort", onAbort);
+    externalSignal?.removeEventListener("abort", onAbort);
   }
 }
 
