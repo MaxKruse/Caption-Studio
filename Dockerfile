@@ -1,15 +1,17 @@
-FROM oven/bun:1-alpine AS builder
+FROM oven/bun:canary AS builder
 WORKDIR /app
+ENV BUN_CONFIG_HTTP_IDLE_TIMEOUT=30
 
 COPY package.json bun.lock ./
-RUN bun install
+RUN bun install --no-cache
 
 COPY . .
 RUN bun run build
 
 # --- Runtime ---
-FROM oven/bun:1-alpine
+FROM oven/bun:canary
 WORKDIR /app
+ENV BUN_CONFIG_HTTP_IDLE_TIMEOUT=30
 
 # Copy standalone server output
 COPY --from=builder /app/.next/standalone ./
