@@ -192,13 +192,13 @@ async function processImage(
 
       // Write caption file to disk (full: booru tags + LLM addition)
       if (finalCaption) {
-        writeCaption(sessionId, task.serverName, finalCaption);
+        await writeCaption(sessionId, task.serverName, finalCaption);
       }
 
       // Write tags-only file for clean LoRA metadata embedding
       const trimmedTags = task.booruTags.trim();
       if (trimmedTags) {
-        writeTags(sessionId, task.serverName, trimmedTags);
+        await writeTags(sessionId, task.serverName, trimmedTags);
       }
 
       sendEvent("image_complete", {

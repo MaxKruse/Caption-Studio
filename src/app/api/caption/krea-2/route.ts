@@ -172,7 +172,7 @@ async function processImageAllPhases(
     messages.push({ role: "assistant", content: result1.caption });
 
     // Write Phase 1 caption to disk
-    writeCaption(sessionId, task.serverName, result1.caption);
+    await writeCaption(sessionId, task.serverName, result1.caption);
 
     sendEvent("image_complete", {
       index: task.index,
@@ -235,7 +235,7 @@ async function processImageAllPhases(
     messages.push({ role: "assistant", content: result2.caption });
 
     // Write Phase 2 caption to disk
-    writeCaption(sessionId, task.serverName, result2.caption);
+    await writeCaption(sessionId, task.serverName, result2.caption);
 
     sendEvent("refine_image_complete", {
       index: task.index,
@@ -293,7 +293,7 @@ async function processImageAllPhases(
     if (!result3) return;
 
     // Write Phase 3 (final) caption to disk
-    writeCaption(sessionId, task.serverName, result3.caption);
+    await writeCaption(sessionId, task.serverName, result3.caption);
 
     sendEvent("distill_image_complete", {
       index: task.index,

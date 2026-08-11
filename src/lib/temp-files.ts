@@ -260,11 +260,11 @@ export async function saveImage(
 /**
  * Write a caption text file next to an image in the session directory.
  */
-export function writeCaption(
+export async function writeCaption(
   sessionId: string,
   imageServerName: string,
   caption: string
-): boolean {
+): Promise<boolean> {
   const meta = sessions.get(sessionId);
   if (!meta) return false;
 
@@ -272,7 +272,7 @@ export function writeCaption(
   const base = lastDot === -1 ? imageServerName : imageServerName.slice(0, lastDot);
   const captionPath = path.join(meta.dir, `${base}.txt`);
 
-  fs.writeFileSync(captionPath, caption);
+  await fsp.writeFile(captionPath, caption);
   meta.lastActivityAt = Date.now();
   return true;
 }
@@ -281,11 +281,11 @@ export function writeCaption(
  * Write a tags-only text file next to an image in the session directory.
  * Used for embedding clean (tags-only) metadata into LoRA files.
  */
-export function writeTags(
+export async function writeTags(
   sessionId: string,
   imageServerName: string,
   tags: string
-): boolean {
+): Promise<boolean> {
   const meta = sessions.get(sessionId);
   if (!meta) return false;
 
@@ -293,7 +293,7 @@ export function writeTags(
   const base = lastDot === -1 ? imageServerName : imageServerName.slice(0, lastDot);
   const tagsPath = path.join(meta.dir, `${base}.tags`);
 
-  fs.writeFileSync(tagsPath, tags);
+  await fsp.writeFile(tagsPath, tags);
   meta.lastActivityAt = Date.now();
   return true;
 }
