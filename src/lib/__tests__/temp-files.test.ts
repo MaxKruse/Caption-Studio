@@ -1,28 +1,30 @@
 import { describe, it, expect } from "bun:test";
-
-function deduplicateFileName(
-  originalName: string,
-  usedBases: Set<string>
-): string {
-  const lastDot = originalName.lastIndexOf(".");
-  const ext = lastDot === -1 ? "" : originalName.slice(lastDot);
-  const base = lastDot === -1 ? originalName : originalName.slice(0, lastDot);
-
-  if (!usedBases.has(base)) {
-    usedBases.add(base);
-    return originalName;
-  }
-
-  let suffix = 1;
-  while (usedBases.has(`${base}_${suffix}`)) {
-    suffix++;
-  }
-  const candidate = `${base}_${suffix}${ext}`;
-  usedBases.add(`${base}_${suffix}`);
-  return candidate;
-}
+import { deduplicateFileName, sanitizeFileName } from "@/lib/temp-files";
 
 describe("temp-files", () => {
+  it("sanitize: removes path traversal segments", () => {
+    expect(sanitizeFileName("../etc/passwd")).toBe("passwd");
+    expect(sanitizeFileName("..\\..\\secret.txt")).toBe("secret.txt");
+    expect(sanitizeFileName("folder/../file.jpg")).toBe("file.jpg");
+  });
+
+  it("sanitize: strips path separators", () => {
+    expect(sanitizeFileName("path/to/file.jpg")).toBe("file.jpg");
+    expect(sanitizeFileName("path\\to\\file.png")).toBe("file.png");
+  });
+
+  it("sanitize: removes dangerous characters", () => {
+    expect(sanitizeFileName("file<>:\"|?*.jpg")).toBe("file.jpg");
+  });
+
+  it("sanitize: normalizes whitespace", () => {
+    expect(sanitizeFileName("  my file .jpg  ")).toBe("my_file_.jpg");
+  });
+
+  it("sanitize: preserves valid names", () => {
+    expect(sanitizeFileName("photo-123.jpg")).toBe("photo-123.jpg");
+  });
+
   it("dedup: returns original name when base is unused", () => {
     const used = new Set<string>();
     expect(deduplicateFileName("photo.jpg", used)).toBe("photo.jpg");

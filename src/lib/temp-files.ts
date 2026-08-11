@@ -50,6 +50,37 @@ function generateSessionId(): string {
 }
 
 // ---------------------------------------------------------------------------
+// Sanitization
+// ---------------------------------------------------------------------------
+
+/**
+ * Sanitize a filename to prevent path traversal and unsafe characters.
+ * Replaces path separators with underscores, removes .. segments,
+ * strips dangerous characters, and normalizes whitespace.
+ */
+export function sanitizeFileName(originalName: string): string {
+  // Extract basename to prevent path traversal
+  let name = path.basename(originalName.replace(/\\/g, "/"));
+
+  // Strip dangerous characters
+  name = name.replace(/[<>:"|?*]/g, "");
+
+  // Normalize whitespace
+  name = name.trim().replace(/\s+/g, "_");
+
+  // Collapse multiple dots and remove leading dots
+  name = name.replace(/\.{2,}/g, ".");
+  name = name.replace(/^\.+/g, "");
+
+  // Ensure non-empty
+  if (!name) {
+    name = "unnamed";
+  }
+
+  return name;
+}
+
+// ---------------------------------------------------------------------------
 // Deduplication
 // ---------------------------------------------------------------------------
 
@@ -126,7 +157,8 @@ export function saveImage(
   const meta = sessions.get(sessionId);
   if (!meta) return null;
 
-  const serverName = deduplicateFileName(originalName, usedBases);
+  const sanitizedName = sanitizeFileName(originalName);
+  const serverName = deduplicateFileName(sanitizedName, usedBases);
   const filePath = path.join(meta.dir, serverName);
 
   fs.writeFileSync(filePath, data);
