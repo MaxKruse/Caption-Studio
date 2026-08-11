@@ -15,6 +15,9 @@ import path from "path";
 /** Base directory for all temp files. */
 const TEMP_BASE = path.join("/tmp", "caption-studio");
 
+/** Session index file for resilient cleanup after restart. */
+const SESSION_INDEX_PATH = path.join(TEMP_BASE, "sessions.json");
+
 /** Auto-cleanup threshold (30 minutes after last activity). */
 const CLEANUP_AFTER_MS = 30 * 60 * 1000;
 
@@ -45,6 +48,25 @@ export interface SessionMeta {
 
 const sessions = new Map<string, SessionMeta>();
 
+// Load existing sessions from index on startup for resilience
+(async () => {
+  try {
+    const data = await fsp.readFile(SESSION_INDEX_PATH, "utf-8");
+    const arr = JSON.parse(data) as { id: string; dir: string; lastActivityAt: number }[];
+    for (const entry of arr) {
+      sessions.set(entry.id, {
+        id: entry.id,
+        dir: entry.dir,
+        createdAt: Date.now(),
+        lastActivityAt: entry.lastActivityAt,
+        imageCount: 0,
+      });
+    }
+  } catch {
+    // No index yet
+  }
+})();
+
 /** Ensure the base temp directory exists. */
 async function ensureBaseDir(): Promise<void> {
   try {
@@ -57,6 +79,20 @@ async function ensureBaseDir(): Promise<void> {
 /** Generate a short random session ID. */
 function generateSessionId(): string {
   return Math.random().toString(36).substring(2, 12);
+}
+
+/** Persist session index to disk for resilient cleanup. */
+async function saveSessionIndex(): Promise<void> {
+  try {
+    const data = Array.from(sessions.values()).map(m => ({
+      id: m.id,
+      dir: m.dir,
+      lastActivityAt: m.lastActivityAt,
+    }));
+    await fsp.writeFile(SESSION_INDEX_PATH, JSON.stringify(data), "utf-8");
+  } catch {
+    // Best effort
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -215,6 +251,7 @@ export async function createSession(): Promise<SessionMeta> {
   };
 
   sessions.set(sessionId, meta);
+  await saveSessionIndex();
   return meta;
 }
 
@@ -358,6 +395,7 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
   }
 
   sessions.delete(sessionId);
+  await saveSessionIndex();
   return true;
 }
 

@@ -24,7 +24,7 @@ Items are prioritized roughly: Stability > Performance > UX > Prompting.
 - [x] Replace sync `fs` calls in `temp-files.ts` with `fs.promises`. Avoid blocking event loop during batch uploads
 - [x] Add magic-byte validation for images before saving, not just extension
 - [x] Enforce per-session file size limits and max image count. Return 413 with clear message
-- [ ] Make temp dir cleanup resilient to SIGKILL: persist session meta to a small JSON index so restart can resume cleanup
+- [x] Make temp dir cleanup resilient to SIGKILL: persist session meta to a small JSON index so restart can resume cleanup
 
 ### API robustness
 - [x] Add Zod validation for all FormData configs. Return structured errors
