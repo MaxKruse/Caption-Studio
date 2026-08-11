@@ -376,13 +376,13 @@ export function touchSession(sessionId: string): void {
 // ---------------------------------------------------------------------------
 
 /** Remove sessions whose last activity was more than CLEANUP_AFTER_MS ago. */
-function cleanupStaleSessions(): void {
+async function cleanupStaleSessions(): Promise<void> {
   const now = Date.now();
 
   for (const [sessionId, meta] of sessions.entries()) {
     if (now - meta.lastActivityAt > CLEANUP_AFTER_MS) {
       try {
-        fs.rmSync(meta.dir, { recursive: true, force: true });
+        await fsp.rm(meta.dir, { recursive: true, force: true });
       } catch {
         // Best effort
       }
@@ -392,7 +392,7 @@ function cleanupStaleSessions(): void {
 }
 
 // Run cleanup every 5 minutes
-setInterval(cleanupStaleSessions, CLEANUP_INTERVAL_MS);
+setInterval(() => { cleanupStaleSessions().catch(() => {}); }, CLEANUP_INTERVAL_MS);
 
 // Also clean up on process exit (graceful shutdown)
 process.on("exit", () => {
