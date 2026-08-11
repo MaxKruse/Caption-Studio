@@ -1,0 +1,24 @@
+import { describe, it, expect } from "bun:test";
+import { GET } from "@/app/api/health/route";
+
+describe("health route", () => {
+  it("returns 200 with health info", async () => {
+    const request = new Request("http://localhost/api/health");
+    const response = await GET(request);
+    expect(response.status).toBe(200);
+
+    const data = await response.json();
+    expect(data.ok).toBe(true);
+    expect(typeof data.tempDirWritable).toBe("boolean");
+    expect(typeof data.tempDir).toBe("string");
+    expect(typeof data.sessionsCount).toBe("number");
+    expect(typeof data.uptime).toBe("number");
+  });
+
+  it("includes tempDir path", async () => {
+    const request = new Request("http://localhost/api/health");
+    const response = await GET(request);
+    const data = await response.json();
+    expect(data.tempDir).toBe("/tmp/caption-studio");
+  });
+});

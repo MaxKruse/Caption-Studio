@@ -31,7 +31,7 @@ Items are prioritized roughly: Stability > Performance > UX > Prompting.
 - [ ] Add request ID and structured logging for SSE streams and API calls
 - [ ] Implement retry with exponential backoff for 5xx/429 from llama.cpp. Currently only one retry for detection
 - [ ] Use `AbortSignal.timeout` where possible instead of manual timeout controller
-- [ ] Add health endpoint `GET /api/health` with temp dir writable check and cleanup status
+- [x] Add health endpoint `GET /api/health` with temp dir writable check and cleanup status
 - [ ] Add rate limiting per IP for model discovery and caption endpoints
 
 ### Performance
