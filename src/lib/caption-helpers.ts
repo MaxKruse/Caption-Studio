@@ -43,6 +43,50 @@ export async function fetchWithTimeout(
   }
 }
 
+/**
+ * Fetch with exponential backoff retry for 5xx and 429 responses.
+ */
+export async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number,
+  externalSignal?: AbortSignal,
+  maxRetries = 3,
+  baseDelayMs = 500
+): Promise<Response> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (externalSignal?.aborted) {
+      throw new Error("Aborted");
+    }
+
+    try {
+      const response = await fetchWithTimeout(url, options, timeoutMs, externalSignal);
+      // Retry on 429 or 5xx
+      if (response.status === 429 || (response.status >= 500 && response.status < 600)) {
+        if (attempt === maxRetries) {
+          throw new Error(`HTTP ${response.status} after ${maxRetries + 1} attempts`);
+        }
+        // Wait with exponential backoff
+        const delay = baseDelayMs * Math.pow(2, attempt);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+      return response;
+    } catch (err) {
+      lastError = err;
+      if (attempt === maxRetries) {
+        throw err;
+      }
+      const delay = baseDelayMs * Math.pow(2, attempt);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
+  throw lastError;
+}
+
 // ---------------------------------------------------------------------------
 // SSE streaming
 // ---------------------------------------------------------------------------
