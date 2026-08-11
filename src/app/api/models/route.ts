@@ -7,8 +7,16 @@ import { NextRequest } from "next/server";
 
 import type { ModelInfo } from "@/lib/types";
 import { normalizeServerUrl, toDockerHostUrl } from "@/lib/url-utils";
+import { RateLimiter } from "@/lib/rate-limiter";
+
+// Allow 10 requests per minute per IP for model discovery
+const modelRateLimiter = new RateLimiter(10, 60_000);
 
 export async function GET(request: NextRequest) {
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? request.ip ?? "unknown";
+  if (!modelRateLimiter.check(ip)) {
+    return Response.json({ error: "Rate limit exceeded" }, { status: 429 });
+  }
   const { searchParams } = new URL(request.url);
   const serverUrl = searchParams.get("serverUrl");
 
