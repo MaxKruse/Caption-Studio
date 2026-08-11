@@ -7,6 +7,7 @@ services:
       - NODE_ENV=production
       - DEFAULT_SERVER_URL=http://host.docker.internal:8080
       - TAG_SERVICE_URL=http://tag-service:8801
+      - DOCKER_HOST_INTERNAL=host.docker.internal
     restart: unless-stopped
 
   tag-service:

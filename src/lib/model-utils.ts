@@ -19,6 +19,7 @@ export async function getModelParallel(
   try {
     const response = await fetch(`${normalizedUrl}/v1/models`, {
       cache: "no-store",
+      signal: AbortSignal.timeout(15000), // 15s timeout for model discovery
     });
 
     if (!response.ok) return undefined;

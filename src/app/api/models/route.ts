@@ -40,6 +40,7 @@ export async function GET(request: NextRequest) {
       },
       // Do not cache model lists
       cache: "no-store",
+      signal: AbortSignal.timeout(15000),
     });
 
     if (!response.ok) {

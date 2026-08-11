@@ -38,7 +38,7 @@ import { createSseStream } from "@/lib/sse";
 // ---------------------------------------------------------------------------
 
 /** Max time allowed per API call. */
-const API_TIMEOUT_MS = 5 * 60 * 1000;
+const API_TIMEOUT_MS = 15 * 60 * 1000;
 
 /** Default max concurrency for parallel image processing. */
 const MAX_CONCURRENCY = 8;

@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
       method: "GET",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
-      signal: AbortSignal.timeout(3000), // 3s timeout for ping
+      signal: AbortSignal.timeout(15000), // 15s timeout for ping
     });
 
     if (!response.ok) {

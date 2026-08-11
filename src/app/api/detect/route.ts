@@ -217,7 +217,7 @@ async function processDetectionJob(
           ],
         }),
         cache: "no-store",
-        signal: AbortSignal.timeout(180_000), // 3 min timeout
+        signal: AbortSignal.timeout(600_000), // 10 min timeout
       });
 
       if (!response.ok) {
