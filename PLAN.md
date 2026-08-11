@@ -27,7 +27,7 @@ Items are prioritized roughly: Stability > Performance > UX > Prompting.
 - [ ] Make temp dir cleanup resilient to SIGKILL: persist session meta to a small JSON index so restart can resume cleanup
 
 ### API robustness
-- [ ] Add Zod validation for all FormData configs. Return structured errors
+- [x] Add Zod validation for all FormData configs. Return structured errors
 - [ ] Add request ID and structured logging for SSE streams and API calls
 - [ ] Implement retry with exponential backoff for 5xx/429 from llama.cpp. Currently only one retry for detection
 - [ ] Use `AbortSignal.timeout` where possible instead of manual timeout controller

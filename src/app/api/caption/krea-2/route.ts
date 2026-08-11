@@ -29,6 +29,7 @@ import {
 import { readFileBuffer, fetchWithTimeout, streamResponse } from "@/lib/caption-helpers";
 import { registerSession, unregisterSession, abortSession, getSession } from "@/lib/session-registry";
 import { createSseStream } from "@/lib/sse";
+import { krea2ConfigSchema } from "@/lib/config-schema";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -331,27 +332,18 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "Missing config" }, { status: 400 });
   }
 
-  let config: {
-    serverUrl: string;
-    model: string;
-    systemPrompt: string;
-    userPrompt: string;
-    triggerWordPerson: string;
-    triggerWordOther: string;
-    characterDescription: string;
-  };
+  let config;
 
   try {
     const parsed = JSON.parse(configRaw);
-    config = {
-      serverUrl: parsed.serverUrl ?? "",
-      model: parsed.model ?? "",
-      systemPrompt: parsed.systemPrompt ?? "",
-      userPrompt: parsed.userPrompt ?? "",
-      triggerWordPerson: parsed.triggerWordPerson ?? "",
-      triggerWordOther: parsed.triggerWordOther ?? "",
-      characterDescription: parsed.characterDescription ?? "",
-    };
+    const result = krea2ConfigSchema.safeParse(parsed);
+    if (!result.success) {
+      return Response.json(
+        { error: "Invalid config", details: result.error.flatten() },
+        { status: 400 }
+      );
+    }
+    config = result.data;
   } catch {
     return Response.json({ error: "Invalid config JSON" }, { status: 400 });
   }
@@ -369,20 +361,6 @@ export async function POST(request: NextRequest) {
 
   const person = config.triggerWordPerson?.trim() ?? "";
   const other = config.triggerWordOther?.trim() ?? "";
-
-  if (!config.serverUrl || !config.model) {
-    return Response.json(
-      { error: "serverUrl and model are required" },
-      { status: 400 }
-    );
-  }
-
-  if (!config.characterDescription?.trim()) {
-    return Response.json(
-      { error: "characterDescription is required for Krea 2 mode" },
-      { status: 400 }
-    );
-  }
 
   // Create session and save images to temp files
   const session = createSession();
