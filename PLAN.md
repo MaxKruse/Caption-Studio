@@ -21,7 +21,7 @@ Items are prioritized roughly: Stability > Performance > UX > Prompting.
 - [x] Extract `createSseStream` tests: verify event formatting, close behavior, no-op before start
 
 ### File I/O
-- [ ] Replace sync `fs` calls in `temp-files.ts` with `fs.promises`. Avoid blocking event loop during batch uploads
+- [x] Replace sync `fs` calls in `temp-files.ts` with `fs.promises`. Avoid blocking event loop during batch uploads
 - [x] Add magic-byte validation for images before saving, not just extension
 - [x] Enforce per-session file size limits and max image count. Return 413 with clear message
 - [ ] Make temp dir cleanup resilient to SIGKILL: persist session meta to a small JSON index so restart can resume cleanup
