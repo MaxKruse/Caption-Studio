@@ -53,6 +53,9 @@ interface ImageTask {
 /** Max time allowed per API call (all 3 phases share one call, so generous). */
 const API_TIMEOUT_MS = 5 * 60 * 1000;
 
+/** Per-image per-phase timeout to avoid 15 min worst case for a batch. */
+const PER_IMAGE_PHASE_TIMEOUT_MS = 2 * 60 * 1000;
+
 /** Default max concurrency for parallel image processing. */
 const MAX_CONCURRENCY = 8;
 
@@ -209,7 +212,7 @@ async function processImageAllPhases(
         }),
         cache: "no-store",
       },
-      API_TIMEOUT_MS,
+      PER_IMAGE_PHASE_TIMEOUT_MS,
       abortSignal
     );
 
@@ -270,7 +273,7 @@ async function processImageAllPhases(
         }),
         cache: "no-store",
       },
-      API_TIMEOUT_MS,
+      PER_IMAGE_PHASE_TIMEOUT_MS,
       abortSignal
     );
 
