@@ -13,7 +13,7 @@ import { RateLimiter } from "@/lib/rate-limiter";
 const modelRateLimiter = new RateLimiter(10, 60_000);
 
 export async function GET(request: NextRequest) {
-  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? request.ip ?? "unknown";
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
   if (!modelRateLimiter.check(ip)) {
     return Response.json({ error: "Rate limit exceeded" }, { status: 429 });
   }
