@@ -113,6 +113,62 @@ export function deduplicateFileName(
 }
 
 // ---------------------------------------------------------------------------
+// Image validation
+// ---------------------------------------------------------------------------
+
+/**
+ * Validate image buffer by checking magic bytes.
+ * Supports PNG, JPEG, GIF, WEBP.
+ */
+export function isValidImageBuffer(data: Buffer): boolean {
+  if (!data || data.length < 4) return false;
+
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    data.length >= 8 &&
+    data[0] === 0x89 &&
+    data[1] === 0x50 &&
+    data[2] === 0x4E &&
+    data[3] === 0x47
+  ) {
+    return true;
+  }
+
+  // JPEG: FF D8 FF
+  if (data.length >= 3 && data[0] === 0xFF && data[1] === 0xD8 && data[2] === 0xFF) {
+    return true;
+  }
+
+  // GIF: 47 49 46 38
+  if (
+    data.length >= 6 &&
+    data[0] === 0x47 &&
+    data[1] === 0x49 &&
+    data[2] === 0x46 &&
+    data[3] === 0x38
+  ) {
+    return true;
+  }
+
+  // WEBP: RIFF....WEBP
+  if (
+    data.length >= 12 &&
+    data[0] === 0x52 &&
+    data[1] === 0x49 &&
+    data[2] === 0x46 &&
+    data[3] === 0x46 &&
+    data[8] === 0x57 &&
+    data[9] === 0x45 &&
+    data[10] === 0x42 &&
+    data[11] === 0x50
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -156,6 +212,11 @@ export function saveImage(
 ): string | null {
   const meta = sessions.get(sessionId);
   if (!meta) return null;
+
+  // Validate image by magic bytes, not just extension
+  if (!isValidImageBuffer(data)) {
+    return null;
+  }
 
   const sanitizedName = sanitizeFileName(originalName);
   const serverName = deduplicateFileName(sanitizedName, usedBases);
