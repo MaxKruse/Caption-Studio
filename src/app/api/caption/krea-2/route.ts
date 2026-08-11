@@ -335,7 +335,7 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "Missing config" }, { status: 400 });
   }
 
-  let config;
+  let config: any;
 
   try {
     const parsed = JSON.parse(configRaw);
