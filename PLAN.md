@@ -42,7 +42,7 @@ Items are prioritized roughly: Stability > Performance > UX > Prompting.
 
 ### Security
 - [x] Sanitize filenames to prevent path traversal. Current dedup uses base name but not full sanitization
-- [ ] Validate image dimensions before loading into Sharp to avoid decompression bombs
+- [x] Validate image dimensions before loading into Sharp to avoid decompression bombs
 
 ## Technical - Testing
 

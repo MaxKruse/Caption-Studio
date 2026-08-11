@@ -162,3 +162,24 @@ export async function prepareForDetection(
     height,
   };
 }
+
+/**
+ * Validates image dimensions before loading into Sharp to avoid decompression bombs.
+ * Throws if width or height exceeds limits.
+ */
+export async function validateImageDimensions(
+  imageBuffer: Buffer,
+  maxWidth: number,
+  maxHeight: number
+): Promise<void> {
+  const metadata = await sharp(imageBuffer).metadata();
+  const width = metadata.width ?? 0;
+  const height = metadata.height ?? 0;
+
+  if (width > maxWidth) {
+    throw new Error(`Image width ${width} exceeds max width ${maxWidth}`);
+  }
+  if (height > maxHeight) {
+    throw new Error(`Image height ${height} exceeds max height ${maxHeight}`);
+  }
+}
