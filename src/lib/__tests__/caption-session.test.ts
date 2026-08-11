@@ -5,45 +5,15 @@
  */
 
 import { describe, it, expect } from "bun:test";
-
-// ---------------------------------------------------------------------------
-// Inline the current implementation (same pattern in all 4 route files)
-// ---------------------------------------------------------------------------
-
-const activeSessions = new Map<string, AbortController>();
-
-function registerSession(sessionId: string, abortController: AbortController): void {
-  activeSessions.set(sessionId, abortController);
-}
-
-function unregisterSession(sessionId: string): void {
-  activeSessions.delete(sessionId);
-}
-
-function abortSession(sessionId: string): boolean {
-  const ac = activeSessions.get(sessionId);
-  if (!ac) return false;
-  ac.abort();
-  activeSessions.delete(sessionId);
-  return true;
-}
-
-function getSession(sessionId: string): AbortController | undefined {
-  return activeSessions.get(sessionId);
-}
-
-function cleanupAbortedSessions(): void {
-  for (const [sessionId, ac] of activeSessions.entries()) {
-    if (ac.signal.aborted) {
-      activeSessions.delete(sessionId);
-    }
-  }
-}
-
-// Clear between tests
-function clearAll(): void {
-  activeSessions.clear();
-}
+import {
+  activeSessions,
+  registerSession,
+  unregisterSession,
+  abortSession,
+  getSession,
+  cleanupAbortedSessions,
+  clearAll,
+} from "@/lib/session-registry";
 
 // ---------------------------------------------------------------------------
 // Tests

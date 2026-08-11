@@ -27,21 +27,11 @@ import {
   buildDistillUserPrompt,
 } from "@/lib/krea2-prompts";
 import { readFileBuffer, fetchWithTimeout, streamResponse } from "@/lib/caption-helpers";
+import { registerSession, unregisterSession, abortSession, getSession } from "@/lib/session-registry";
 
 // ---------------------------------------------------------------------------
-// Active session tracking for explicit abort
+// Types
 // ---------------------------------------------------------------------------
-
-const activeSessions = new Map<string, AbortController>();
-
-/** Cleanup stale sessions (completed sessions that were not removed). */
-setInterval(() => {
-  for (const [sessionId, ac] of activeSessions.entries()) {
-    if (ac.signal.aborted) {
-      activeSessions.delete(sessionId);
-    }
-  }
-}, 60_000);
 
 // ---------------------------------------------------------------------------
 // Types
@@ -447,7 +437,7 @@ export async function POST(request: NextRequest) {
   });
 
   const sessionAbort = new AbortController();
-  activeSessions.set(sessionId, sessionAbort);
+  registerSession(sessionId, sessionAbort);
 
   request.signal.addEventListener("abort", () => {
     sessionAbort.abort();
@@ -497,7 +487,7 @@ export async function POST(request: NextRequest) {
       }
       closeStream();
     } finally {
-      activeSessions.delete(sessionId);
+      unregisterSession(sessionId);
     }
   })();
 
@@ -521,12 +511,14 @@ export async function DELETE(request: NextRequest) {
     return Response.json({ error: "Missing sessionId" }, { status: 400 });
   }
 
-  const sessionAbort = activeSessions.get(sessionId);
+  const sessionAbort = getSession(sessionId);
   if (!sessionAbort) {
     return Response.json({ error: "Session not found" }, { status: 404 });
   }
 
-  sessionAbort.abort();
-  activeSessions.delete(sessionId);
+  const aborted = abortSession(sessionId);
+  if (!aborted) {
+    return Response.json({ error: "Session not found" }, { status: 404 });
+  }
   return Response.json({ ok: true });
 }

@@ -26,21 +26,11 @@ import {
   touchSession,
 } from "@/lib/temp-files";
 import { readFileBuffer, fetchWithTimeout } from "@/lib/caption-helpers";
+import { registerSession, unregisterSession, abortSession, getSession } from "@/lib/session-registry";
 
 // ---------------------------------------------------------------------------
-// Active session tracking for explicit abort
+// Helpers
 // ---------------------------------------------------------------------------
-
-const activeSessions = new Map<string, AbortController>();
-
-/** Cleanup stale sessions (completed sessions that weren't removed). */
-setInterval(() => {
-  for (const [sessionId, ac] of activeSessions.entries()) {
-    if (ac.signal.aborted) {
-      activeSessions.delete(sessionId);
-    }
-  }
-}, 60_000); // every minute
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -347,7 +337,7 @@ export async function POST(request: NextRequest) {
   });
 
   const sessionAbort = new AbortController();
-  activeSessions.set(sessionId, sessionAbort);
+  registerSession(sessionId, sessionAbort);
 
   request.signal.addEventListener("abort", () => {
     sessionAbort.abort();
@@ -393,7 +383,7 @@ export async function POST(request: NextRequest) {
       }
       closeStream();
     } finally {
-      activeSessions.delete(sessionId);
+      unregisterSession(sessionId);
     }
   })();
 
@@ -417,12 +407,14 @@ export async function DELETE(request: NextRequest) {
     return Response.json({ error: "Missing sessionId" }, { status: 400 });
   }
 
-  const sessionAbort = activeSessions.get(sessionId);
+  const sessionAbort = getSession(sessionId);
   if (!sessionAbort) {
     return Response.json({ error: "Session not found" }, { status: 404 });
   }
 
-  sessionAbort.abort();
-  activeSessions.delete(sessionId);
+  const aborted = abortSession(sessionId);
+  if (!aborted) {
+    return Response.json({ error: "Session not found" }, { status: 404 });
+  }
   return Response.json({ ok: true });
 }
