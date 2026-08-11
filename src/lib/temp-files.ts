@@ -20,6 +20,12 @@ const CLEANUP_AFTER_MS = 30 * 60 * 1000;
 /** Cleanup check interval (every 5 minutes). */
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 
+/** Maximum size per image (10 MB). */
+const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
+
+/** Maximum number of images per session. */
+const MAX_IMAGES_PER_SESSION = 100;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -29,6 +35,7 @@ export interface SessionMeta {
   dir: string;
   createdAt: number;
   lastActivityAt: number;
+  imageCount: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -194,6 +201,7 @@ export function createSession(): SessionMeta {
     dir,
     createdAt: Date.now(),
     lastActivityAt: Date.now(),
+    imageCount: 0,
   };
 
   sessions.set(sessionId, meta);
@@ -213,6 +221,16 @@ export function saveImage(
   const meta = sessions.get(sessionId);
   if (!meta) return null;
 
+  // Enforce per-session image count limit
+  if (meta.imageCount >= MAX_IMAGES_PER_SESSION) {
+    return null;
+  }
+
+  // Enforce per-image size limit
+  if (data.length > MAX_IMAGE_SIZE_BYTES) {
+    return null;
+  }
+
   // Validate image by magic bytes, not just extension
   if (!isValidImageBuffer(data)) {
     return null;
@@ -224,6 +242,7 @@ export function saveImage(
 
   fs.writeFileSync(filePath, data);
   meta.lastActivityAt = Date.now();
+  meta.imageCount++;
 
   return serverName;
 }
