@@ -9,13 +9,16 @@ Items are prioritized roughly: Stability > Performance > UX > Prompting.
 - [x] Remove duplicated `replaceVariables` implementation from routes and tests. Placeholder replacement is deprecated - prompts are used as-is
 - [x] Update `for-anima` and `krea-2` routes to import from shared helpers
 - [x] Update `caption-helpers.test.ts` to import from shared lib
+- [x] Extract `activeSessions` registry to `src/lib/session-registry.ts` with `registerSession`, `unregisterSession`, `abortSession`. Remove duplicated `Map` + interval from all routes
+- [x] Extract SSE stream factory `createSseStream()` to `src/lib/sse.ts`. Unify SSE stream creation across routes
+- [x] Sanitize filenames to prevent path traversal with `sanitizeFileName` in `src/lib/temp-files.ts`
 
 ## Technical - Stability & Maintainability
 
 ### Code duplication
-- [ ] Extract `activeSessions` registry to `src/lib/session-registry.ts` with `registerSession`, `unregisterSession`, `abortSession`. Remove duplicated `Map` + interval from all routes
-- [ ] Extract SSE stream factory `createSseStream()` to `src/lib/sse.ts`. Currently each route builds its own `ReadableStream` and `sendEvent`. Unify format
-- [ ] Extract `createSseStream` tests: verify event formatting, close behavior, no-op before start
+- [x] Extract `activeSessions` registry to `src/lib/session-registry.ts` with `registerSession`, `unregisterSession`, `abortSession`. Remove duplicated `Map` + interval from all routes
+- [x] Extract SSE stream factory `createSseStream()` to `src/lib/sse.ts`. Currently each route builds its own `ReadableStream` and `sendEvent`. Unify format
+- [x] Extract `createSseStream` tests: verify event formatting, close behavior, no-op before start
 
 ### File I/O
 - [ ] Replace sync `fs` calls in `temp-files.ts` with `fs.promises`. Avoid blocking event loop during batch uploads
@@ -38,7 +41,7 @@ Items are prioritized roughly: Stability > Performance > UX > Prompting.
 - [ ] Add concurrency tuning UI: allow user to set parallel requests, cap at server parallel
 
 ### Security
-- [ ] Sanitize filenames to prevent path traversal. Current dedup uses base name but not full sanitization
+- [x] Sanitize filenames to prevent path traversal. Current dedup uses base name but not full sanitization
 - [ ] Validate image dimensions before loading into Sharp to avoid decompression bombs
 
 ## Technical - Testing
