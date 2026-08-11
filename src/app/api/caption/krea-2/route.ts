@@ -366,7 +366,7 @@ export async function POST(request: NextRequest) {
   const other = config.triggerWordOther?.trim() ?? "";
 
   // Create session and save images to temp files
-  const session = createSession();
+  const session = await createSession();
   const sessionId = session.id;
   const usedBases = new Set<string>();
   const tasks: ImageTask[] = [];

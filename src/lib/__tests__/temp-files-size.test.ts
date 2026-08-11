@@ -2,8 +2,8 @@ import { describe, it, expect } from "bun:test";
 import { createSession, saveImage, deleteSession } from "@/lib/temp-files";
 
 describe("temp-files size limits", () => {
-  it("rejects image larger than max size", () => {
-    const session = createSession();
+  it("rejects image larger than max size", async () => {
+    const session = await createSession();
     const usedBases = new Set<string>();
     // 11 MB buffer with valid PNG header
     const bigBuffer = Buffer.alloc(11 * 1024 * 1024);
@@ -17,8 +17,8 @@ describe("temp-files size limits", () => {
     deleteSession(session.id);
   });
 
-  it("accepts image within size limit", () => {
-    const session = createSession();
+  it("accepts image within size limit", async () => {
+    const session = await createSession();
     const usedBases = new Set<string>();
     const smallBuffer = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00]);
     const name = saveImage(session.id, "small.png", smallBuffer, usedBases);
@@ -26,8 +26,8 @@ describe("temp-files size limits", () => {
     deleteSession(session.id);
   });
 
-  it("rejects when max image count exceeded", () => {
-    const session = createSession();
+  it("rejects when max image count exceeded", async () => {
+    const session = await createSession();
     const usedBases = new Set<string>();
     const png = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00]);
     // Fill up to max 100 images

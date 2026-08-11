@@ -5,6 +5,7 @@
  */
 
 import fs from "fs";
+import fsp from "fs/promises";
 import path from "path";
 
 // ---------------------------------------------------------------------------
@@ -45,9 +46,11 @@ export interface SessionMeta {
 const sessions = new Map<string, SessionMeta>();
 
 /** Ensure the base temp directory exists. */
-function ensureBaseDir(): void {
-  if (!fs.existsSync(TEMP_BASE)) {
-    fs.mkdirSync(TEMP_BASE, { recursive: true });
+async function ensureBaseDir(): Promise<void> {
+  try {
+    await fsp.mkdir(TEMP_BASE, { recursive: true });
+  } catch {
+    // ignore
   }
 }
 
@@ -182,19 +185,26 @@ export function isValidImageBuffer(data: Buffer): boolean {
 /**
  * Create a new session directory and return session metadata.
  */
-export function createSession(): SessionMeta {
-  ensureBaseDir();
+export async function createSession(): Promise<SessionMeta> {
+  await ensureBaseDir();
 
   let sessionId: string;
   let dir: string;
 
   // Ensure unique session ID
-  do {
+  while (true) {
     sessionId = generateSessionId();
     dir = path.join(TEMP_BASE, sessionId);
-  } while (fs.existsSync(dir));
+    try {
+      await fsp.access(dir);
+      // exists, try again
+    } catch {
+      // doesn't exist, good
+      break;
+    }
+  }
 
-  fs.mkdirSync(dir, { recursive: true });
+  await fsp.mkdir(dir, { recursive: true });
 
   const meta: SessionMeta = {
     id: sessionId,
