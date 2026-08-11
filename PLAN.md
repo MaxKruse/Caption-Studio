@@ -35,7 +35,7 @@ Items are prioritized roughly: Stability > Performance > UX > Prompting.
 - [x] Add rate limiting per IP for model discovery and caption endpoints
 
 ### Performance
-- [ ] Parallelise WD Tagger calls in For Anima mode. Currently sequential `for i` loop
+- [x] Parallelise WD Tagger calls in For Anima mode. Currently sequential `for i` loop
 - [x] Stream ZIP download instead of buffering entire archive in memory
 - [x] Add per-image timeout per phase in Krea 2 to avoid 15 min worst case
 - [ ] Add concurrency tuning UI: allow user to set parallel requests, cap at server parallel
