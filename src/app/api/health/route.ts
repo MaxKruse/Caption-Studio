@@ -8,10 +8,13 @@
 
 import fs from "fs";
 import path from "path";
+import { generateRequestId, logStructured } from "@/lib/logger";
 
 const TEMP_BASE = "/tmp/caption-studio";
 
 export async function GET() {
+  const requestId = generateRequestId();
+  logStructured("info", "health check", { requestId });
   let tempDirWritable = false;
   try {
     if (!fs.existsSync(TEMP_BASE)) {
@@ -34,7 +37,9 @@ export async function GET() {
     cleanupIntervalMs: 5 * 60 * 1000,
     uptime: process.uptime(),
     timestamp: Date.now(),
+    requestId,
   };
 
+  logStructured("info", "health response", { requestId, ok: tempDirWritable });
   return Response.json(health, { status: tempDirWritable ? 200 : 503 });
 }

@@ -13,6 +13,7 @@ describe("health route", () => {
     expect(typeof data.tempDir).toBe("string");
     expect(typeof data.sessionsCount).toBe("number");
     expect(typeof data.uptime).toBe("number");
+    expect(typeof data.requestId).toBe("string");
   });
 
   it("includes tempDir path", async () => {
