@@ -5,7 +5,7 @@
 
 "use client";
 
-import { useState, useRef, useCallback, type DragEvent, type ChangeEvent } from "react";
+import { useState, useRef, useCallback, useEffect, type DragEvent, type ChangeEvent } from "react";
 import { useSession } from "@/hooks/use-session";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -103,10 +103,14 @@ export function ImageUploader({ onImagesReady, acceptCaptions, onCaptionsReady }
     [processFiles]
   );
 
-  // Notify parent when images change
-  if (state.images.length > 0) {
-    onImagesReady(state.images.length);
-  }
+  // Notify parent when images change (in an effect - never during render,
+  // which would trigger a "Cannot update a component while rendering"
+  // warning since onImagesReady sets state in the parent).
+  useEffect(() => {
+    if (state.images.length > 0) {
+      onImagesReady(state.images.length);
+    }
+  }, [state.images.length, onImagesReady]);
 
   return (
     <Card className="w-full">
