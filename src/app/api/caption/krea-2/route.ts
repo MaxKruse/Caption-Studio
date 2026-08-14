@@ -38,10 +38,6 @@ import { krea2ConfigSchema, type Krea2Config } from "@/lib/config-schema";
 // Types
 // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 interface ImageTask {
   index: number;
   serverName: string;    // deduplicated filename on disk

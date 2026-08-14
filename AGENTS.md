@@ -63,7 +63,6 @@ src/
     detect-parsing.ts       — Bounding box parser (Gemma box_2d y-first, Qwen bbox_2d x-first)
     detection-prompts.ts    — Detection prompt builder
     detect-store.ts         — In-memory detection job store
-    store.ts                — In-memory caption job store (legacy)
     krea2-prompts.ts        — Phase 2/3 prompt builders
     krea2-system-prompt.ts  — Krea 2 system prompt
     anima-prompt.ts         — For Anima system + user prompts, assembleFinalCaption
@@ -186,7 +185,6 @@ Detection images scaled to 1024px max. Response parsed by `parseDetectionRespons
 
 ### In-Memory Stores
 
-- `store.ts` — `Map<string, CaptionJob>` (caption jobs, 24h stale cleanup)
 - `detect-store.ts` — `Map<string, DetectionJob>` (detection jobs, cleaned on SSE close)
 - `temp-files.ts` — `Map<string, SessionMeta>` (temp image sessions, 30min stale cleanup)
 
