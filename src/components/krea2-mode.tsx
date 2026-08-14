@@ -9,6 +9,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useSession } from "@/hooks/use-session";
+import { applyTokenDelta } from "@/lib/token-accumulate";
 import { ImageUploader } from "@/components/image-uploader";
 import { ModelSelector } from "@/components/model-selector";
 import { PromptEditor } from "@/components/prompt-editor";
@@ -34,6 +35,27 @@ interface CaptionResult {
   reasoningContent?: string;
   partialReasoning?: string;
   error?: string;
+  /** Prompt tokens reused from the llama.cpp KV cache (all phases). */
+  cachedTokensTotal?: number;
+  /** Total prompt tokens processed by all phases for this image. */
+  promptTokensTotal?: number;
+}
+
+/** Accumulate phase token stats into the per-image totals. */
+function withTokenStats(
+  result: CaptionResult,
+  stats: { cachedTokens?: number; promptTokens?: number }
+): CaptionResult {
+  return {
+    ...result,
+    cachedTokensTotal: (result.cachedTokensTotal ?? 0) + (stats.cachedTokens ?? 0),
+    promptTokensTotal: (result.promptTokensTotal ?? 0) + (stats.promptTokens ?? 0),
+  };
+}
+
+/** Format a token count compactly (1234 -> "1.2k"). */
+function formatTokens(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -223,18 +245,15 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
               break;
             }
             case "token": {
+              // Token events carry deltas only - accumulate into the partial
               const tokenData = data as {
                 index?: number;
-                type: string;
-                full: string;
+                type: "caption" | "reasoning";
+                content: string;
               };
-              if (tokenData.index !== undefined && localResults[tokenData.index]) {
-                localResults[tokenData.index] = {
-                  ...localResults[tokenData.index],
-                  [tokenData.type === "reasoning"
-                    ? "partialReasoning"
-                    : "partialCaption"]: tokenData.full,
-                };
+              const tokenIdx = tokenData.index;
+              if (tokenIdx !== undefined && localResults[tokenIdx]) {
+                localResults[tokenIdx] = applyTokenDelta(localResults[tokenIdx], tokenData);
               }
               break;
             }
@@ -246,16 +265,21 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
                 caption?: string;
                 reasoningContent?: string;
                 error?: string;
+                cachedTokens?: number;
+                promptTokens?: number;
               };
               const idx = completeData.index;
               if (localResults[idx]) {
-                localResults[idx] = {
-                  ...localResults[idx],
-                  status: completeData.status as CaptionResult["status"],
-                  caption: completeData.caption,
-                  reasoningContent: completeData.reasoningContent,
-                  error: completeData.error,
-                };
+                localResults[idx] = withTokenStats(
+                  {
+                    ...localResults[idx],
+                    status: completeData.status as CaptionResult["status"],
+                    caption: completeData.caption,
+                    reasoningContent: completeData.reasoningContent,
+                    error: completeData.error,
+                  },
+                  completeData
+                );
                 // If failed, mark phase as failed
                 if (completeData.status === "failed") {
                   localResults[idx].imagePhase = "failed";
@@ -271,14 +295,19 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
                 caption?: string;
                 reasoningContent?: string;
                 error?: string;
+                cachedTokens?: number;
+                promptTokens?: number;
               };
               const idx = completeData.index;
               if (localResults[idx]) {
-                localResults[idx] = {
-                  ...localResults[idx],
-                  caption: completeData.caption,
-                  reasoningContent: completeData.reasoningContent,
-                };
+                localResults[idx] = withTokenStats(
+                  {
+                    ...localResults[idx],
+                    caption: completeData.caption,
+                    reasoningContent: completeData.reasoningContent,
+                  },
+                  completeData
+                );
                 if (completeData.status === "failed") {
                   localResults[idx].imagePhase = "failed";
                   localResults[idx].status = "failed";
@@ -295,19 +324,25 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
                 caption?: string;
                 reasoningContent?: string;
                 error?: string;
+                cachedTokens?: number;
+                promptTokens?: number;
               };
               const idx = completeData.index;
               if (localResults[idx]) {
-                localResults[idx] = {
-                  ...localResults[idx],
-                  status: completeData.status as CaptionResult["status"],
-                  imagePhase: completeData.status === "completed" ? "completed" : "failed",
-                  caption: completeData.caption,
-                  reasoningContent: completeData.reasoningContent,
-                  error: completeData.error,
-                  partialCaption: undefined,
-                  partialReasoning: undefined,
-                };
+                localResults[idx] = withTokenStats(
+                  {
+                    ...localResults[idx],
+                    status: completeData.status as CaptionResult["status"],
+                    imagePhase:
+                      completeData.status === "completed" ? "completed" : "failed",
+                    caption: completeData.caption,
+                    reasoningContent: completeData.reasoningContent,
+                    error: completeData.error,
+                    partialCaption: undefined,
+                    partialReasoning: undefined,
+                  },
+                  completeData
+                );
               }
               break;
             }
@@ -484,6 +519,20 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
                 : r.partialCaption,
             }))}
           />
+
+          {/* KV cache reuse stats across all phases */}
+          {(() => {
+            const cachedTotal = results.reduce((s, r) => s + (r.cachedTokensTotal ?? 0), 0);
+            const promptTotal = results.reduce((s, r) => s + (r.promptTokensTotal ?? 0), 0);
+            if (promptTotal === 0) return null;
+            const pct = Math.round((cachedTotal / promptTotal) * 100);
+            return (
+              <p className="text-center text-xs text-slate-500">
+                KV cache: {formatTokens(cachedTotal)}/{formatTokens(promptTotal)} prompt
+                tokens reused ({pct}%)
+              </p>
+            );
+          })()}
 
           {phase === "results" && (
             <div className="flex justify-center gap-3">

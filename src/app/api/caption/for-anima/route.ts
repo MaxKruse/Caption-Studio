@@ -26,16 +26,14 @@ import {
   writeTags,
   touchSession,
 } from "@/lib/temp-files";
-import { readFileBuffer, fetchWithTimeout, streamResponse } from "@/lib/caption-helpers";
+import { readFileBuffer, fetchWithRetry, streamResponse } from "@/lib/caption-helpers";
+import { buildChatRequest } from "@/lib/llama-request";
+import { forAnimaConfigSchema, type ForAnimaConfig } from "@/lib/config-schema";
 import { registerSession, unregisterSession, abortSession, getSession } from "@/lib/session-registry";
 import { createSseStream } from "@/lib/sse";
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Helpers
+// Constants
 // ---------------------------------------------------------------------------
 
 /** Max time allowed per API call. */
@@ -59,14 +57,19 @@ interface ImageTask {
 /**
  * Process a single image and emit SSE events via sendEvent.
  * Writes caption to .txt file on completion.
+ *
+ * Pinned to a llama.cpp slot (slotId = worker index) so all images from
+ * the same worker reuse the slot's cached KV (system prompt, and prior
+ * images' shared prefixes via chunk reuse).
  */
 async function processImage(
   task: ImageTask,
   sessionId: string,
   normalizedUrl: string,
   model: string,
+  slotId: number,
   systemPrompt: string,
-  total: number,
+  maxImageDimension: number | undefined,
   sendEvent: (type: string, data: unknown) => void,
   abortSignal: AbortSignal
 ): Promise<void> {
@@ -77,7 +80,8 @@ async function processImage(
   try {
     const { buffer: apiBuffer, mimeType } = await prepareForApi(
       task.originalName,
-      task.imageBuffer
+      task.imageBuffer,
+      maxImageDimension
     );
     const base64 = apiBuffer.toString("base64");
 
@@ -103,17 +107,12 @@ async function processImage(
       ],
     });
 
-    const response = await fetchWithTimeout(
+    const response = await fetchWithRetry(
       `${normalizedUrl}/v1/chat/completions`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model,
-          messages,
-          stream: true,
-          stream_options: { include_usage: true },
-        }),
+        body: JSON.stringify(buildChatRequest({ model, messages, slotId })),
         cache: "no-store",
       },
       API_TIMEOUT_MS,
@@ -152,6 +151,8 @@ async function processImage(
       booruTags: task.booruTags.trim(),
       llmAddition: trimmedAddition,
       reasoningContent: result.reasoningContent.trim(),
+      cachedTokens: result.cachedTokens,
+      promptTokens: result.promptTokens,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -186,13 +187,17 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "Missing config" }, { status: 400 });
   }
 
-  let config: {
-    serverUrl: string;
-    model: string;
-  };
-
+  // Zod-validated config (same schema family as krea-2)
+  let config: ForAnimaConfig;
   try {
-    config = JSON.parse(configRaw);
+    const result = forAnimaConfigSchema.safeParse(JSON.parse(configRaw));
+    if (!result.success) {
+      return Response.json(
+        { error: "Invalid config", details: result.error.flatten() },
+        { status: 400 }
+      );
+    }
+    config = result.data;
   } catch {
     return Response.json({ error: "Invalid config JSON" }, { status: 400 });
   }
@@ -210,13 +215,6 @@ export async function POST(request: NextRequest) {
   const imageNames: string[] = configNames && typeof configNames === "string"
     ? JSON.parse(configNames) as string[]
     : imageFiles.map((f) => f.name);
-
-  if (!config.serverUrl || !config.model) {
-    return Response.json(
-      { error: "serverUrl and model are required" },
-      { status: 400 }
-    );
-  }
 
   // Create session and save images to temp files
   const session = await createSession();
@@ -270,12 +268,10 @@ export async function POST(request: NextRequest) {
   const systemPrompt = buildAnimaSystemPrompt();
   const [stream, sendEvent, closeStream] = createSseStream();
 
-  // Detect server parallelism to avoid overloading llama.cpp
-  const serverParallel = await getModelParallel(config.serverUrl, config.model);
-  const maxConcurrency = Math.min(
-    serverParallel ?? MAX_CONCURRENCY,
-    MAX_CONCURRENCY
-  );
+  // Detect server parallelism in the background (never throws) so the
+  // session event can stream immediately and the client can render its
+  // progress UI while discovery runs.
+  const serverParallelPromise = getModelParallel(config.serverUrl, config.model);
 
   const sessionAbort = new AbortController();
   registerSession(sessionId, sessionAbort);
@@ -290,10 +286,15 @@ export async function POST(request: NextRequest) {
   // Process images in parallel
   (async () => {
     try {
+      const serverParallel = await serverParallelPromise;
+      const maxConcurrency = Math.min(
+        serverParallel ?? MAX_CONCURRENCY,
+        MAX_CONCURRENCY
+      );
       const concurrency = Math.min(maxConcurrency, tasks.length);
       const queue = [...tasks];
 
-      async function processNext(): Promise<void> {
+      async function processNext(slotId: number): Promise<void> {
         while (queue.length > 0 && !sessionAbort.signal.aborted) {
           const task = queue.shift()!;
           touchSession(sessionId);
@@ -303,15 +304,21 @@ export async function POST(request: NextRequest) {
             sessionId,
             normalizedUrl,
             config.model,
+            slotId,
             systemPrompt,
-            tasks.length,
+            config.maxImageDimension,
             sendEvent,
             sessionAbort.signal
           );
         }
       }
 
-      const workers = Array.from({ length: concurrency }, () => processNext());
+      // Each worker is pinned to its own llama.cpp slot (worker index is
+      // always < server --parallel due to the getModelParallel clamp).
+      const workers = Array.from(
+        { length: concurrency },
+        (_, workerIndex) => processNext(workerIndex)
+      );
       await Promise.all(workers);
 
       if (!sessionAbort.signal.aborted) {

@@ -13,6 +13,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useSession } from "@/hooks/use-session";
+import { applyTokenDelta } from "@/lib/token-accumulate";
 import { ImageUploader } from "@/components/image-uploader";
 import { ModelSelector } from "@/components/model-selector";
 import { CaptionViewer } from "@/components/caption-viewer";
@@ -43,6 +44,15 @@ interface CaptionResult {
   reasoningContent?: string;
   partialReasoning?: string;
   error?: string;
+  /** Prompt tokens reused from the llama.cpp KV cache. */
+  cachedTokens?: number;
+  /** Total prompt tokens processed for this image. */
+  promptTokens?: number;
+}
+
+/** Format a token count compactly (1234 -> "1.2k"). */
+function formatTokens(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -291,13 +301,15 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
               break;
             }
             case "token": {
-              const tokenData = data as { index: number; type: string; full: string };
+              // Token events carry deltas only - accumulate into the partial
+              const tokenData = data as {
+                index: number;
+                type: "caption" | "reasoning";
+                content: string;
+              };
               const idx = tokenData.index;
               if (localLlm[idx]) {
-                localLlm[idx] = {
-                  ...localLlm[idx],
-                  [tokenData.type === "reasoning" ? "partialReasoning" : "partialCaption"]: tokenData.full,
-                };
+                localLlm[idx] = applyTokenDelta(localLlm[idx], tokenData);
               }
               break;
             }
@@ -308,6 +320,8 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
                 caption?: string;
                 reasoningContent?: string;
                 error?: string;
+                cachedTokens?: number;
+                promptTokens?: number;
               };
               const idx = completeData.index;
               if (localLlm[idx]) {
@@ -317,6 +331,8 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
                   caption: completeData.caption,
                   reasoningContent: completeData.reasoningContent,
                   error: completeData.error,
+                  cachedTokens: completeData.cachedTokens,
+                  promptTokens: completeData.promptTokens,
                   partialCaption: undefined,
                   partialReasoning: undefined,
                 };
@@ -614,6 +630,20 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
               </span>
             </div>
           )}
+
+          {/* KV cache reuse stats */}
+          {(() => {
+            const cachedTotal = llmResults.reduce((s, r) => s + (r.cachedTokens ?? 0), 0);
+            const promptTotal = llmResults.reduce((s, r) => s + (r.promptTokens ?? 0), 0);
+            if (promptTotal === 0) return null;
+            const pct = Math.round((cachedTotal / promptTotal) * 100);
+            return (
+              <p className="text-center text-xs text-slate-500">
+                KV cache: {formatTokens(cachedTotal)}/{formatTokens(promptTotal)} prompt
+                tokens reused ({pct}%)
+              </p>
+            );
+          })()}
 
           <CaptionViewer results={llmResults} />
 

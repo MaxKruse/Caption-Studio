@@ -4,7 +4,6 @@
  * Directories are auto-cleaned 30 minutes after last activity.
  */
 
-import fs from "fs";
 import fsp from "fs/promises";
 import path from "path";
 
@@ -429,19 +428,11 @@ async function cleanupStaleSessions(): Promise<void> {
   }
 }
 
-// Run cleanup every 5 minutes
+// Run cleanup every 5 minutes. Sessions are keyed in sessions.json so the
+// next process start also adopts and eventually reaps them.
 setInterval(() => { cleanupStaleSessions().catch(() => {}); }, CLEANUP_INTERVAL_MS);
-
-// Also clean up on process exit (graceful shutdown)
-process.on("exit", () => {
-  for (const sessionId of sessions.keys()) {
-    try {
-      const meta = sessions.get(sessionId);
-      if (meta) {
-        fs.rmSync(meta.dir, { recursive: true, force: true });
-      }
-    } catch {
-      // Best effort
-    }
-  }
-});
+//
+// Note: we intentionally do NOT delete session dirs on process exit. A
+// Docker rebuild restarts the process and would destroy finished (or
+// in-progress) results the user has not downloaded yet. The 30-minute
+// stale TTL is the only deletion path.

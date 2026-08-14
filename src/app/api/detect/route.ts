@@ -9,6 +9,7 @@ import { prepareForDetection } from "@/lib/image-utils";
 import { getModelParallel } from "@/lib/model-utils";
 import { normalizeServerUrl, toDockerHostUrl } from "@/lib/url-utils";
 import { parseDetectionResponse } from "@/lib/detect-parsing";
+import { buildChatRequest } from "@/lib/llama-request";
 import {
   DETECTION_CONCURRENCY,
   getDetectionPrompts,
@@ -180,8 +181,12 @@ async function processDetectionJob(
   const primaryQueue: File[] = [...imageFiles];
   const retryCount = new Map<string, number>();
 
-  /** Attempt detection for a single image. Returns true if successful. */
-  async function attemptDetection(file: File): Promise<boolean> {
+  /**
+   * Attempt detection for a single image. Returns true if successful.
+   * Pinned to the worker's llama.cpp slot so retries and later images
+   * from the same worker reuse the slot's cached system prompt KV.
+   */
+  async function attemptDetection(file: File, slotId: number): Promise<boolean> {
     const attempts = retryCount.get(file.name) ?? 0;
 
     try {
@@ -189,33 +194,32 @@ async function processDetectionJob(
       const { buffer, mimeType, width, height } = await prepareForDetection(imageBuffer);
       const base64 = buffer.toString("base64");
 
+      const messages: Array<Record<string, unknown>> = [
+        {
+          role: "system",
+          content: systemPrompt,
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${mimeType};base64,${base64}`,
+              },
+            },
+            {
+              type: "text",
+              text: userPrompt,
+            },
+          ],
+        },
+      ];
+
       const response = await fetch(`${baseUrl}/v1/chat/completions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model,
-          messages: [
-            {
-              role: "system",
-              content: systemPrompt,
-            },
-            {
-              role: "user",
-              content: [
-                {
-                  type: "image_url",
-                  image_url: {
-                    url: `data:${mimeType};base64,${base64}`,
-                  },
-                },
-                {
-                  type: "text",
-                  text: userPrompt,
-                },
-              ],
-            },
-          ],
-        }),
+        body: JSON.stringify(buildChatRequest({ model, messages, slotId, stream: false })),
         cache: "no-store",
         signal: AbortSignal.timeout(600_000), // 10 min timeout
       });
@@ -286,20 +290,21 @@ async function processDetectionJob(
     }
   }
 
-  /** Worker that processes images from a queue. */
-  async function worker(queue: File[]): Promise<void> {
+  /** Worker that processes images from a queue, pinned to one llama.cpp slot. */
+  async function worker(queue: File[], slotId: number): Promise<void> {
     while (queue.length > 0) {
       const file = queue.shift()!;
       updateDetectionImage(jobId, file.name, "processing");
-      await attemptDetection(file);
+      await attemptDetection(file, slotId);
     }
   }
 
-  // Launch workers for primary queue
+  // Launch workers for primary queue (each pinned to its own slot so the
+  // shared system prompt KV is reused across images of the same worker)
   await Promise.all(
     Array.from(
       { length: Math.min(parallelRequests, primaryQueue.length) },
-      () => worker(primaryQueue)
+      (_, workerIndex) => worker(primaryQueue, workerIndex)
     )
   );
 
@@ -310,7 +315,7 @@ async function processDetectionJob(
     await Promise.all(
       Array.from(
         { length: Math.min(parallelRequests, retryFiles.length) },
-        () => worker(retryFiles)
+        (_, workerIndex) => worker(retryFiles, workerIndex)
       )
     );
     retryQueue.clear();
