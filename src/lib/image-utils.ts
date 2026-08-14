@@ -39,10 +39,15 @@ export async function convertToJpeg(imageBuffer: Buffer): Promise<{
 }
 
 /**
- * Max dimension for images sent to the OpenAI vision API.
- * (2048 + 1024 = 3072) — covers most vision model limits.
+ * Default max dimension for images sent to the vision API.
+ *
+ * 1536px keeps the vision token count within llama.cpp's default
+ * --image-max-tokens (8192) for common 12B vision models, so the server
+ * does not truncate the image after we already paid for the transfer and
+ * prefill. Higher values are possible via the per-request override in
+ * prepareForApi (or by raising --image-max-tokens on the server).
  */
-export const API_MAX_DIMENSION = 3072;
+export const API_MAX_DIMENSION = 1536;
 
 /**
  * Resizes an image buffer so its biggest dimension does not exceed `maxDimension`.
@@ -79,23 +84,28 @@ export async function resizeIfNeeded(
  * AND resizes it if the biggest dimension exceeds the API limit.
  * If the file is already PNG or JPEG and within size limits, returns as-is.
  * Otherwise, resizes and converts to JPEG.
+ *
+ * `maxDimension` overrides the default (API_MAX_DIMENSION) for requests
+ * that need more detail, e.g. when the server runs a higher
+ * --image-max-tokens.
  */
 export async function prepareForApi(
   filename: string,
-  imageBuffer: Buffer
+  imageBuffer: Buffer,
+  maxDimension: number = API_MAX_DIMENSION
 ): Promise<{ buffer: Buffer; mimeType: string }> {
   const metadata = await sharp(imageBuffer).metadata();
   const width = metadata.width ?? 0;
   const height = metadata.height ?? 0;
   const biggest = Math.max(width, height);
 
-  if (biggest <= API_MAX_DIMENSION && !needsConversion(filename)) {
+  if (biggest <= maxDimension && !needsConversion(filename)) {
     const ext = getExtension(filename);
     const mimeType = ext === "png" ? "image/png" : "image/jpeg";
     return { buffer: imageBuffer, mimeType };
   }
 
-  return resizeIfNeeded(imageBuffer, API_MAX_DIMENSION);
+  return resizeIfNeeded(imageBuffer, maxDimension);
 }
 
 // ---------------------------------------------------------------------------

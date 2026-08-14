@@ -93,6 +93,7 @@ async function processImageAllPhases(
   triggerWordPerson: string,
   triggerWordOther: string,
   characterDescription: string,
+  maxImageDimension: number | undefined,
   sendEvent: (type: string, data: unknown) => void,
   abortSignal: AbortSignal
 ): Promise<void> {
@@ -104,7 +105,8 @@ async function processImageAllPhases(
     // Prepare image once (used in first message of the conversation)
     const { buffer: apiBuffer, mimeType } = await prepareForApi(
       task.originalName,
-      task.imageBuffer
+      task.imageBuffer,
+      maxImageDimension
     );
     const base64 = apiBuffer.toString("base64");
 
@@ -435,6 +437,7 @@ export async function POST(request: NextRequest) {
             person,
             other,
             config.characterDescription,
+            config.maxImageDimension,
             sendEvent,
             sessionAbort.signal
           );

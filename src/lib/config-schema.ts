@@ -8,6 +8,17 @@ const baseConfig = z.object({
   userPrompt: z.string().optional().default(""),
   triggerWordPerson: z.string().optional().default(""),
   triggerWordOther: z.string().optional().default(""),
+  /**
+   * Max image dimension (px) before client-side downscaling.
+   * Defaults to the 1536px lib default when omitted; raise it (with a
+   * matching --image-max-tokens on the server) for more detail.
+   */
+  maxImageDimension: z
+    .number()
+    .int()
+    .min(256)
+    .max(4096)
+    .optional(),
 });
 
 /** Krea 2 mode requires character description */

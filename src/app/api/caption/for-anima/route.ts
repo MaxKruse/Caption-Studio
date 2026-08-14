@@ -69,6 +69,7 @@ async function processImage(
   model: string,
   slotId: number,
   systemPrompt: string,
+  maxImageDimension: number | undefined,
   sendEvent: (type: string, data: unknown) => void,
   abortSignal: AbortSignal
 ): Promise<void> {
@@ -79,7 +80,8 @@ async function processImage(
   try {
     const { buffer: apiBuffer, mimeType } = await prepareForApi(
       task.originalName,
-      task.imageBuffer
+      task.imageBuffer,
+      maxImageDimension
     );
     const base64 = apiBuffer.toString("base64");
 
@@ -303,6 +305,7 @@ export async function POST(request: NextRequest) {
             config.model,
             slotId,
             systemPrompt,
+            config.maxImageDimension,
             sendEvent,
             sessionAbort.signal
           );
