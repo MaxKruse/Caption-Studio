@@ -5,6 +5,16 @@ Items are prioritized roughly: Stability > Performance > UX > Prompting.
 
 ## Completed
 
+- [x] **KV cache slot pinning** (`perf/kv-cache-slot-reuse`): `buildChatRequest` (`src/lib/llama-request.ts`) adds `id_slot` + `cache_prompt` + `n_cache_reuse: 256` to every chat request. All three routes (krea-2, for-anima, detect) pin each worker to one slot (worker index < server `--parallel`), so Krea 2's three phases and same-worker image batches reuse cached image encodings and system-prompt KV
+- [x] **KV cache stats in the UI**: `streamResponse` reports `cachedTokens`/`promptTokens` from the final usage chunk; completion events carry them; both caption modes show the batch-wide reuse percentage
+- [x] **Delta-only SSE token events**: `token` events no longer re-send the full caption (O(n^2) wire cost); clients accumulate via the shared `applyTokenDelta` helper
+- [x] **Wired `fetchWithRetry` into both caption routes** (exponential backoff on 5xx/429; previously implemented but unused)
+- [x] **Non-blocking session event**: both caption routes stream `session` immediately and run `--parallel` discovery in the background
+- [x] **Removed the destructive temp-files exit handler**: process exit no longer deletes session dirs (Docker rebuilds can't destroy undownloaded results); the 30-minute stale TTL via `sessions.json` is the only deletion path
+- [x] **Image downscale default 3072 -> 1536px** with optional `maxImageDimension` config (256-4096) in both caption schemas
+- [x] **Zod validation for the for-anima config** (`forAnimaConfigSchema`, flattened error details) - krea-2 already had it; detect still uses manual checks
+- [x] **Route integration tests with a stubbed llama.cpp server**: krea-2 (slot pinning, phase history, cached tokens, retry, session-event timing), for-anima (config validation, slot pinning), detect (slot pinning, SSE job stream)
+- [x] **Fixed CaptionViewer status dot**: thumbnails now use `relative` positioning so the dot renders on the thumbnail instead of at the page corner
 - [x] Extract shared caption helpers to `src/lib/caption-helpers.ts`: `readFileBuffer`, `fetchWithTimeout`, `streamResponse`
 - [x] Remove duplicated `replaceVariables` implementation from routes and tests. Placeholder replacement is deprecated - prompts are used as-is
 - [x] Update `for-anima` and `krea-2` routes to import from shared helpers
@@ -27,7 +37,7 @@ Items are prioritized roughly: Stability > Performance > UX > Prompting.
 - [x] Make temp dir cleanup resilient to SIGKILL: persist session meta to a small JSON index so restart can resume cleanup
 
 ### API robustness
-- [x] Add Zod validation for all FormData configs. Return structured errors
+- [x] Add Zod validation for caption route configs (krea-2, for-anima). Return structured errors (detect still uses manual checks)
 - [x] Add request ID and structured logging for SSE streams and API calls
 - [x] Implement retry with exponential backoff for 5xx/429 from llama.cpp. Currently only one retry for detection
 - [x] Use `AbortSignal.timeout` where possible instead of manual timeout controller
@@ -47,7 +57,7 @@ Items are prioritized roughly: Stability > Performance > UX > Prompting.
 ## Technical - Testing
 
 - [ ] Unit tests for `session-registry` and `createSseStream`
-- [ ] Integration tests for `for-anima` route with mocked llama.cpp
+- [x] Integration tests for `for-anima` route with mocked llama.cpp (plus krea-2 and detect)
 - [ ] Add property tests for `deduplicateFileName` edge cases
 - [ ] Add e2e Playwright tests for error states: server down, model missing, abort mid-batch
 

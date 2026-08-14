@@ -7,7 +7,7 @@
 
 ## What This Project Is
 
-Scaffolding for a new app. Retains only the **llama.cpp server connectivity** layer (API routes + lib utilities). The UI layer has been removed and will be rewritten.
+A batch captioning tool for llama.cpp vision models: web UI (Next.js App Router + React) plus the **llama.cpp server connectivity** layer (API routes + lib utilities). Two caption modes (Krea 2 three-phase pipeline, For Anima booru-tag enhancement) plus a face/body detection endpoint.
 
 ## Tech Stack
 
@@ -34,26 +34,42 @@ Scaffolding for a new app. Retains only the **llama.cpp server connectivity** la
 src/
   app/
     api/
-      caption/for-anima/ — POST FormData (images + captions + config) → SSE stream
-      caption/krea-2     — POST FormData (images + config) → SSE stream
-      detect/route.ts    — POST start detection + GET SSE progress
-      download/route.ts  — GET ?sessionId=<id> zip temp dir / POST legacy base64
-      models/route.ts    — Model discovery proxy to /v1/models
-    globals.css          — Minimal Tailwind v4 import
-    layout.tsx           — Root layout
-    page.tsx             — Placeholder home page
+      caption/for-anima/route.ts — POST FormData (images + captions + config) → SSE stream
+      caption/krea-2/route.ts    — POST FormData (images + config) → SSE stream
+      detect/route.ts            — POST start detection job + GET ?jobId=<id> SSE progress
+      download/route.ts          — GET ?sessionId=<id> streams zip of temp dir
+      health/route.ts            — GET health check (temp dir writable, cleanup status)
+      models/route.ts            — Model discovery proxy to /v1/models
+      ping/route.ts              — GET liveness
+      tag/route.ts               — WD Tagger proxy (For Anima workflow)
+    home-client.tsx        — App shell (mode switching)
+    page.tsx / layout.tsx  — Root page + layout
+  components/              — krea2-mode, for-anima-mode, caption-viewer, image-uploader,
+                             model-selector, prompt-editor, server-check, tag-stats, ui/*
+  hooks/                   — use-session (in-memory UI state), use-server-check (polling)
   lib/
-    url-utils.ts            — normalizeServerUrl() (strip /v1 and trailing /)
-    types.ts                — ModelInfo, CropRect
-    store.ts                — In-memory caption job store (Map-based, legacy)
-    detect-store.ts         — In-memory detection job store
-    temp-files.ts           — Session temp dir management (upload, dedup, cleanup)
-    image-utils.ts          — Image format conversion + resize (sharp)
-    detect-parsing.ts       — Bounding box response parser (Gemma + Qwen formats)
+    llama-request.ts        — buildChatRequest(): id_slot pinning + cache_prompt + n_cache_reuse
+    token-accumulate.ts     — applyTokenDelta(): client-side accumulation of delta token events
+    caption-helpers.ts      — readFileBuffer, fetchWithTimeout, fetchWithRetry, streamResponse
+    config-schema.ts        — Zod schemas (krea2ConfigSchema, forAnimaConfigSchema)
+    session-registry.ts     — Active SSE session registry (abort controllers)
+    temp-files.ts           — Session temp dirs under /tmp/caption-studio (30-min stale TTL only)
+    image-utils.ts          — sharp conversion/resize (1536px default, maxImageDimension override)
+    model-utils.ts          — getModelParallel() (--parallel discovery, non-throwing)
+    sse.ts                  — createSseStream() factory
+    rate-limiter.ts         — Per-IP rate limiting for discovery endpoints
+    logger.ts               — Structured request logging
+    url-utils.ts            — normalizeServerUrl(), toDockerHostUrl()
+    detect-parsing.ts       — Bounding box parser (Gemma box_2d y-first, Qwen bbox_2d x-first)
     detection-prompts.ts    — Detection prompt builder
+    detect-store.ts         — In-memory detection job store
+    store.ts                — In-memory caption job store (legacy)
+    krea2-prompts.ts        — Phase 2/3 prompt builders
+    krea2-system-prompt.ts  — Krea 2 system prompt
+    anima-prompt.ts         — For Anima system + user prompts, assembleFinalCaption
+    prompt-utils.ts         — Prompt text helpers
     string-utils.ts         — getExtension()
-    krea2-prompts.ts        — Phase 2 (refine) and Phase 3 (distill) prompt builders
-    anima-prompt.ts         — System + user prompt builders for For Anima mode
+    types.ts                — ModelInfo, CropRect
 ```
 
 ## TypeScript Configuration
@@ -110,18 +126,19 @@ Both modes share the same base flow:
 1. Frontend sends `FormData` with `config` (JSON string), `imageNames` (JSON string), and `images` (File objects)
 2. Server creates temp directory under `/tmp/caption-studio/<sessionId>/`
 3. Images saved to disk with deduplicated names (base-name collision: `1.png` + `1.jpg` → `1.png` + `1_1.jpg`)
-4. First SSE event sends `{ sessionId }` to frontend
-5. Workers process images via API, stream tokens back as SSE events
+4. First SSE event sends `{ sessionId }` to frontend (immediately - `--parallel` discovery runs in the background)
+5. Workers process images via API, stream token DELTAS back as SSE events (clients accumulate via `applyTokenDelta`)
 6. On completion, caption `.txt` files written next to image files in temp dir
-7. Temp dirs auto-cleaned 30 minutes after last activity (checked every 5 minutes)
+7. Temp dirs auto-cleaned 30 minutes after last activity (checked every 5 minutes; the only deletion path - no exit-handler wipe)
 
-Each worker fetches `<serverUrl>/v1/chat/completions` with:
-- `stream: true`
-- `stream_options: { include_usage: true }`
+Each worker fetches `<serverUrl>/v1/chat/completions` via `buildChatRequest()` with:
+- `stream: true` + `stream_options: { include_usage: true }` (detection uses `stream: false`)
+- `id_slot: <workerIndex>` - pins the request to one llama.cpp slot for KV cache reuse
+- `cache_prompt: true`, `n_cache_reuse: 256` - chunk-wise prompt KV reuse
 - Messages array with `image_url` (data URL) + `text` content parts
-- 5-minute timeout per image via `AbortController`
+- Timeouts: krea-2 phase 1 15 min, phases 2/3 5 min each; for-anima 15 min; 5xx/429 retried via `fetchWithRetry`
 
-Streaming response parsed for `delta.reasoning_content` and `delta.content`.
+Streaming response parsed for `delta.reasoning_content` and `delta.content` (plus the final usage chunk for `cachedTokens`/`promptTokens` stats). Completion events carry the stats; the UI shows the batch-wide KV cache reuse percentage.
 
 ### For Anima Mode
 
@@ -147,7 +164,7 @@ Each image is processed through all 3 phases as a **single multi-turn conversati
 
 **Turn 3 (Phase 3 - Distillation):** Conversation history + distill user message (references Phase 2 caption). LLM distills into a concise (60-150 word) krea2-optimized prompt. This is the **inverse of prompt expansion**.
 
-Parallel workers (up to 8 concurrent) each process one image through all 3 turns. Config requires `characterDescription`.
+Parallel workers (up to 8 concurrent, clamped to the server's `--parallel`) each process one image through all 3 turns, pinned to their own slot (slotId = worker index) so the 3 phases reuse the same slot's KV cache. Config requires `characterDescription`.
 
 ### Download
 
@@ -179,11 +196,11 @@ Detection images scaled to 1024px max. Response parsed by `parseDetectionRespons
 - Images saved with deduplicated names (base-name collision detection)
 - Caption `.txt` files written alongside images during processing
 - Auto-cleanup: directories removed 30 minutes after last activity
-- Cleanup runs every 5 minutes + on process exit
+- Cleanup runs every 5 minutes. The sessions.json index is adopted on restart. The process does NOT delete session dirs on exit (a Docker rebuild must not destroy undownloaded results)
 
 ### Concurrency
 
-Worker pool pattern — configurable 1-8 parallel API requests (default 4 for caption, 3 for detection).
+Worker pool pattern - configurable 1-8 parallel API requests (default 4 for caption, 3 for detection), clamped to the server's `--parallel` discovered via /v1/models. Each worker is pinned to its own llama.cpp slot for deterministic KV cache reuse.
 
 ## Key Gotchas
 

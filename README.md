@@ -1,8 +1,6 @@
 # Caption Studio
 
-API-only scaffolding for batch captioning images with llama.cpp vision models. The UI layer has been removed; this repository now provides the connectivity layer (API routes + lib utilities) for integration with external clients.
-
-> **Note**: UI layer removed. See [AGENTS.md](AGENTS.md) for current architecture.
+Batch captioning tool for llama.cpp vision models. Web UI (Next.js/React) plus a connectivity layer (API routes + lib utilities) that talks to a llama.cpp server's OpenAI-compatible API.
 
 ## What It Does
 
@@ -12,6 +10,8 @@ API-only scaffolding for batch captioning images with llama.cpp vision models. T
 - Generate detailed captions with streaming token feedback
 - Two prompt modes: **Krea 2** (three-phase captioning with character description), and **For Anima** (booru tag enhancement)
 - Optional trigger word injection for character/subject naming
+- llama.cpp **KV cache reuse**: workers are pinned to server slots so Krea 2's three phases (and image batches) reuse cached image encodings; the UI shows the prompt-token reuse percentage per batch
+- Transient server errors (5xx/429) are retried automatically with exponential backoff
 - Download all images + captions as a ZIP file
 
 ## Prerequisites
@@ -52,8 +52,11 @@ Key preset sections:
 |-----|---------|
 | `model` | Path to the GGUF model file |
 | `mmproj` | Path to the vision projector GGUF (required for multimodal models) |
-| `parallel` | Concurrent request slots per model (4+ recommended for batch captioning) |
+| `parallel` | Concurrent request slots per model (4+ recommended for batch captioning - Caption Studio pins one worker per slot) |
 | `ctx-size` | Context window size (65536+ for detailed prompts with long system messages) |
+| `cache-reuse` | Token chunk size for KV chunk reuse (Caption Studio requests `256` per request; server default 0 = off, so set it or let Caption Studio's per-request flag take effect) |
+| `image-max-tokens` | Vision token budget (default 8192). Caption Studio downsizes images to 1536px by default to stay within it; raise both for more detail |
+| `flash-attn` | Enables flash attention - recommended for vision models to cut prefill time |
 
 **Router server flags:**
 
@@ -201,11 +204,14 @@ POST /api/caption/for-anima
 | `captions` | File[] | Caption files (booru tags), paired by index with images |
 | `imageNames` | string (JSON) | Optional: `string[]` of display names for images |
 
-**SSE events:** Same as simple mode (`session`, `image_start`, `token`, `image_complete`, `done`).
+**SSE events:** `session`, `image_start`, `token`, `image_complete`, `done`.
 
 The `image_complete` event includes additional fields:
 - `booruTags`: The original booru tags from the caption file
 - `llmAddition`: The LLM-generated natural language addition
+- `cachedTokens` / `promptTokens`: KV cache reuse stats from the llama.cpp usage report
+
+The config is validated with Zod (`forAnimaConfigSchema`); invalid configs return 400 with flattened field details.
 
 ## Krea 2 Mode
 
@@ -222,6 +228,8 @@ Each image is processed through all 3 phases as one continuous conversation:
 3. **Phase 3 message:** Distill instructions -> distilled prompt (assistant responds)
 
 The image is only sent in the first message. Phases 2 and 3 reuse the conversation context, so the **image encoding is cached by the KV cache** and only the new text tokens need processing. This significantly reduces latency compared to separate API calls per phase.
+
+**How the cache is actually reused (slot pinning):** llama.cpp keeps the KV cache per slot. Caption Studio pins every worker to a specific slot (`id_slot` = worker index, always below the server's `--parallel`) and sends `cache_prompt: true` + `n_cache_reuse: 256` with each request. That means all three phases of an image land on the same slot, so the server reuses the image encoding from Phase 1 and the Phase 1/2 conversation from Phase 2/3 instead of re-prefilling. The completion events report `cachedTokens`/`promptTokens`, and the UI shows the batch-wide reuse percentage - use it to verify your server is configured correctly (a low percentage usually means `--parallel` is lower than the worker count or the server is too old to support `id_slot`/`n_cache_reuse` - those fields are ignored by old builds, degrading to no cache reuse).
 
 ### Phase 1: Initial Captioning
 
@@ -291,15 +299,17 @@ POST /api/caption/krea-2
 
 | Event | Data | Description |
 |-------|------|-------------|
-| `session` | `{ sessionId }` | Session started |
+| `session` | `{ sessionId }` | Session started (sent immediately, before model discovery) |
 | `image_start` | `{ index, name }` | Image processing started |
 | `phase` | `{ phase: "captioning" \| "refining" \| "distilling", index }` | Current phase for an image |
-| `token` | `{ type, phase, index, content, full }` | Streaming token (caption/reasoning) |
-| `image_complete` | `{ index, name, phase, status, caption, reasoningContent }` | Phase 1 complete |
-| `refine_image_complete` | `{ index, name, status, caption, reasoningContent }` | Phase 2 complete |
-| `distill_image_complete` | `{ index, name, status, caption, reasoningContent }` | Phase 3 complete (final caption) |
+| `token` | `{ type, phase, index, content }` | Streaming token delta (caption/reasoning) - client accumulates |
+| `image_complete` | `{ index, name, phase, status, caption, reasoningContent, cachedTokens, promptTokens }` | Phase 1 complete |
+| `refine_image_complete` | `{ index, name, status, caption, reasoningContent, cachedTokens, promptTokens }` | Phase 2 complete |
+| `distill_image_complete` | `{ index, name, status, caption, reasoningContent, cachedTokens, promptTokens }` | Phase 3 complete (final caption) |
 | `done` | `{ allComplete: true }` | All processing complete |
 | `error` | `{ error }` | Error occurred |
+
+Both caption routes also support an optional `maxImageDimension` config field (integer 256-4096) to override the 1536px client-side downscale default. Transient `5xx`/`429` responses from the model server are retried with exponential backoff (3 retries).
 
 ## Prompt Variables
 
@@ -373,6 +383,6 @@ Browser                          Server (Next.js)                 llama.cpp
 
 - Images are saved to `/tmp/caption-studio/<sessionId>/` on the server
 - Caption `.txt` files are written alongside images during processing
-- Temp directories auto-clean 30 minutes after last activity
-- Processing uses a worker pool (up to 8 parallel API requests)
-- Each API call has a 5-minute timeout
+- Temp directories auto-clean 30 minutes after last activity (the session index in `sessions.json` is adopted across restarts; the process never deletes session dirs on shutdown, so a Docker rebuild cannot destroy undownloaded results)
+- Processing uses a worker pool (up to 8 parallel API requests, clamped to the server's `--parallel`), with each worker pinned to its own llama.cpp slot for KV cache reuse
+- Phase 1 has a 15-minute timeout; phases 2/3 have a 5-minute timeout each
