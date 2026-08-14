@@ -9,6 +9,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import sharp from "sharp";
+import { NextRequest } from "next/server";
 import { POST } from "@/app/api/caption/krea-2/route";
 
 // ---------------------------------------------------------------------------
@@ -85,7 +86,7 @@ async function postSingleImage(jpeg: Buffer): Promise<SseEvent[]> {
   );
 
   const response = await POST(
-    new Request("http://localhost/api/caption/krea-2", { method: "POST", body: formData })
+    new NextRequest("http://localhost/api/caption/krea-2", { method: "POST", body: formData })
   );
   expect(response.status).toBe(200);
   return readSseEvents(response as Response);
