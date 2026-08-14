@@ -20,6 +20,8 @@ type SseEvent = { type: string; data: Record<string, unknown> };
 
 const originalFetch = globalThis.fetch;
 let chatCalls: Array<Record<string, unknown>> = [];
+/** Number of upcoming chat calls to fail with 503 (transient error simulation). */
+let failNextChatCalls = 0;
 
 /** Build the SSE body llama.cpp would stream back for one phase. */
 function makeSseResponse(caption: string, cachedTokens: number): Response {
@@ -106,6 +108,10 @@ beforeAll(() => {
     }
 
     if (url.endsWith("/v1/chat/completions")) {
+      if (failNextChatCalls > 0) {
+        failNextChatCalls--;
+        return new Response(JSON.stringify({ error: "server busy" }), { status: 503 });
+      }
       const body = JSON.parse(init?.body as string);
       chatCalls.push(body);
       // Phase 3 (distill) gets a different cached-token count so tests can
@@ -170,6 +176,22 @@ describe("krea-2 route - KV cache slot pinning", () => {
     expect(phase2.messages[1]).toEqual(phase1.messages[1]);
     expect(phase2.messages[2].role).toBe("assistant");
     expect(phase2.messages[3].role).toBe("user");
+  });
+
+  it("retries transient 5xx responses and completes the phase", async () => {
+    chatCalls = [];
+    failNextChatCalls = 2; // phase 1 gets 503 twice, then succeeds
+    try {
+      const events = await postSingleImage(await makeTinyJpeg());
+
+      const captioning = events.find((e) => e.type === "image_complete");
+      expect(captioning!.data.status).toBe("completed");
+      expect(events.some((e) => e.type === "done")).toBe(true);
+      // 2 failed attempts + 3 successful phases
+      expect(chatCalls.length).toBe(3);
+    } finally {
+      failNextChatCalls = 0;
+    }
   });
 
   it("reports cached tokens in phase completion events", async () => {

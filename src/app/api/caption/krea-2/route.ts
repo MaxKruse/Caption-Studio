@@ -28,7 +28,7 @@ import {
   buildDistillUserPrompt,
 } from "@/lib/krea2-prompts";
 import { buildKrea2SystemPrompt } from "@/lib/krea2-system-prompt";
-import { readFileBuffer, fetchWithTimeout, streamResponse } from "@/lib/caption-helpers";
+import { readFileBuffer, fetchWithRetry, streamResponse } from "@/lib/caption-helpers";
 import { buildChatRequest } from "@/lib/llama-request";
 import { registerSession, unregisterSession, abortSession, getSession } from "@/lib/session-registry";
 import { createSseStream } from "@/lib/sse";
@@ -140,7 +140,7 @@ async function processImageAllPhases(
 
     if (abortSignal.aborted) return;
 
-    const response1 = await fetchWithTimeout(
+    const response1 = await fetchWithRetry(
       `${normalizedUrl}/v1/chat/completions`,
       {
         method: "POST",
@@ -199,7 +199,7 @@ async function processImageAllPhases(
 
     if (abortSignal.aborted) return;
 
-    const response2 = await fetchWithTimeout(
+    const response2 = await fetchWithRetry(
       `${normalizedUrl}/v1/chat/completions`,
       {
         method: "POST",
@@ -256,7 +256,7 @@ async function processImageAllPhases(
 
     if (abortSignal.aborted) return;
 
-    const response3 = await fetchWithTimeout(
+    const response3 = await fetchWithRetry(
       `${normalizedUrl}/v1/chat/completions`,
       {
         method: "POST",

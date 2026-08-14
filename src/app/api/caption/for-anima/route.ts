@@ -26,7 +26,7 @@ import {
   writeTags,
   touchSession,
 } from "@/lib/temp-files";
-import { readFileBuffer, fetchWithTimeout, streamResponse } from "@/lib/caption-helpers";
+import { readFileBuffer, fetchWithRetry, streamResponse } from "@/lib/caption-helpers";
 import { buildChatRequest } from "@/lib/llama-request";
 import { forAnimaConfigSchema, type ForAnimaConfig } from "@/lib/config-schema";
 import { registerSession, unregisterSession, abortSession, getSession } from "@/lib/session-registry";
@@ -105,7 +105,7 @@ async function processImage(
       ],
     });
 
-    const response = await fetchWithTimeout(
+    const response = await fetchWithRetry(
       `${normalizedUrl}/v1/chat/completions`,
       {
         method: "POST",
