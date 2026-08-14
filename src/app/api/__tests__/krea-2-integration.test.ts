@@ -22,6 +22,8 @@ const originalFetch = globalThis.fetch;
 let chatCalls: Array<Record<string, unknown>> = [];
 /** Number of upcoming chat calls to fail with 503 (transient error simulation). */
 let failNextChatCalls = 0;
+/** Artificial delay for the /v1/models endpoint (ms). */
+let modelDelayMs = 0;
 
 /** Build the SSE body llama.cpp would stream back for one phase. */
 function makeSseResponse(caption: string, cachedTokens: number): Response {
@@ -101,6 +103,9 @@ beforeAll(() => {
       typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
 
     if (url.endsWith("/v1/models")) {
+      if (modelDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, modelDelayMs));
+      }
       return new Response(
         JSON.stringify({ data: [{ id: "test-model", status: { args: ["--parallel", "4"] } }] }),
         { status: 200 }
@@ -176,6 +181,67 @@ describe("krea-2 route - KV cache slot pinning", () => {
     expect(phase2.messages[1]).toEqual(phase1.messages[1]);
     expect(phase2.messages[2].role).toBe("assistant");
     expect(phase2.messages[3].role).toBe("user");
+  });
+
+  it("sends the session event before model discovery completes", async () => {
+    chatCalls = [];
+    modelDelayMs = 500; // discovery is slower than the deadline below
+    try {
+      const jpeg = await makeTinyJpeg();
+      const formData = new FormData();
+      formData.append(
+        "config",
+        JSON.stringify({
+          serverUrl: "http://localhost:8080",
+          model: "test-model",
+          userPrompt: "Describe this image.",
+          characterDescription: "A red-haired woman",
+        })
+      );
+      formData.append(
+        "images",
+        new File([new Uint8Array(jpeg)], "img.jpg", { type: "image/jpeg" })
+      );
+      // Time from before POST: the route must not block on model discovery
+      // before streaming the first event.
+      const start = Date.now();
+      const response = await POST(
+        new NextRequest("http://localhost/api/caption/krea-2", {
+          method: "POST",
+          body: formData,
+        })
+      );
+      expect(response.status).toBe(200);
+
+      // Read only the first SSE event and time it
+      const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let firstEvent: SseEvent | null = null;
+      while (!firstEvent) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const blocks = buffer.split("\n\n");
+        buffer = blocks.pop() ?? "";
+        for (const block of blocks) {
+          const match = block.match(/^event: (\w+)\s*\ndata: ([\s\S]+)$/);
+          if (match) firstEvent = { type: match[1], data: JSON.parse(match[2]) };
+        }
+      }
+      const elapsed = Date.now() - start;
+      // Drain the rest of the stream so the session finishes (and its
+      // chat calls stop) before the next test resets the stub state.
+      while (true) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+
+      expect(firstEvent!.type).toBe("session");
+      expect(elapsed).toBeLessThan(250);
+    } finally {
+      modelDelayMs = 0;
+    }
   });
 
   it("retries transient 5xx responses and completes the phase", async () => {

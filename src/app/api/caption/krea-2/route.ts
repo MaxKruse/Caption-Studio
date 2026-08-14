@@ -393,12 +393,10 @@ export async function POST(request: NextRequest) {
   const effectiveSystemPrompt = config.systemPrompt?.trim() ? config.systemPrompt : buildKrea2SystemPrompt();
   const [stream, sendEvent, closeStream] = createSseStream();
 
-  // Detect server parallelism to avoid overloading llama.cpp
-  const serverParallel = await getModelParallel(config.serverUrl, config.model);
-  const maxConcurrency = Math.min(
-    serverParallel ?? MAX_CONCURRENCY,
-    MAX_CONCURRENCY
-  );
+  // Detect server parallelism in the background (never throws) so the
+  // session event can stream immediately and the client can render its
+  // progress UI while discovery runs.
+  const serverParallelPromise = getModelParallel(config.serverUrl, config.model);
 
   const sessionAbort = new AbortController();
   registerSession(sessionId, sessionAbort);
@@ -413,6 +411,11 @@ export async function POST(request: NextRequest) {
   // Process all images (each image goes through all 3 phases sequentially)
   (async () => {
     try {
+      const serverParallel = await serverParallelPromise;
+      const maxConcurrency = Math.min(
+        serverParallel ?? MAX_CONCURRENCY,
+        MAX_CONCURRENCY
+      );
       const concurrency = Math.min(maxConcurrency, tasks.length);
       const queue = [...tasks];
 

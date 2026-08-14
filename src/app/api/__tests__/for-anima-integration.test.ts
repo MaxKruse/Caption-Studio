@@ -18,6 +18,7 @@ type SseEvent = { type: string; data: Record<string, unknown> };
 
 const originalFetch = globalThis.fetch;
 let chatCalls: Array<Record<string, unknown>> = [];
+let modelDelayMs = 0;
 
 function makeSseResponse(caption: string, cachedTokens: number): Response {
   const chunks = [
@@ -82,6 +83,9 @@ beforeAll(() => {
       typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
 
     if (url.endsWith("/v1/models")) {
+      if (modelDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, modelDelayMs));
+      }
       return new Response(
         JSON.stringify({ data: [{ id: "test-model", status: { args: ["--parallel", "4"] } }] }),
         { status: 200 }
@@ -129,6 +133,48 @@ describe("for-anima route - config validation", () => {
       model: "",
     });
     expect(response.status).toBe(400);
+  });
+});
+
+describe("for-anima route - streaming", () => {
+  it("sends the session event before model discovery completes", async () => {
+    chatCalls = [];
+    modelDelayMs = 500;
+    try {
+      const jpeg = await makeTinyJpeg();
+      const start = Date.now();
+      const response = await postImages(jpeg, {
+        serverUrl: "http://localhost:8080",
+        model: "test-model",
+      });
+      expect(response.status).toBe(200);
+
+      const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let firstEvent: SseEvent | null = null;
+      while (!firstEvent) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const blocks = buffer.split("\n\n");
+        buffer = blocks.pop() ?? "";
+        for (const block of blocks) {
+          const match = block.match(/^event: (\w+)\s*\ndata: ([\s\S]+)$/);
+          if (match) firstEvent = { type: match[1], data: JSON.parse(match[2]) };
+        }
+      }
+      const elapsed = Date.now() - start;
+      while (true) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+
+      expect(firstEvent!.type).toBe("session");
+      expect(elapsed).toBeLessThan(250);
+    } finally {
+      modelDelayMs = 0;
+    }
   });
 });
 
