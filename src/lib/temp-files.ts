@@ -430,6 +430,7 @@ async function cleanupStaleSessions(): Promise<void> {
 
 // Run cleanup every 5 minutes. Sessions are keyed in sessions.json so the
 // next process start also adopts and eventually reaps them.
+setInterval(() => { cleanupStaleSessions().catch(() => {}); }, CLEANUP_INTERVAL_MS);
 //
 // Note: we intentionally do NOT delete session dirs on process exit. A
 // Docker rebuild restarts the process and would destroy finished (or

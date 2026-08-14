@@ -306,8 +306,9 @@ describe("streamResponse", () => {
 
     expect(events.length).toBe(1);
     expect(events[0].type).toBe("token");
-    expect((events[0].data as any).phase).toBe("refining");
-    expect((events[0].data as any).index).toBe(3);
+    const tokenData = events[0].data as { phase: string; index: number };
+    expect(tokenData.phase).toBe("refining");
+    expect(tokenData.index).toBe(3);
   });
 
   it("handles empty stream (no content chunks)", async () => {

@@ -32,7 +32,7 @@ import { readFileBuffer, fetchWithRetry, streamResponse } from "@/lib/caption-he
 import { buildChatRequest } from "@/lib/llama-request";
 import { registerSession, unregisterSession, abortSession, getSession } from "@/lib/session-registry";
 import { createSseStream } from "@/lib/sse";
-import { krea2ConfigSchema } from "@/lib/config-schema";
+import { krea2ConfigSchema, type Krea2Config } from "@/lib/config-schema";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -332,7 +332,7 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "Missing config" }, { status: 400 });
   }
 
-  let config: any;
+  let config: Krea2Config;
 
   try {
     const parsed = JSON.parse(configRaw);

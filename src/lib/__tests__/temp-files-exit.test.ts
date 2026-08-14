@@ -8,13 +8,7 @@
  * We assert the module registers no "exit" listener at import time.
  */
 
-import { describe, it, expect, beforeAll } from "bun:test";
-
-let listenersBefore: number;
-
-beforeAll(() => {
-  listenersBefore = process.listenerCount("exit");
-});
+import { describe, it, expect } from "bun:test";
 
 describe("temp-files process exit behavior", () => {
   it("does not register a process exit handler", async () => {
