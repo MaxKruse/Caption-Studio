@@ -75,9 +75,14 @@ async function ensureBaseDir(): Promise<void> {
   }
 }
 
-/** Generate a short random session ID. */
+/**
+ * Generate a session ID using a cryptographically secure UUIDv4.
+ * Session directories are reachable via unauthenticated
+ * /api/download?sessionId=, so predictable IDs (Math.random) would
+ * let a network peer enumerate and download other users' results.
+ */
 function generateSessionId(): string {
-  return Math.random().toString(36).substring(2, 12);
+  return crypto.randomUUID();
 }
 
 /** Persist session index to disk for resilient cleanup. */
