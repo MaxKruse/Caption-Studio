@@ -183,6 +183,7 @@ async function processImageAllPhases(
       caption: result1.caption,
       reasoningContent: result1.reasoningContent,
       cachedTokens: result1.cachedTokens,
+      promptTokens: result1.promptTokens,
     });
 
     // =========================================================================
@@ -241,6 +242,7 @@ async function processImageAllPhases(
       caption: result2.caption,
       reasoningContent: result2.reasoningContent,
       cachedTokens: result2.cachedTokens,
+      promptTokens: result2.promptTokens,
     });
 
     // =========================================================================
@@ -295,6 +297,7 @@ async function processImageAllPhases(
       caption: result3.caption,
       reasoningContent: result3.reasoningContent,
       cachedTokens: result3.cachedTokens,
+      promptTokens: result3.promptTokens,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

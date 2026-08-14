@@ -51,7 +51,7 @@ export function CaptionViewer({ results }: CaptionViewerProps) {
             key={index}
             onClick={() => goToImage(index)}
             className={`
-              flex-shrink-0 w-12 h-12 rounded-lg overflow-hidden border-2 transition-all
+              relative flex-shrink-0 w-12 h-12 rounded-lg overflow-hidden border-2 transition-all
               ${index === currentIndex
                 ? "border-indigo-400 scale-110"
                 : "border-slate-700 hover:border-slate-500"

@@ -152,6 +152,7 @@ async function processImage(
       llmAddition: trimmedAddition,
       reasoningContent: result.reasoningContent.trim(),
       cachedTokens: result.cachedTokens,
+      promptTokens: result.promptTokens,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

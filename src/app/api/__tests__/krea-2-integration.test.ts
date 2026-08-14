@@ -271,5 +271,7 @@ describe("krea-2 route - KV cache slot pinning", () => {
     expect(captioning!.data.cachedTokens).toBe(100);
     expect(refining!.data.cachedTokens).toBe(200);
     expect(distilling!.data.cachedTokens).toBe(300);
+    // The usage stub reports prompt_tokens: 100 per phase
+    expect(captioning!.data.promptTokens).toBe(100);
   });
 });

@@ -98,8 +98,9 @@ export async function fetchWithRetry(
 
 /**
  * Stream an API response and emit SSE token events (deltas only).
- * Returns the full caption, reasoning content, and the number of prompt
- * tokens llama.cpp reused from its KV cache on completion.
+ * Returns the full caption, reasoning content, and the prompt-token
+ * stats from the final usage chunk (total prompt tokens and how many
+ * llama.cpp reused from its KV cache).
  */
 export async function streamResponse(
   response: Response,
@@ -107,10 +108,16 @@ export async function streamResponse(
   index: number,
   sendEvent: (type: string, data: unknown) => void,
   abortSignal: AbortSignal
-): Promise<{ caption: string; reasoningContent: string; cachedTokens: number } | null> {
+): Promise<{
+  caption: string;
+  reasoningContent: string;
+  cachedTokens: number;
+  promptTokens: number;
+} | null> {
   let caption = "";
   let reasoningContent = "";
   let cachedTokens = 0;
+  let promptTokens = 0;
   const body = response.body;
   if (!body) throw new Error("No response body");
 
@@ -171,11 +178,19 @@ export async function streamResponse(
         } else if (chunk?.timings?.cache_n !== undefined) {
           cachedTokens = chunk.timings.cache_n;
         }
+        if (typeof usage?.prompt_tokens === "number") {
+          promptTokens = usage.prompt_tokens;
+        }
       } catch {
         // skip malformed
       }
     }
   }
 
-  return { caption: caption.trim(), reasoningContent: reasoningContent.trim(), cachedTokens };
+  return {
+    caption: caption.trim(),
+    reasoningContent: reasoningContent.trim(),
+    cachedTokens,
+    promptTokens,
+  };
 }

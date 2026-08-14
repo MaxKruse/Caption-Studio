@@ -75,7 +75,7 @@ describe("streamResponse", () => {
     expect(tokenEvents[1].data.content).toBe("lo");
   });
 
-  it("reports cached tokens from usage.prompt_tokens_details in the final chunk", async () => {
+  it("reports cached and total prompt tokens from usage in the final chunk", async () => {
     const response = sseResponse([
       'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n',
       'data: {"choices":[{"delta":{}}],"usage":{"prompt_tokens":5000,"completion_tokens":2,"prompt_tokens_details":{"cached_tokens":4812}}}\n\n',
@@ -86,6 +86,7 @@ describe("streamResponse", () => {
     const result = await streamResponse(response, "captioning", 0, sendEvent, new AbortController().signal);
 
     expect(result!.cachedTokens).toBe(4812);
+    expect(result!.promptTokens).toBe(5000);
   });
 
   it("falls back to timings.cache_n when usage is absent", async () => {
