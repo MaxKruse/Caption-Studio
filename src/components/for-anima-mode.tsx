@@ -13,6 +13,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useSession } from "@/hooks/use-session";
+import { applyTokenDelta } from "@/lib/token-accumulate";
 import { ImageUploader } from "@/components/image-uploader";
 import { ModelSelector } from "@/components/model-selector";
 import { CaptionViewer } from "@/components/caption-viewer";
@@ -291,13 +292,15 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
               break;
             }
             case "token": {
-              const tokenData = data as { index: number; type: string; full: string };
+              // Token events carry deltas only - accumulate into the partial
+              const tokenData = data as {
+                index: number;
+                type: "caption" | "reasoning";
+                content: string;
+              };
               const idx = tokenData.index;
               if (localLlm[idx]) {
-                localLlm[idx] = {
-                  ...localLlm[idx],
-                  [tokenData.type === "reasoning" ? "partialReasoning" : "partialCaption"]: tokenData.full,
-                };
+                localLlm[idx] = applyTokenDelta(localLlm[idx], tokenData);
               }
               break;
             }

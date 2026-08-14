@@ -97,8 +97,9 @@ export async function fetchWithRetry(
 // ---------------------------------------------------------------------------
 
 /**
- * Stream an API response and emit SSE token events.
- * Returns the full caption and reasoning content on completion.
+ * Stream an API response and emit SSE token events (deltas only).
+ * Returns the full caption, reasoning content, and the number of prompt
+ * tokens llama.cpp reused from its KV cache on completion.
  */
 export async function streamResponse(
   response: Response,
@@ -106,9 +107,10 @@ export async function streamResponse(
   index: number,
   sendEvent: (type: string, data: unknown) => void,
   abortSignal: AbortSignal
-): Promise<{ caption: string; reasoningContent: string } | null> {
+): Promise<{ caption: string; reasoningContent: string; cachedTokens: number } | null> {
   let caption = "";
   let reasoningContent = "";
+  let cachedTokens = 0;
   const body = response.body;
   if (!body) throw new Error("No response body");
 
@@ -150,7 +152,6 @@ export async function streamResponse(
             phase,
             index,
             content: delta.reasoning_content,
-            full: reasoningContent,
           });
         }
         if (delta?.content) {
@@ -160,8 +161,15 @@ export async function streamResponse(
             phase,
             index,
             content: delta.content,
-            full: caption,
           });
+        }
+        // Final chunk (stream_options.include_usage) or non-streaming bodies
+        // report how many prompt tokens came from the KV cache.
+        const usage = chunk?.usage;
+        if (usage?.prompt_tokens_details?.cached_tokens !== undefined) {
+          cachedTokens = usage.prompt_tokens_details.cached_tokens;
+        } else if (chunk?.timings?.cache_n !== undefined) {
+          cachedTokens = chunk.timings.cache_n;
         }
       } catch {
         // skip malformed
@@ -169,5 +177,5 @@ export async function streamResponse(
     }
   }
 
-  return { caption: caption.trim(), reasoningContent: reasoningContent.trim() };
+  return { caption: caption.trim(), reasoningContent: reasoningContent.trim(), cachedTokens };
 }

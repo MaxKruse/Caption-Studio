@@ -9,6 +9,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useSession } from "@/hooks/use-session";
+import { applyTokenDelta } from "@/lib/token-accumulate";
 import { ImageUploader } from "@/components/image-uploader";
 import { ModelSelector } from "@/components/model-selector";
 import { PromptEditor } from "@/components/prompt-editor";
@@ -223,18 +224,15 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
               break;
             }
             case "token": {
+              // Token events carry deltas only - accumulate into the partial
               const tokenData = data as {
                 index?: number;
-                type: string;
-                full: string;
+                type: "caption" | "reasoning";
+                content: string;
               };
-              if (tokenData.index !== undefined && localResults[tokenData.index]) {
-                localResults[tokenData.index] = {
-                  ...localResults[tokenData.index],
-                  [tokenData.type === "reasoning"
-                    ? "partialReasoning"
-                    : "partialCaption"]: tokenData.full,
-                };
+              const tokenIdx = tokenData.index;
+              if (tokenIdx !== undefined && localResults[tokenIdx]) {
+                localResults[tokenIdx] = applyTokenDelta(localResults[tokenIdx], tokenData);
               }
               break;
             }
