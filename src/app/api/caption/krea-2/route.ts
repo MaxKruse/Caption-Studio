@@ -29,6 +29,7 @@ import {
 } from "@/lib/krea2-prompts";
 import { buildKrea2SystemPrompt } from "@/lib/krea2-system-prompt";
 import { readFileBuffer, fetchWithTimeout, streamResponse } from "@/lib/caption-helpers";
+import { buildChatRequest } from "@/lib/llama-request";
 import { registerSession, unregisterSession, abortSession, getSession } from "@/lib/session-registry";
 import { createSseStream } from "@/lib/sse";
 import { krea2ConfigSchema } from "@/lib/config-schema";
@@ -77,20 +78,21 @@ const MAX_CONCURRENCY = 8;
  * Phase 2: Conversation + refine instructions -> refined caption
  * Phase 3: Conversation + distill instructions -> distilled prompt
  *
- * The image is only in the first user message. Subsequent phases reuse
- * the conversation context (KV cache) so only new text tokens are processed.
+ * The image is only in the first user message. All phases are pinned to
+ * the same llama.cpp slot (slotId = worker index) so the server reuses
+ * the cached KV of the image + prior phases instead of re-prefilling.
  */
 async function processImageAllPhases(
   task: ImageTask,
   sessionId: string,
   normalizedUrl: string,
   model: string,
+  slotId: number,
   systemPrompt: string,
   userPrompt: string,
   triggerWordPerson: string,
   triggerWordOther: string,
   characterDescription: string,
-  total: number,
   sendEvent: (type: string, data: unknown) => void,
   abortSignal: AbortSignal
 ): Promise<void> {
@@ -143,12 +145,7 @@ async function processImageAllPhases(
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model,
-          messages,
-          stream: true,
-          stream_options: { include_usage: true },
-        }),
+        body: JSON.stringify(buildChatRequest({ model, messages, slotId })),
         cache: "no-store",
       },
       API_TIMEOUT_MS,
@@ -183,6 +180,7 @@ async function processImageAllPhases(
       status: "completed",
       caption: result1.caption,
       reasoningContent: result1.reasoningContent,
+      cachedTokens: result1.cachedTokens,
     });
 
     // =========================================================================
@@ -206,12 +204,7 @@ async function processImageAllPhases(
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model,
-          messages,
-          stream: true,
-          stream_options: { include_usage: true },
-        }),
+        body: JSON.stringify(buildChatRequest({ model, messages, slotId })),
         cache: "no-store",
       },
       PER_IMAGE_PHASE_TIMEOUT_MS,
@@ -245,6 +238,7 @@ async function processImageAllPhases(
       status: "completed",
       caption: result2.caption,
       reasoningContent: result2.reasoningContent,
+      cachedTokens: result2.cachedTokens,
     });
 
     // =========================================================================
@@ -267,12 +261,7 @@ async function processImageAllPhases(
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model,
-          messages,
-          stream: true,
-          stream_options: { include_usage: true },
-        }),
+        body: JSON.stringify(buildChatRequest({ model, messages, slotId })),
         cache: "no-store",
       },
       PER_IMAGE_PHASE_TIMEOUT_MS,
@@ -303,6 +292,7 @@ async function processImageAllPhases(
       status: "completed",
       caption: result3.caption,
       reasoningContent: result3.reasoningContent,
+      cachedTokens: result3.cachedTokens,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -426,7 +416,7 @@ export async function POST(request: NextRequest) {
       const concurrency = Math.min(maxConcurrency, tasks.length);
       const queue = [...tasks];
 
-      async function processNext(): Promise<void> {
+      async function processNext(slotId: number): Promise<void> {
         while (queue.length > 0 && !sessionAbort.signal.aborted) {
           const task = queue.shift()!;
           touchSession(sessionId);
@@ -436,19 +426,25 @@ export async function POST(request: NextRequest) {
             sessionId,
             normalizedUrl,
             config.model,
+            slotId,
             effectiveSystemPrompt,
             config.userPrompt,
             person,
             other,
             config.characterDescription,
-            tasks.length,
             sendEvent,
             sessionAbort.signal
           );
         }
       }
 
-      const workers = Array.from({ length: concurrency }, () => processNext());
+      // Each worker is pinned to its own llama.cpp slot so its images and
+      // phases share the slot's KV cache (worker index < maxConcurrency
+      // which is clamped to the server's --parallel).
+      const workers = Array.from(
+        { length: concurrency },
+        (_, workerIndex) => processNext(workerIndex)
+      );
       await Promise.all(workers);
 
       if (!sessionAbort.signal.aborted) {
