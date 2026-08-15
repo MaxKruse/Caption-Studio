@@ -18,6 +18,7 @@ import { PromptEditor } from "@/components/prompt-editor";
 import { CaptionViewer } from "@/components/caption-viewer";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
 // ---------------------------------------------------------------------------
@@ -88,6 +89,11 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
   const { state, setCharacterDescription } = useSession();
   const [phase, setPhase] = useState<Phase>("upload");
   const [imageCount, setImageCount] = useState(0);
+  /** Optional max image dimension override ("" = lib default 1536px). */
+  const [maxImageDimension, setMaxImageDimension] = useState("");
+  const dimValue = maxImageDimension.trim() === "" ? null : Number(maxImageDimension);
+  const dimInvalid =
+    dimValue !== null && (!Number.isInteger(dimValue) || dimValue < 256 || dimValue > 4096);
   const [results, setResults] = useState<CaptionResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -132,6 +138,10 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
       triggerWordPerson: state.triggerWordPerson,
       triggerWordOther: state.triggerWordOther,
       characterDescription: state.characterDescription,
+      // Omit when unset so the server applies the 1536px default
+      ...(dimValue !== null && Number.isInteger(dimValue)
+        ? { maxImageDimension: dimValue }
+        : {}),
     };
     formData.append("config", JSON.stringify(config));
     formData.append("imageNames", JSON.stringify(state.imageNames));
@@ -348,7 +358,7 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
       setIsProcessing(false);
       setPhase("results");
     }
-  }, [state, serverUrl]);
+  }, [state, serverUrl, dimValue]);
 
   const handleNewBatch = useCallback(() => {
     setPhase("upload");
@@ -434,6 +444,29 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
               />
             </div>
 
+            {/* Optional image resolution override */}
+            <div className="space-y-1">
+              <Input
+                label="Max image dimension (px)"
+                type="number"
+                min={256}
+                max={4096}
+                step={64}
+                value={maxImageDimension}
+                onChange={(e) => setMaxImageDimension(e.target.value)}
+                placeholder="1536 (default)"
+              />
+              <p className="text-xs text-slate-500">
+                Optional. Downscale images to this size before captioning. Raise it
+                (with a matching --image-max-tokens on the server) for more detail.
+              </p>
+              {dimInvalid && (
+                <p className="text-xs text-red-400">
+                  Must be a whole number between 256 and 4096.
+                </p>
+              )}
+            </div>
+
             <div className="flex justify-between">
               <Button variant="secondary" onClick={() => setPhase("upload")}>
                 Back
@@ -447,6 +480,7 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
                   !state.model ||
                   !state.userPrompt.trim() ||
                   !state.characterDescription.trim() ||
+                  dimInvalid ||
                   isProcessing
                 }
               >
