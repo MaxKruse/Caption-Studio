@@ -174,6 +174,11 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
     setAppPhase("tag");
   }, []);
 
+  /** Completed-tagging images that came back with zero tags. */
+  const noTagCount = tagResults.filter(
+    (tr) => tr.status === "done" && tr.tags.length === 0
+  ).length;
+
   // Store generated tags into session state for LLM captioning
   const handleContinueToLlm = useCallback(() => {
     // Update imageCaptions with generated tags
@@ -498,6 +503,12 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
           {/* Per-image tag review */}
           <Card>
             <div className="space-y-4">
+              {noTagCount > 0 && (
+                <p className="text-xs text-amber-400">
+                  {noTagCount} of {tagResults.length} images have no tags - try a lower
+                  minimum probability and redo tagging.
+                </p>
+              )}
               <h3 className="text-sm font-medium text-slate-300">Generated Tags Per Image</h3>
 
               <div className="space-y-3 max-h-96 overflow-y-auto">
@@ -516,6 +527,8 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
                       </p>
                       {tr.status === "error" ? (
                         <span className="text-xs text-red-400">Error: {tr.error}</span>
+                      ) : tr.status === "done" && tr.tags.length === 0 ? (
+                        <span className="text-xs text-amber-400">No tags generated</span>
                       ) : (
                         <div className="flex flex-wrap gap-1">
                           {tr.tags.map((tag, j) => (
