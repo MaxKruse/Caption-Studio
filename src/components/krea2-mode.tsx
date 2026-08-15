@@ -10,6 +10,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useSession } from "@/hooks/use-session";
 import { applyTokenDelta } from "@/lib/token-accumulate";
+import { consumeSseStream } from "@/lib/sse-client";
 import { ImageUploader } from "@/components/image-uploader";
 import { ModelSelector } from "@/components/model-selector";
 import { PromptEditor } from "@/components/prompt-editor";
@@ -180,180 +181,158 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
         return;
       }
 
-      const reader = response.body?.getReader();
-      if (!reader) return;
+      const body = response.body;
+      if (!body) return;
 
       const localResults = [...initialResults];
-      const decoder = new TextDecoder();
-      let buffer = "";
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop() ?? "";
-
-        for (const block of lines) {
-          const eventMatch = block.match(/^event: (\w+)\s*\ndata: ([\s\S]+)$/);
-          if (!eventMatch) continue;
-
-          const eventType = eventMatch[1];
-          let data: unknown;
-          try {
-            data = JSON.parse(eventMatch[2]);
-          } catch {
-            continue;
+      await consumeSseStream(body, (event) => {
+        if (event.type === "session") {
+          const sid = (event.data as { sessionId: string }).sessionId;
+          if (sid) {
+            sessionIdRef.current = sid;
+            setSessionId(sid);
           }
+          return;
+        }
 
-          if (eventType === "session") {
-            const sid = (data as { sessionId: string }).sessionId;
-            if (sid) {
-              sessionIdRef.current = sid;
-              setSessionId(sid);
+        switch (event.type) {
+          case "phase": {
+            // Per-image phase transition (has index)
+            const phaseData = event.data as { phase: string; index?: number };
+            const idx = phaseData.index;
+            if (idx !== undefined && localResults[idx]) {
+              const imagePhase = phaseData.phase as ImagePhase;
+              localResults[idx] = {
+                ...localResults[idx],
+                status: "processing",
+                imagePhase,
+                partialCaption: undefined,
+                partialReasoning: undefined,
+              };
             }
-            continue;
+            break;
           }
-
-          switch (eventType) {
-            case "phase": {
-              // Per-image phase transition (has index)
-              const phaseData = data as { phase: string; index?: number };
-              const idx = phaseData.index;
-              if (idx !== undefined && localResults[idx]) {
-                const imagePhase = phaseData.phase as ImagePhase;
-                localResults[idx] = {
+          case "image_start": {
+            const idx = (event.data as { index: number }).index;
+            if (localResults[idx]) {
+              localResults[idx] = {
+                ...localResults[idx],
+                status: "processing",
+                imagePhase: "captioning",
+              };
+            }
+            break;
+          }
+          case "token": {
+            // Token events carry deltas only - accumulate into the partial
+            const tokenData = event.data as {
+              index?: number;
+              type: "caption" | "reasoning";
+              content: string;
+            };
+            const tokenIdx = tokenData.index;
+            if (tokenIdx !== undefined && localResults[tokenIdx]) {
+              localResults[tokenIdx] = applyTokenDelta(localResults[tokenIdx], tokenData);
+            }
+            break;
+          }
+          case "image_complete": {
+            // Phase 1 complete
+            const completeData = event.data as {
+              index: number;
+              status: string;
+              caption?: string;
+              reasoningContent?: string;
+              error?: string;
+              cachedTokens?: number;
+              promptTokens?: number;
+            };
+            const idx = completeData.index;
+            if (localResults[idx]) {
+              localResults[idx] = withTokenStats(
+                {
                   ...localResults[idx],
-                  status: "processing",
-                  imagePhase,
+                  status: completeData.status as CaptionResult["status"],
+                  caption: completeData.caption,
+                  reasoningContent: completeData.reasoningContent,
+                  error: completeData.error,
+                },
+                completeData
+              );
+              // If failed, mark phase as failed
+              if (completeData.status === "failed") {
+                localResults[idx].imagePhase = "failed";
+              }
+            }
+            break;
+          }
+          case "refine_image_complete": {
+            // Phase 2 complete - caption will be overwritten by phase 3
+            const completeData = event.data as {
+              index: number;
+              status: string;
+              caption?: string;
+              reasoningContent?: string;
+              error?: string;
+              cachedTokens?: number;
+              promptTokens?: number;
+            };
+            const idx = completeData.index;
+            if (localResults[idx]) {
+              localResults[idx] = withTokenStats(
+                {
+                  ...localResults[idx],
+                  caption: completeData.caption,
+                  reasoningContent: completeData.reasoningContent,
+                },
+                completeData
+              );
+              if (completeData.status === "failed") {
+                localResults[idx].imagePhase = "failed";
+                localResults[idx].status = "failed";
+                localResults[idx].error = "Refinement failed";
+              }
+            }
+            break;
+          }
+          case "distill_image_complete": {
+            // Phase 3 complete - final result
+            const completeData = event.data as {
+              index: number;
+              status: string;
+              caption?: string;
+              reasoningContent?: string;
+              error?: string;
+              cachedTokens?: number;
+              promptTokens?: number;
+            };
+            const idx = completeData.index;
+            if (localResults[idx]) {
+              localResults[idx] = withTokenStats(
+                {
+                  ...localResults[idx],
+                  status: completeData.status as CaptionResult["status"],
+                  imagePhase:
+                    completeData.status === "completed" ? "completed" : "failed",
+                  caption: completeData.caption,
+                  reasoningContent: completeData.reasoningContent,
+                  error: completeData.error,
                   partialCaption: undefined,
                   partialReasoning: undefined,
-                };
-              }
-              break;
+                },
+                completeData
+              );
             }
-            case "image_start": {
-              const idx = (data as { index: number }).index;
-              if (localResults[idx]) {
-                localResults[idx] = {
-                  ...localResults[idx],
-                  status: "processing",
-                  imagePhase: "captioning",
-                };
-              }
-              break;
-            }
-            case "token": {
-              // Token events carry deltas only - accumulate into the partial
-              const tokenData = data as {
-                index?: number;
-                type: "caption" | "reasoning";
-                content: string;
-              };
-              const tokenIdx = tokenData.index;
-              if (tokenIdx !== undefined && localResults[tokenIdx]) {
-                localResults[tokenIdx] = applyTokenDelta(localResults[tokenIdx], tokenData);
-              }
-              break;
-            }
-            case "image_complete": {
-              // Phase 1 complete
-              const completeData = data as {
-                index: number;
-                status: string;
-                caption?: string;
-                reasoningContent?: string;
-                error?: string;
-                cachedTokens?: number;
-                promptTokens?: number;
-              };
-              const idx = completeData.index;
-              if (localResults[idx]) {
-                localResults[idx] = withTokenStats(
-                  {
-                    ...localResults[idx],
-                    status: completeData.status as CaptionResult["status"],
-                    caption: completeData.caption,
-                    reasoningContent: completeData.reasoningContent,
-                    error: completeData.error,
-                  },
-                  completeData
-                );
-                // If failed, mark phase as failed
-                if (completeData.status === "failed") {
-                  localResults[idx].imagePhase = "failed";
-                }
-              }
-              break;
-            }
-            case "refine_image_complete": {
-              // Phase 2 complete - caption will be overwritten by phase 3
-              const completeData = data as {
-                index: number;
-                status: string;
-                caption?: string;
-                reasoningContent?: string;
-                error?: string;
-                cachedTokens?: number;
-                promptTokens?: number;
-              };
-              const idx = completeData.index;
-              if (localResults[idx]) {
-                localResults[idx] = withTokenStats(
-                  {
-                    ...localResults[idx],
-                    caption: completeData.caption,
-                    reasoningContent: completeData.reasoningContent,
-                  },
-                  completeData
-                );
-                if (completeData.status === "failed") {
-                  localResults[idx].imagePhase = "failed";
-                  localResults[idx].status = "failed";
-                  localResults[idx].error = "Refinement failed";
-                }
-              }
-              break;
-            }
-            case "distill_image_complete": {
-              // Phase 3 complete - final result
-              const completeData = data as {
-                index: number;
-                status: string;
-                caption?: string;
-                reasoningContent?: string;
-                error?: string;
-                cachedTokens?: number;
-                promptTokens?: number;
-              };
-              const idx = completeData.index;
-              if (localResults[idx]) {
-                localResults[idx] = withTokenStats(
-                  {
-                    ...localResults[idx],
-                    status: completeData.status as CaptionResult["status"],
-                    imagePhase:
-                      completeData.status === "completed" ? "completed" : "failed",
-                    caption: completeData.caption,
-                    reasoningContent: completeData.reasoningContent,
-                    error: completeData.error,
-                    partialCaption: undefined,
-                    partialReasoning: undefined,
-                  },
-                  completeData
-                );
-              }
-              break;
-            }
-            case "done": {
-              break;
-            }
+            break;
           }
-
-          setResults([...localResults]);
+          case "done": {
+            break;
+          }
         }
-      }
+
+        setResults([...localResults]);
+      });
 
       if (abortControllerRef.current && abortControllerRef.current.signal.aborted) {
         for (const result of localResults) {
