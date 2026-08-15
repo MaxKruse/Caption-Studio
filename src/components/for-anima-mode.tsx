@@ -16,6 +16,7 @@ import { useSession } from "@/hooks/use-session";
 import { applyTokenDelta } from "@/lib/token-accumulate";
 import { consumeSseStream } from "@/lib/sse-client";
 import { triggerDownload } from "@/lib/download";
+import { fileToBase64 } from "@/lib/file-utils";
 import { ImageUploader } from "@/components/image-uploader";
 import { ModelSelector } from "@/components/model-selector";
 import { CaptionViewer } from "@/components/caption-viewer";
@@ -117,12 +118,17 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
     }));
     setTagResults(initialTags);
 
-    // Tag images one by one (no batching per user request)
+    // Tag images one by one (no batching per user request). Base64 is read
+    // from the raw File on demand - previews use object URLs.
     const localTags = [...initialTags];
-    const base64Images = state.images.map((img) => {
-      // Strip data URL prefix
-      return img.split(",")[1] ?? img;
-    });
+    const base64Images: string[] = new Array(state.imageFiles.length);
+    for (let i = 0; i < state.imageFiles.length; i++) {
+      try {
+        base64Images[i] = await fileToBase64(state.imageFiles[i]);
+      } catch {
+        base64Images[i] = "";
+      }
+    }
 
     for (let i = 0; i < base64Images.length; i++) {
       setCurrentTagIndex(i);

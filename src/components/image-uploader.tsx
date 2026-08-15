@@ -55,17 +55,11 @@ export function ImageUploader({ onImagesReady, acceptCaptions, onCaptionsReady }
         }
       }
 
-      // Add images, pairing with caption by stem
+      // Add images, pairing with caption by stem. Previews use object URLs
+      // (created inside addImage) - no multi-MB base64 strings in state.
       for (const file of imageFiles) {
         const stem = getStem(file.name);
-
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const dataUrl = e.target?.result as string;
-          const pairedCaption = currentCaptionMap.get(stem);
-          addImage(dataUrl, file.name, file, pairedCaption);
-        };
-        reader.readAsDataURL(file);
+        addImage(file, file.name, currentCaptionMap.get(stem));
       }
     },
     [addImage, acceptCaptions, onCaptionsReady, captionMap]
