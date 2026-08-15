@@ -1,4 +1,4 @@
-FROM oven/bun:canary AS builder
+FROM oven/bun:1.3 AS builder
 WORKDIR /app
 ENV BUN_CONFIG_HTTP_IDLE_TIMEOUT=30
 
@@ -9,7 +9,7 @@ COPY . .
 RUN bun run build
 
 # --- Runtime ---
-FROM oven/bun:canary
+FROM oven/bun:1.3
 WORKDIR /app
 ENV BUN_CONFIG_HTTP_IDLE_TIMEOUT=30
 

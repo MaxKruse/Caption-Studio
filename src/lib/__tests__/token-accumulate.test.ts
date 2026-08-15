@@ -8,7 +8,8 @@ import { applyTokenDelta, type PartialState } from "@/lib/token-accumulate";
 
 describe("applyTokenDelta", () => {
   it("appends a caption delta to an empty partial caption", () => {
-    const result = applyTokenDelta({ partialCaption: undefined, partialReasoning: undefined }, { type: "caption", content: "Hel" });
+    const empty: PartialState = {};
+    const result = applyTokenDelta(empty, { type: "caption", content: "Hel" });
     expect(result.partialCaption).toBe("Hel");
     expect(result.partialReasoning).toBeUndefined();
   });

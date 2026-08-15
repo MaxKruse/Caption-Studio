@@ -67,9 +67,7 @@ describe("createSseStream keepalive", () => {
   it("clears the keepalive interval on closeStream", async () => {
     const originalClearInterval = globalThis.clearInterval;
     const spy = spyOn(globalThis, "clearInterval");
-    spy.mockImplementation((id: Parameters<typeof clearInterval>[0]) =>
-      originalClearInterval(id)
-    );
+    spy.mockImplementation(originalClearInterval);
 
     const [stream, , closeStream] = createSseStream({ keepaliveMs: 25 });
     closeStream();

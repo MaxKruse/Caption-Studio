@@ -17,7 +17,7 @@ A batch captioning tool for llama.cpp vision models: web UI (Next.js App Router 
 | UI | React 19.2.4 |
 | Styling | Tailwind CSS v4 (`@import "tailwindcss"`) |
 | Package Manager | **Bun** (not npm, pnpm, or yarn) |
-| Runtime | Bun for dev/build, Node 22 for production |
+| Runtime | Bun 1.3 for dev/build; Docker image pinned to `oven/bun:1.3` and serves the Next.js standalone server (node) |
 | Language | TypeScript 5 (strict mode) |
 | Image Processing | sharp |
 

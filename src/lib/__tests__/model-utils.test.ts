@@ -35,7 +35,7 @@ describe("getModelParallel", () => {
     globalThis.fetch = (async () =>
       new Response(JSON.stringify(modelsBody([
         { id: "qwen", status: { args: ["--parallel", "4"] } },
-      ])), { status: 200 })) as typeof fetch;
+      ])), { status: 200 })) as unknown as typeof fetch;
 
     const result = await getModelParallel("http://localhost:8080", "qwen");
     expect(result).toBe(4);
@@ -45,7 +45,7 @@ describe("getModelParallel", () => {
     globalThis.fetch = (async () =>
       new Response(JSON.stringify(modelsBody([
         { id: "other", status: { args: ["--parallel", "4"] } },
-      ])), { status: 200 })) as typeof fetch;
+      ])), { status: 200 })) as unknown as typeof fetch;
 
     const result = await getModelParallel("http://localhost:8080", "qwen");
     expect(result).toBeUndefined();
@@ -57,7 +57,7 @@ describe("getModelParallel", () => {
         { id: "no-arg", status: { args: [] } },
         { id: "bad-arg", status: { args: ["--parallel", "abc"] } },
         { id: "zero-arg", status: { args: ["--parallel", "0"] } },
-      ])), { status: 200 })) as typeof fetch;
+      ])), { status: 200 })) as unknown as typeof fetch;
 
     for (const id of ["no-arg", "bad-arg", "zero-arg"]) {
       const result = await getModelParallel("http://localhost:8000", id);
