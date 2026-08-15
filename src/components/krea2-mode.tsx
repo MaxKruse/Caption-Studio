@@ -11,6 +11,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { useSession } from "@/hooks/use-session";
 import { applyTokenDelta } from "@/lib/token-accumulate";
 import { consumeSseStream } from "@/lib/sse-client";
+import { triggerDownload } from "@/lib/download";
 import { ImageUploader } from "@/components/image-uploader";
 import { ModelSelector } from "@/components/model-selector";
 import { PromptEditor } from "@/components/prompt-editor";
@@ -63,27 +64,6 @@ function formatTokens(n: number): string {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Trigger a ZIP download from the server temp files. */
-async function triggerDownload(sessionId: string | null): Promise<void> {
-  if (!sessionId) return;
-
-  try {
-    const response = await fetch(`/api/download?sessionId=${sessionId}`);
-    if (!response.ok) return;
-
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${sessionId}.zip`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  } catch {
-    // Silently fail - download is a convenience feature
-  }
-}
 
 /** Get a human-readable label for an image phase. */
 function getPhaseLabel(phase: string | undefined): string {

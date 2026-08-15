@@ -15,6 +15,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { useSession } from "@/hooks/use-session";
 import { applyTokenDelta } from "@/lib/token-accumulate";
 import { consumeSseStream } from "@/lib/sse-client";
+import { triggerDownload } from "@/lib/download";
 import { ImageUploader } from "@/components/image-uploader";
 import { ModelSelector } from "@/components/model-selector";
 import { CaptionViewer } from "@/components/caption-viewer";
@@ -54,32 +55,6 @@ interface CaptionResult {
 /** Format a token count compactly (1234 -> "1.2k"). */
 function formatTokens(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Trigger a ZIP download from the server temp files. */
-async function triggerDownload(sessionId: string | null): Promise<void> {
-  if (!sessionId) return;
-
-  try {
-    const response = await fetch(`/api/download?sessionId=${sessionId}`);
-    if (!response.ok) return;
-
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${sessionId}.zip`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  } catch {
-    // Silently fail
-  }
 }
 
 // ---------------------------------------------------------------------------
