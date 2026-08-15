@@ -19,9 +19,13 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "bun run dev",
+    // Production build: Next dev (Turbopack) serves broken hydration state on
+    // the second page load within a worker on this setup, which fails any
+    // test queued behind another. `next start` is deterministic.
+    // Build is required - Playwright waits for the port after the full command.
+    command: "bun run build && bun run start",
     port: 3000,
-    timeout: 60_000,
+    timeout: 180_000,
     reuseExistingServer: !process.env.CI,
   },
 });
