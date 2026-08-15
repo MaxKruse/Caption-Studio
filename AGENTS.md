@@ -135,7 +135,7 @@ Each worker fetches `<serverUrl>/v1/chat/completions` via `buildChatRequest()` w
 - `id_slot: <workerIndex>` - pins the request to one llama.cpp slot for KV cache reuse
 - `cache_prompt: true`, `n_cache_reuse: 256` - chunk-wise prompt KV reuse
 - Messages array with `image_url` (data URL) + `text` content parts
-- Timeouts: krea-2 phase 1 15 min, phases 2/3 5 min each; for-anima 15 min; 5xx/429 retried via `fetchWithRetry`
+- Timeouts: krea-2 phase 1 15 min, phases 2/3 5 min each; for-anima 5 min per image (short enhancement output); 5xx/429 retried via `fetchWithRetry`
 
 Streaming response parsed for `delta.reasoning_content` and `delta.content` (plus the final usage chunk for `cachedTokens`/`promptTokens` stats). Completion events carry the stats; the UI shows the batch-wide KV cache reuse percentage.
 

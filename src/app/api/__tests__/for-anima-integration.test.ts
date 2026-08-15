@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import sharp from "sharp";
 import { NextRequest } from "next/server";
-import { POST } from "@/app/api/caption/for-anima/route";
+import { POST, API_TIMEOUT_MS } from "@/app/api/caption/for-anima/route";
 
 // ---------------------------------------------------------------------------
 // Test doubles
@@ -109,6 +109,12 @@ afterAll(() => {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+describe("for-anima route - per-image timeout", () => {
+  it("is bounded to 5 minutes (short enhancement output)", () => {
+    expect(API_TIMEOUT_MS).toBe(5 * 60 * 1000);
+  });
+});
 
 describe("for-anima route - config validation", () => {
   it("rejects config without a model", async () => {

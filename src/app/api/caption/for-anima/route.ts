@@ -36,8 +36,14 @@ import { createSseStream } from "@/lib/sse";
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Max time allowed per API call. */
-const API_TIMEOUT_MS = 15 * 60 * 1000;
+/**
+ * Max time allowed per API call (per image).
+ * For Anima enhancement emits a short natural-language addition on top
+ * of existing booru tags, so 5 min bounds a hung request without
+ * starving very slow local models (krea-2 phase 1 keeps 15 min for
+ * full captions from scratch).
+ */
+export const API_TIMEOUT_MS = 5 * 60 * 1000;
 
 /** Default max concurrency for parallel image processing. */
 const MAX_CONCURRENCY = 8;
