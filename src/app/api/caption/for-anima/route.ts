@@ -21,7 +21,7 @@ import {
 } from "@/lib/anima-prompt";
 import {
   createSession,
-  saveImage,
+  saveImagesBatch,
   writeCaption,
   writeTags,
   touchSession,
@@ -238,24 +238,22 @@ export async function POST(request: NextRequest) {
     })
   );
 
-  for (const { i, imageBuffer, booruTags, originalName } of readItems) {
-    const serverName = await saveImage(
-      sessionId,
+  // Write all validated image buffers to disk in parallel.
+  const serverNames = await saveImagesBatch(
+    sessionId,
+    readItems.map(({ imageBuffer, originalName }) => ({
       originalName,
-      imageBuffer,
-      usedBases
-    );
+      data: imageBuffer,
+    })),
+    usedBases
+  );
 
+  readItems.forEach(({ i, imageBuffer, booruTags, originalName }, idx) => {
+    const serverName = serverNames[idx];
     if (serverName) {
-      tasks.push({
-        index: i,
-        serverName,
-        originalName,
-        imageBuffer,
-        booruTags,
-      });
+      tasks.push({ index: i, serverName, originalName, imageBuffer, booruTags });
     }
-  }
+  });
 
   if (tasks.length === 0) {
     return Response.json(
