@@ -75,9 +75,14 @@ async function ensureBaseDir(): Promise<void> {
   }
 }
 
-/** Generate a short random session ID. */
+/**
+ * Generate a session ID using a cryptographically secure UUIDv4.
+ * Session directories are reachable via unauthenticated
+ * /api/download?sessionId=, so predictable IDs (Math.random) would
+ * let a network peer enumerate and download other users' results.
+ */
 function generateSessionId(): string {
-  return Math.random().toString(36).substring(2, 12);
+  return crypto.randomUUID();
 }
 
 /** Persist session index to disk for resilient cleanup. */
@@ -255,6 +260,30 @@ export async function createSession(): Promise<SessionMeta> {
 }
 
 /**
+ * Validate a single image for saving and reserve its deduplicated name.
+ * Returns the server-assigned filename, or null if the image is rejected
+ * (oversized or not a valid image). Side effect: reserves the name in
+ * usedBases when returning a name.
+ */
+function validateImageForSave(
+  originalName: string,
+  data: Buffer,
+  usedBases: Set<string>
+): string | null {
+  // Enforce per-image size limit
+  if (data.length > MAX_IMAGE_SIZE_BYTES) {
+    return null;
+  }
+
+  // Validate image by magic bytes, not just extension
+  if (!isValidImageBuffer(data)) {
+    return null;
+  }
+
+  return deduplicateFileName(sanitizeFileName(originalName), usedBases);
+}
+
+/**
  * Save an image buffer to the session directory.
  * Returns the server-assigned filename (may be deduplicated).
  */
@@ -272,18 +301,9 @@ export async function saveImage(
     return null;
   }
 
-  // Enforce per-image size limit
-  if (data.length > MAX_IMAGE_SIZE_BYTES) {
-    return null;
-  }
+  const serverName = validateImageForSave(originalName, data, usedBases);
+  if (!serverName) return null;
 
-  // Validate image by magic bytes, not just extension
-  if (!isValidImageBuffer(data)) {
-    return null;
-  }
-
-  const sanitizedName = sanitizeFileName(originalName);
-  const serverName = deduplicateFileName(sanitizedName, usedBases);
   const filePath = path.join(meta.dir, serverName);
 
   await fsp.writeFile(filePath, data);
@@ -291,6 +311,56 @@ export async function saveImage(
   meta.imageCount++;
 
   return serverName;
+}
+
+/** One item for saveImagesBatch. */
+export interface BatchSaveItem {
+  originalName: string;
+  data: Buffer;
+}
+
+/**
+ * Validate and save multiple images to a session, writing in parallel.
+ *
+ * Preserves saveImage semantics: results map 1:1 to input order, base names
+ * are deduplicated in input order, invalid/oversized items yield null, and
+ * the per-session image cap rejects everything beyond the first
+ * MAX_IMAGES_PER_SESSION valid images.
+ */
+export async function saveImagesBatch(
+  sessionId: string,
+  items: BatchSaveItem[],
+  usedBases: Set<string>
+): Promise<(string | null)[]> {
+  const meta = sessions.get(sessionId);
+  if (!meta) return items.map(() => null);
+
+  const allowed = MAX_IMAGES_PER_SESSION - meta.imageCount;
+  const results: (string | null)[] = new Array(items.length).fill(null);
+  const toWrite: { i: number; serverName: string; data: Buffer }[] = [];
+
+  // Validate sequentially so name deduplication and the image cap keep
+  // input-order semantics, then write concurrently.
+  items.forEach((item, i) => {
+    if (toWrite.length >= allowed) return;
+    const serverName = validateImageForSave(item.originalName, item.data, usedBases);
+    if (!serverName) return;
+    toWrite.push({ i, serverName, data: item.data });
+  });
+
+  await Promise.all(
+    toWrite.map(async ({ i, serverName, data }) => {
+      await fsp.writeFile(path.join(meta.dir, serverName), data);
+      results[i] = serverName;
+    })
+  );
+
+  if (toWrite.length > 0) {
+    meta.imageCount += toWrite.length;
+    meta.lastActivityAt = Date.now();
+  }
+
+  return results;
 }
 
 /**

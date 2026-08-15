@@ -17,7 +17,7 @@ A batch captioning tool for llama.cpp vision models: web UI (Next.js App Router 
 | UI | React 19.2.4 |
 | Styling | Tailwind CSS v4 (`@import "tailwindcss"`) |
 | Package Manager | **Bun** (not npm, pnpm, or yarn) |
-| Runtime | Bun for dev/build, Node 22 for production |
+| Runtime | Bun 1.3 for dev/build; Docker image pinned to `oven/bun:1.3` and serves the Next.js standalone server (node) |
 | Language | TypeScript 5 (strict mode) |
 | Image Processing | sharp |
 
@@ -63,7 +63,6 @@ src/
     detect-parsing.ts       — Bounding box parser (Gemma box_2d y-first, Qwen bbox_2d x-first)
     detection-prompts.ts    — Detection prompt builder
     detect-store.ts         — In-memory detection job store
-    store.ts                — In-memory caption job store (legacy)
     krea2-prompts.ts        — Phase 2/3 prompt builders
     krea2-system-prompt.ts  — Krea 2 system prompt
     anima-prompt.ts         — For Anima system + user prompts, assembleFinalCaption
@@ -136,7 +135,7 @@ Each worker fetches `<serverUrl>/v1/chat/completions` via `buildChatRequest()` w
 - `id_slot: <workerIndex>` - pins the request to one llama.cpp slot for KV cache reuse
 - `cache_prompt: true`, `n_cache_reuse: 256` - chunk-wise prompt KV reuse
 - Messages array with `image_url` (data URL) + `text` content parts
-- Timeouts: krea-2 phase 1 15 min, phases 2/3 5 min each; for-anima 15 min; 5xx/429 retried via `fetchWithRetry`
+- Timeouts: krea-2 phase 1 15 min, phases 2/3 5 min each; for-anima 5 min per image (short enhancement output); 5xx/429 retried via `fetchWithRetry`
 
 Streaming response parsed for `delta.reasoning_content` and `delta.content` (plus the final usage chunk for `cachedTokens`/`promptTokens` stats). Completion events carry the stats; the UI shows the batch-wide KV cache reuse percentage.
 
@@ -164,6 +163,8 @@ Each image is processed through all 3 phases as a **single multi-turn conversati
 
 **Turn 3 (Phase 3 - Distillation):** Conversation history + distill user message (references Phase 2 caption). LLM distills into a concise (60-150 word) krea2-optimized prompt. This is the **inverse of prompt expansion**.
 
+Each phase overwrites the same `<image>.txt` in the session dir (`writeCaption`), so the caption file in a downloaded ZIP is always the **Phase 3 distilled prompt**.
+
 Parallel workers (up to 8 concurrent, clamped to the server's `--parallel`) each process one image through all 3 turns, pinned to their own slot (slotId = worker index) so the 3 phases reuse the same slot's KV cache. Config requires `characterDescription`.
 
 ### Download
@@ -186,7 +187,6 @@ Detection images scaled to 1024px max. Response parsed by `parseDetectionRespons
 
 ### In-Memory Stores
 
-- `store.ts` — `Map<string, CaptionJob>` (caption jobs, 24h stale cleanup)
 - `detect-store.ts` — `Map<string, DetectionJob>` (detection jobs, cleaned on SSE close)
 - `temp-files.ts` — `Map<string, SessionMeta>` (temp image sessions, 30min stale cleanup)
 

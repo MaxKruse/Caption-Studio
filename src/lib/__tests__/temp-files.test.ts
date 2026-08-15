@@ -1,5 +1,28 @@
 import { describe, it, expect } from "bun:test";
-import { deduplicateFileName, sanitizeFileName } from "@/lib/temp-files";
+import {
+  createSession,
+  deduplicateFileName,
+  deleteSession,
+  sanitizeFileName,
+} from "@/lib/temp-files";
+
+const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+describe("temp-files session ids", () => {
+  it("createSession generates a UUIDv4 id (unpredictable, not Math.random)", async () => {
+    const session = await createSession();
+    expect(session.id).toMatch(UUID_V4_RE);
+    await deleteSession(session.id);
+  });
+
+  it("createSession ids are unique across sessions", async () => {
+    const a = await createSession();
+    const b = await createSession();
+    expect(a.id).not.toBe(b.id);
+    await deleteSession(a.id);
+    await deleteSession(b.id);
+  });
+});
 
 describe("temp-files", () => {
   it("sanitize: removes path traversal segments", () => {

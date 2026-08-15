@@ -5,12 +5,21 @@
 import { normalizeServerUrl, toDockerHostUrl } from "@/lib/url-utils";
 
 /**
+ * Default budget for --parallel discovery (ms). Discovery is an
+ * optimization: if the server can't answer quickly, callers should fall
+ * back to MAX_CONCURRENCY rather than delay captioning startup.
+ */
+export const MODEL_DISCOVERY_TIMEOUT_MS = 3000;
+
+/**
  * Fetch the `--parallel` value for a specific model from the llama.cpp server.
- * Returns undefined if the server doesn't support it or the model isn't found.
+ * Returns undefined if the server doesn't support it, is slow to answer
+ * (slower than timeoutMs), or the model isn't found.
  */
 export async function getModelParallel(
   serverUrl: string,
-  modelId: string
+  modelId: string,
+  timeoutMs: number = MODEL_DISCOVERY_TIMEOUT_MS
 ): Promise<number | undefined> {
   // Translate localhost → host.docker.internal for server-side calls from Docker
   const dockerUrl = toDockerHostUrl(serverUrl);
@@ -19,7 +28,7 @@ export async function getModelParallel(
   try {
     const response = await fetch(`${normalizedUrl}/v1/models`, {
       cache: "no-store",
-      signal: AbortSignal.timeout(15000), // 15s timeout for model discovery
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     if (!response.ok) return undefined;

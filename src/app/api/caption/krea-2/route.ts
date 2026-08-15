@@ -19,7 +19,7 @@ import { prepareForApi } from "@/lib/image-utils";
 import { buildUserPrompt } from "@/lib/prompt-utils";
 import {
   createSession,
-  saveImage,
+  saveImagesBatch,
   writeCaption,
   touchSession,
 } from "@/lib/temp-files";
@@ -33,10 +33,6 @@ import { buildChatRequest } from "@/lib/llama-request";
 import { registerSession, unregisterSession, abortSession, getSession } from "@/lib/session-registry";
 import { createSseStream } from "@/lib/sse";
 import { krea2ConfigSchema, type Krea2Config } from "@/lib/config-schema";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Types
@@ -368,24 +364,30 @@ export async function POST(request: NextRequest) {
   const usedBases = new Set<string>();
   const tasks: ImageTask[] = [];
 
-  for (let i = 0; i < imageFiles.length; i++) {
-    const buffer = await readFileBuffer(imageFiles[i]);
-    const serverName = await saveImage(
-      sessionId,
-      imageNames[i] || `image-${i}.jpg`,
-      buffer,
-      usedBases
-    );
+  // Read all image buffers in parallel, then write them to disk in parallel.
+  const readItems = await Promise.all(
+    imageFiles.map(async (file, i) => ({
+      i,
+      imageBuffer: await readFileBuffer(file),
+      originalName: imageNames[i] || `image-${i}.jpg`,
+    }))
+  );
 
+  const serverNames = await saveImagesBatch(
+    sessionId,
+    readItems.map(({ imageBuffer, originalName }) => ({
+      originalName,
+      data: imageBuffer,
+    })),
+    usedBases
+  );
+
+  readItems.forEach(({ i, imageBuffer, originalName }, idx) => {
+    const serverName = serverNames[idx];
     if (serverName) {
-      tasks.push({
-        index: i,
-        serverName,
-        originalName: imageNames[i] || `image-${i}.jpg`,
-        imageBuffer: buffer,
-      });
+      tasks.push({ index: i, serverName, originalName, imageBuffer });
     }
-  }
+  });
 
   if (tasks.length === 0) {
     return Response.json(

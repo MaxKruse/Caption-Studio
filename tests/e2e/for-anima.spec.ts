@@ -51,4 +51,33 @@ test.describe("For Anima Mode", () => {
     await page.getByRole("button", { name: "Back to modes" }).click();
     await expect(page.getByRole("heading", { name: "Choose a Mode" })).toBeVisible({ timeout: 5000 });
   });
+
+  test("tag review warns when images produced no tags", async ({ page }) => {
+    // Tag service returns empty tag lists for every image
+    await page.route("**/api/tag*", (route) => {
+      void route.fulfill({
+        status: 200,
+        body: JSON.stringify({ tags: [], tagsWithProbs: [] }),
+      });
+    });
+
+    const onePixelJpeg = Buffer.from(
+      "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AVN//2Q==",
+      "base64"
+    );
+
+    await page.locator('input[type="file"]').setInputFiles([
+      { name: "a.jpg", mimeType: "image/jpeg", buffer: onePixelJpeg },
+      { name: "b.jpg", mimeType: "image/jpeg", buffer: onePixelJpeg },
+    ]);
+
+    const continueBtn = page.getByRole("button", { name: "Continue (2 images)" });
+    await expect(continueBtn).toBeEnabled();
+    await continueBtn.click();
+    await page.getByRole("button", { name: "Start Tagging" }).click();
+
+    // Review phase lands and warns about the tagless images
+    await expect(page.getByText("2 of 2 images have no tags")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("No tags generated")).toHaveCount(2);
+  });
 });

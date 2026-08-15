@@ -14,6 +14,9 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useSession } from "@/hooks/use-session";
 import { applyTokenDelta } from "@/lib/token-accumulate";
+import { consumeSseStream } from "@/lib/sse-client";
+import { triggerDownload } from "@/lib/download";
+import { fileToBase64 } from "@/lib/file-utils";
 import { ImageUploader } from "@/components/image-uploader";
 import { ModelSelector } from "@/components/model-selector";
 import { CaptionViewer } from "@/components/caption-viewer";
@@ -53,32 +56,6 @@ interface CaptionResult {
 /** Format a token count compactly (1234 -> "1.2k"). */
 function formatTokens(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Trigger a ZIP download from the server temp files. */
-async function triggerDownload(sessionId: string | null): Promise<void> {
-  if (!sessionId) return;
-
-  try {
-    const response = await fetch(`/api/download?sessionId=${sessionId}`);
-    if (!response.ok) return;
-
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${sessionId}.zip`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  } catch {
-    // Silently fail
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -141,12 +118,17 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
     }));
     setTagResults(initialTags);
 
-    // Tag images one by one (no batching per user request)
+    // Tag images one by one (no batching per user request). Base64 is read
+    // from the raw File on demand - previews use object URLs.
     const localTags = [...initialTags];
-    const base64Images = state.images.map((img) => {
-      // Strip data URL prefix
-      return img.split(",")[1] ?? img;
-    });
+    const base64Images: string[] = new Array(state.imageFiles.length);
+    for (let i = 0; i < state.imageFiles.length; i++) {
+      try {
+        base64Images[i] = await fileToBase64(state.imageFiles[i]);
+      } catch {
+        base64Images[i] = "";
+      }
+    }
 
     for (let i = 0; i < base64Images.length; i++) {
       setCurrentTagIndex(i);
@@ -197,6 +179,11 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
     setTagResults([]);
     setAppPhase("tag");
   }, []);
+
+  /** Completed-tagging images that came back with zero tags. */
+  const noTagCount = tagResults.filter(
+    (tr) => tr.status === "done" && tr.tags.length === 0
+  ).length;
 
   // Store generated tags into session state for LLM captioning
   const handleContinueToLlm = useCallback(() => {
@@ -258,92 +245,70 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
         return;
       }
 
-      const reader = response.body?.getReader();
-      if (!reader) return;
+      const body = response.body;
+      if (!body) return;
 
       const localLlm = [...initialLlm];
-      const decoder = new TextDecoder();
-      let buffer = "";
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop() ?? "";
-
-        for (const block of lines) {
-          const eventMatch = block.match(/^event: (\w+)\s*\ndata: ([\s\S]+)$/);
-          if (!eventMatch) continue;
-
-          const eventType = eventMatch[1];
-          let data: unknown;
-          try {
-            data = JSON.parse(eventMatch[2]);
-          } catch {
-            continue;
+      await consumeSseStream(body, (event) => {
+        if (event.type === "session") {
+          const sid = (event.data as { sessionId: string }).sessionId;
+          if (sid) {
+            sessionIdRef.current = sid;
+            setSessionId(sid);
           }
-
-          if (eventType === "session") {
-            const sid = (data as { sessionId: string }).sessionId;
-            if (sid) {
-              sessionIdRef.current = sid;
-              setSessionId(sid);
-            }
-            continue;
-          }
-
-          switch (eventType) {
-            case "image_start": {
-              const idx = (data as { index: number }).index;
-              if (localLlm[idx]) localLlm[idx] = { ...localLlm[idx], status: "processing" };
-              break;
-            }
-            case "token": {
-              // Token events carry deltas only - accumulate into the partial
-              const tokenData = data as {
-                index: number;
-                type: "caption" | "reasoning";
-                content: string;
-              };
-              const idx = tokenData.index;
-              if (localLlm[idx]) {
-                localLlm[idx] = applyTokenDelta(localLlm[idx], tokenData);
-              }
-              break;
-            }
-            case "image_complete": {
-              const completeData = data as {
-                index: number;
-                status: string;
-                caption?: string;
-                reasoningContent?: string;
-                error?: string;
-                cachedTokens?: number;
-                promptTokens?: number;
-              };
-              const idx = completeData.index;
-              if (localLlm[idx]) {
-                localLlm[idx] = {
-                  ...localLlm[idx],
-                  status: completeData.status as CaptionResult["status"],
-                  caption: completeData.caption,
-                  reasoningContent: completeData.reasoningContent,
-                  error: completeData.error,
-                  cachedTokens: completeData.cachedTokens,
-                  promptTokens: completeData.promptTokens,
-                  partialCaption: undefined,
-                  partialReasoning: undefined,
-                };
-              }
-              break;
-            }
-          }
-
-          setLlmResults([...localLlm]);
+          return;
         }
-      }
+
+        switch (event.type) {
+          case "image_start": {
+            const idx = (event.data as { index: number }).index;
+            if (localLlm[idx]) localLlm[idx] = { ...localLlm[idx], status: "processing" };
+            break;
+          }
+          case "token": {
+            // Token events carry deltas only - accumulate into the partial
+            const tokenData = event.data as {
+              index: number;
+              type: "caption" | "reasoning";
+              content: string;
+            };
+            const idx = tokenData.index;
+            if (localLlm[idx]) {
+              localLlm[idx] = applyTokenDelta(localLlm[idx], tokenData);
+            }
+            break;
+          }
+          case "image_complete": {
+            const completeData = event.data as {
+              index: number;
+              status: string;
+              caption?: string;
+              reasoningContent?: string;
+              error?: string;
+              cachedTokens?: number;
+              promptTokens?: number;
+            };
+            const idx = completeData.index;
+            if (localLlm[idx]) {
+              localLlm[idx] = {
+                ...localLlm[idx],
+                status: completeData.status as CaptionResult["status"],
+                caption: completeData.caption,
+                reasoningContent: completeData.reasoningContent,
+                error: completeData.error,
+                cachedTokens: completeData.cachedTokens,
+                promptTokens: completeData.promptTokens,
+                partialCaption: undefined,
+                partialReasoning: undefined,
+              };
+            }
+            break;
+          }
+        }
+
+        setLlmResults([...localLlm]);
+      });
 
       if (abortControllerRef.current && abortControllerRef.current.signal.aborted) {
         for (const result of localLlm) {
@@ -544,6 +509,12 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
           {/* Per-image tag review */}
           <Card>
             <div className="space-y-4">
+              {noTagCount > 0 && (
+                <p className="text-xs text-amber-400">
+                  {noTagCount} of {tagResults.length} images have no tags - try a lower
+                  minimum probability and redo tagging.
+                </p>
+              )}
               <h3 className="text-sm font-medium text-slate-300">Generated Tags Per Image</h3>
 
               <div className="space-y-3 max-h-96 overflow-y-auto">
@@ -562,6 +533,8 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
                       </p>
                       {tr.status === "error" ? (
                         <span className="text-xs text-red-400">Error: {tr.error}</span>
+                      ) : tr.status === "done" && tr.tags.length === 0 ? (
+                        <span className="text-xs text-amber-400">No tags generated</span>
                       ) : (
                         <div className="flex flex-wrap gap-1">
                           {tr.tags.map((tag, j) => (

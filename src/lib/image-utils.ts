@@ -94,6 +94,8 @@ export async function prepareForApi(
   imageBuffer: Buffer,
   maxDimension: number = API_MAX_DIMENSION
 ): Promise<{ buffer: Buffer; mimeType: string }> {
+  // Single metadata parse: resizing through resizeIfNeeded would
+  // re-decode the buffer header a second time.
   const metadata = await sharp(imageBuffer).metadata();
   const width = metadata.width ?? 0;
   const height = metadata.height ?? 0;
@@ -105,7 +107,20 @@ export async function prepareForApi(
     return { buffer: imageBuffer, mimeType };
   }
 
-  return resizeIfNeeded(imageBuffer, maxDimension);
+  if (biggest <= maxDimension) {
+    // Right size, wrong format - just convert
+    return convertToJpeg(imageBuffer);
+  }
+
+  const resized = await sharp(imageBuffer)
+    .resize(maxDimension, maxDimension, {
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    .jpeg({ quality: 90 })
+    .toBuffer();
+
+  return { buffer: resized, mimeType: "image/jpeg" };
 }
 
 // ---------------------------------------------------------------------------

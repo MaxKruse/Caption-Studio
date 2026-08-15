@@ -1,4 +1,4 @@
-FROM oven/bun:canary AS builder
+FROM oven/bun:1.3 AS builder
 WORKDIR /app
 ENV BUN_CONFIG_HTTP_IDLE_TIMEOUT=30
 
@@ -9,7 +9,7 @@ COPY . .
 RUN bun run build
 
 # --- Runtime ---
-FROM oven/bun:canary
+FROM oven/bun:1.3
 WORKDIR /app
 ENV BUN_CONFIG_HTTP_IDLE_TIMEOUT=30
 
@@ -26,6 +26,6 @@ ENV HOSTNAME="0.0.0.0"
 ENV NODE_ENV=production
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/ || exit 1
+  CMD node -e "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 CMD ["node", "server.js"]

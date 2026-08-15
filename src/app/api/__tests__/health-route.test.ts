@@ -3,8 +3,7 @@ import { GET } from "@/app/api/health/route";
 
 describe("health route", () => {
   it("returns 200 with health info", async () => {
-    const request = new Request("http://localhost/api/health");
-    const response = await GET(request);
+    const response = await GET();
     expect(response.status).toBe(200);
 
     const data = await response.json();
@@ -17,8 +16,7 @@ describe("health route", () => {
   });
 
   it("includes tempDir path", async () => {
-    const request = new Request("http://localhost/api/health");
-    const response = await GET(request);
+    const response = await GET();
     const data = await response.json();
     expect(data.tempDir).toBe("/tmp/caption-studio");
   });

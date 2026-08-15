@@ -21,7 +21,7 @@ import {
 } from "@/lib/anima-prompt";
 import {
   createSession,
-  saveImage,
+  saveImagesBatch,
   writeCaption,
   writeTags,
   touchSession,
@@ -36,8 +36,14 @@ import { createSseStream } from "@/lib/sse";
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Max time allowed per API call. */
-const API_TIMEOUT_MS = 15 * 60 * 1000;
+/**
+ * Max time allowed per API call (per image).
+ * For Anima enhancement emits a short natural-language addition on top
+ * of existing booru tags, so 5 min bounds a hung request without
+ * starving very slow local models (krea-2 phase 1 keeps 15 min for
+ * full captions from scratch).
+ */
+export const API_TIMEOUT_MS = 5 * 60 * 1000;
 
 /** Default max concurrency for parallel image processing. */
 const MAX_CONCURRENCY = 8;
@@ -238,24 +244,22 @@ export async function POST(request: NextRequest) {
     })
   );
 
-  for (const { i, imageBuffer, booruTags, originalName } of readItems) {
-    const serverName = await saveImage(
-      sessionId,
+  // Write all validated image buffers to disk in parallel.
+  const serverNames = await saveImagesBatch(
+    sessionId,
+    readItems.map(({ imageBuffer, originalName }) => ({
       originalName,
-      imageBuffer,
-      usedBases
-    );
+      data: imageBuffer,
+    })),
+    usedBases
+  );
 
+  readItems.forEach(({ i, imageBuffer, booruTags, originalName }, idx) => {
+    const serverName = serverNames[idx];
     if (serverName) {
-      tasks.push({
-        index: i,
-        serverName,
-        originalName,
-        imageBuffer,
-        booruTags,
-      });
+      tasks.push({ index: i, serverName, originalName, imageBuffer, booruTags });
     }
-  }
+  });
 
   if (tasks.length === 0) {
     return Response.json(

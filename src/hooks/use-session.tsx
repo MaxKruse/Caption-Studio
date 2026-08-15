@@ -5,7 +5,7 @@
 
 "use client";
 
-import { useState, useCallback, createContext, useContext } from "react";
+import { useState, useCallback, useRef, createContext, useContext } from "react";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -17,7 +17,8 @@ export interface SessionState {
   mode: AppMode | null;
   serverUrl: string;
   model: string;
-  images: string[]; // base64 data URLs (for preview)
+  /** Object URLs (URL.createObjectURL) for preview - not base64. */
+  images: string[];
   imageNames: string[];
   imageFiles: File[]; // raw File objects (for FormData upload)
   imageCaptions: string[]; // paired caption text (booru tags) for each image
@@ -106,7 +107,7 @@ interface SessionContextValue {
   setMode: (mode: AppMode | null) => void;
   setServerUrl: (serverUrl: string) => void;
   setModel: (model: string) => void;
-  addImage: (dataUrl: string, name: string, file: File, caption?: string) => void;
+  addImage: (file: File, name: string, caption?: string) => void;
   removeImage: (index: number) => void;
   clearImages: () => void;
   setSystemPrompt: (systemPrompt: string) => void;
@@ -131,6 +132,8 @@ const SessionContext = createContext<SessionContextValue | null>(null);
  */
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<SessionState>(() => ({ ...DEFAULT_STATE }));
+  /** Mirrors state.images for imperative URL revocation (updaters must stay pure). */
+  const imageUrlsRef = useRef<string[]>([]);
 
   const setMode = useCallback((mode: AppMode | null) => {
     setState((prev) => ({ ...prev, mode }));
@@ -144,10 +147,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => ({ ...prev, model }));
   }, []);
 
-  const addImage = useCallback((dataUrl: string, name: string, file: File, caption?: string) => {
+  const addImage = useCallback((file: File, name: string, caption?: string) => {
+    const objectUrl = URL.createObjectURL(file);
+    imageUrlsRef.current = [...imageUrlsRef.current, objectUrl];
     setState((prev) => ({
       ...prev,
-      images: [...prev.images, dataUrl],
+      images: [...prev.images, objectUrl],
       imageNames: [...prev.imageNames, name],
       imageFiles: [...prev.imageFiles, file],
       imageCaptions: [...prev.imageCaptions, caption ?? ""],
@@ -155,6 +160,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const removeImage = useCallback((index: number) => {
+    const url = imageUrlsRef.current[index];
+    if (url) {
+      URL.revokeObjectURL(url);
+      imageUrlsRef.current = imageUrlsRef.current.filter((_, i) => i !== index);
+    }
     setState((prev) => {
       const newImages = [...prev.images];
       const newNames = [...prev.imageNames];
@@ -169,6 +179,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const clearImages = useCallback(() => {
+    imageUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    imageUrlsRef.current = [];
     setState((prev) => ({ ...prev, images: [], imageNames: [], imageFiles: [], imageCaptions: [] }));
   }, []);
 
@@ -213,6 +225,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const reset = useCallback(() => {
+    imageUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    imageUrlsRef.current = [];
     setState({ ...DEFAULT_STATE });
   }, []);
 

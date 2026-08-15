@@ -279,6 +279,10 @@ Standing by the ocean in a white sundress, golden sunset lighting, waves crashin
 
 The distilled prompt removes redundancy ("casting warm tones across the scene", "behind her figure") while preserving all key visual elements.
 
+### Downloaded Captions
+
+Each phase overwrites the image's `.txt` caption file in the session's temp directory as it completes. The file that ends up in the downloaded ZIP is therefore the **Phase 3 distilled prompt** - not the Phase 1 raw caption. The per-phase captions remain visible in the UI during processing.
+
 ### API Endpoint
 
 ```
