@@ -3,7 +3,25 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { readFileBuffer } from "@/lib/caption-helpers";
+import { readFileBuffer, sleep } from "@/lib/caption-helpers";
+
+// ---------------------------------------------------------------------------
+// sleep tests
+// ---------------------------------------------------------------------------
+
+describe("sleep", () => {
+  it("resolves after approximately the requested delay", async () => {
+    const start = Date.now();
+    await sleep(80);
+    expect(Date.now() - start).toBeGreaterThanOrEqual(70);
+  });
+
+  it("resolves immediately for a zero delay", async () => {
+    const start = Date.now();
+    await sleep(0);
+    expect(Date.now() - start).toBeLessThan(50);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // readFileBuffer tests

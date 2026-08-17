@@ -15,12 +15,24 @@ export async function readFileBuffer(file: File): Promise<Buffer> {
 }
 
 // ---------------------------------------------------------------------------
+// Timing utilities
+// ---------------------------------------------------------------------------
+
+/**
+ * Promise-based delay.
+ */
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ---------------------------------------------------------------------------
 // Fetch utilities
 // ---------------------------------------------------------------------------
 
 /**
  * Fetch with timeout + external abort signal support.
- * Uses AbortSignal.timeout where available.
+ * Aborts when either the timeout elapses or the external signal fires
+ * (already-aborted signals abort immediately).
  */
 export async function fetchWithTimeout(
   url: string,
@@ -28,24 +40,9 @@ export async function fetchWithTimeout(
   timeoutMs: number,
   externalSignal?: AbortSignal
 ): Promise<Response> {
-  const timeoutSignal = AbortSignal.timeout(timeoutMs);
-  const controller = new AbortController();
-
-  const onAbort = () => controller.abort();
-  timeoutSignal.addEventListener("abort", onAbort, { once: true });
-  externalSignal?.addEventListener("abort", onAbort, { once: true });
-
-  // Immediate abort if already aborted
-  if (timeoutSignal.aborted || externalSignal?.aborted) {
-    controller.abort();
-  }
-
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    timeoutSignal.removeEventListener("abort", onAbort);
-    externalSignal?.removeEventListener("abort", onAbort);
-  }
+  const signals = [AbortSignal.timeout(timeoutMs)];
+  if (externalSignal) signals.push(externalSignal);
+  return fetch(url, { ...options, signal: AbortSignal.any(signals) });
 }
 
 /**
@@ -75,7 +72,7 @@ export async function fetchWithRetry(
         }
         // Wait with exponential backoff
         const delay = baseDelayMs * Math.pow(2, attempt);
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        await sleep(delay);
         continue;
       }
       return response;
@@ -85,7 +82,7 @@ export async function fetchWithRetry(
         throw err;
       }
       const delay = baseDelayMs * Math.pow(2, attempt);
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      await sleep(delay);
     }
   }
 
