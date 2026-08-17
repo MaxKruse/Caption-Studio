@@ -50,7 +50,7 @@ Items are prioritized roughly: Stability > Performance > UX > Prompting.
 - [x] Add rate limiting per IP for model discovery and caption endpoints
 
 ### Performance
-- [x] WD Tagger batching endpoint (`/api/tag/batch` proxy + `tag-service /tag-batch`) for programmatic use. The UI intentionally tags one image per call so it can show per-image progress
+- [x] WD Tagger batching via `tag-service /tag-batch` for programmatic use (call the service directly - the Next app proxies only `/api/tag`; an earlier `/api/tag/batch` Next proxy was unreachable and has been removed). The UI intentionally tags one image per call so it can show per-image progress
 - [x] Stream ZIP download instead of buffering entire archive in memory
 - [x] Add per-image timeout per phase in Krea 2 to avoid 15 min worst case
 - [ ] Add concurrency tuning UI: allow user to set parallel requests, cap at server parallel
