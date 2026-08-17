@@ -12,7 +12,7 @@ Items are prioritized roughly: Stability > Performance > UX > Prompting.
 - [x] **Non-blocking session event**: both caption routes stream `session` immediately and run `--parallel` discovery in the background
 - [x] **Removed the destructive temp-files exit handler**: process exit no longer deletes session dirs (Docker rebuilds can't destroy undownloaded results); the 30-minute stale TTL via `sessions.json` is the only deletion path
 - [x] **Image downscale default 3072 -> 1536px** with optional `maxImageDimension` config (256-4096) in both caption schemas
-- [x] **Zod validation for the for-anima config** (`forAnimaConfigSchema`, flattened error details) - krea-2 already had it; detect still uses manual checks
+- [x] **Zod validation for the for-anima config** (`forAnimaConfigSchema`, flattened error details) - krea-2 already had it; detect was covered later via `detectConfigSchema`
 - [x] **Route integration tests with a stubbed llama.cpp server**: krea-2 (slot pinning, phase history, cached tokens, retry, session-event timing), for-anima (config validation, slot pinning), detect (slot pinning, SSE job stream)
 - [x] **Fixed CaptionViewer status dot**: thumbnails now use `relative` positioning so the dot renders on the thumbnail instead of at the page corner
 - [x] Extract shared caption helpers to `src/lib/caption-helpers.ts`: `readFileBuffer`, `fetchWithTimeout`, `streamResponse`
@@ -22,6 +22,11 @@ Items are prioritized roughly: Stability > Performance > UX > Prompting.
 - [x] Extract `activeSessions` registry to `src/lib/session-registry.ts` with `registerSession`, `unregisterSession`, `abortSession`. Remove duplicated `Map` + interval from all routes
 - [x] Extract SSE stream factory `createSseStream()` to `src/lib/sse.ts`. Unify SSE stream creation across routes
 - [x] Sanitize filenames to prevent path traversal with `sanitizeFileName` in `src/lib/temp-files.ts`
+- [x] **Zod validation for the detect config** (`detectConfigSchema` via the shared `parseCaptionRequest` preamble) - the last route still on manual JSON checks
+- [x] **DX consolidation** (`refactor/dx-consolidation`): shared `runWorkerPool` (caption routes), shared `fetchModels`/`parseParallelArgs` (models, ping, parallel discovery), shared `chatComplete` (all four API-call sites), shared `parseCaptionRequest`/`handleSessionAbort` (krea-2, for-anima, detect), shared `baseAndExt` filename splitting, shared SSE/image test doubles in `src/lib/__tests__/test-helpers.ts`
+- [x] **Client dedup**: shared `CaptionResult` type + `formatTokens` + `stopCaptionSession` (`src/lib/caption-result.ts`) and shared `KvCacheStats` component, replacing copies in krea2-mode, for-anima-mode, and caption-viewer
+- [x] **Dead code removed**: `resizeIfNeeded` (logic inlined in `prepareForApi`), `cleanupAbortedSessions` (no cleanup interval exists), legacy base64 `POST /api/download` (GET is the only consumer)
+- [x] **DX tooling**: `typecheck`/`test:watch`/`docker:up` scripts, CI workflow (typecheck + lint + tests on push/PR), `.env.example`, `tag-service/README.md` (endpoints, model loading, HF cache mount)
 
 ## Technical - Stability & Maintainability
 
@@ -37,7 +42,7 @@ Items are prioritized roughly: Stability > Performance > UX > Prompting.
 - [x] Make temp dir cleanup resilient to SIGKILL: persist session meta to a small JSON index so restart can resume cleanup
 
 ### API robustness
-- [x] Add Zod validation for caption route configs (krea-2, for-anima). Return structured errors (detect still uses manual checks)
+- [x] Add Zod validation for caption route configs (krea-2, for-anima, detect). Return structured errors
 - [x] Add request ID and structured logging for SSE streams and API calls
 - [x] Implement retry with exponential backoff for 5xx/429 from llama.cpp. Currently only one retry for detection
 - [x] Use `AbortSignal.timeout` where possible instead of manual timeout controller
@@ -45,7 +50,7 @@ Items are prioritized roughly: Stability > Performance > UX > Prompting.
 - [x] Add rate limiting per IP for model discovery and caption endpoints
 
 ### Performance
-- [x] Parallelise WD Tagger calls in For Anima mode. Currently sequential `for i` loop
+- [x] WD Tagger batching endpoint (`/api/tag/batch` proxy + `tag-service /tag-batch`) for programmatic use. The UI intentionally tags one image per call so it can show per-image progress
 - [x] Stream ZIP download instead of buffering entire archive in memory
 - [x] Add per-image timeout per phase in Krea 2 to avoid 15 min worst case
 - [ ] Add concurrency tuning UI: allow user to set parallel requests, cap at server parallel
@@ -56,7 +61,7 @@ Items are prioritized roughly: Stability > Performance > UX > Prompting.
 
 ## Technical - Testing
 
-- [ ] Unit tests for `session-registry` and `createSseStream`
+- [x] Unit tests for `session-registry` (`caption-session.test.ts`) and `createSseStream` (`sse-factory.test.ts`, `sse-keepalive.test.ts`, `sse-stream.test.ts`)
 - [x] Integration tests for `for-anima` route with mocked llama.cpp (plus krea-2 and detect)
 - [ ] Add property tests for `deduplicateFileName` edge cases
 - [ ] Add e2e Playwright tests for error states: server down, model missing, abort mid-batch

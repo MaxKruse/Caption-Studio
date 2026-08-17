@@ -8,7 +8,7 @@ Batch captioning tool for llama.cpp vision models. Web UI (Next.js/React) plus a
 - Auto-discover loaded vision models
 - Upload images in bulk (drag-and-drop or file picker)
 - Generate detailed captions with streaming token feedback
-- Two prompt modes: **Krea 2** (three-phase captioning with character description), and **For Anima** (booru tag enhancement)
+- Two prompt modes: **Krea 2** (three-phase captioning with character description), and **For Anima** (booru tag enhancement, with built-in WD Tagger tagging)
 - Optional trigger word injection for character/subject naming
 - llama.cpp **KV cache reuse**: workers are pinned to server slots so Krea 2's three phases (and image batches) reuse cached image encodings; the UI shows the prompt-token reuse percentage per batch
 - Transient server errors (5xx/429) are retried automatically with exponential backoff
@@ -127,7 +127,7 @@ Click **Next** when the server is available.
 | Mode | Best For |
 |------|----------|
 | **Krea 2** | Dataset captioning with character-aware de-duplication - three-phase pipeline removes repetitive character traits and distills to a concise prompt |
-| **For Anima** | Dataset captioning with existing booru tags - enriches taggui output with natural language |
+| **For Anima** | Dataset captioning with booru tags - tags images with the built-in WD Tagger (or bring your own tag files) and enriches them with natural language |
 
 ### Step 3: Upload Images
 
@@ -167,10 +167,9 @@ The system prompt enforces strict NSFW-enabling policies, requiring explicit des
 
 ### Workflow
 
-1. **Generate booru tags with taggui:** Use the [taggui](https://github.com/jhc13/taggui) app with the `SmilingWolf/wd-convnext-tagger-v3` model to create initial danbooru-style tags for your images.
-2. **Upload to Caption Studio:** In the For Anima mode, upload both your images and their corresponding caption files (`.txt` files containing the booru tags).
-3. **LLM enhancement:** The vision model analyzes each image alongside its booru tags and generates a natural language addition that describes spatial relationships, mood, atmosphere, and details that tags alone cannot express.
-4. **Final caption:** The output caption combines the original booru tags with the LLM-generated addition.
+1. **Tag the images:** In For Anima mode, upload your images and start the built-in tagging step. The app calls the [tag-service](tag-service/README.md) (WD Tagger, `SmilingWolf/wd-convnext-tagger-v3`) image by image so you can watch per-image progress, then review/adjust the generated tags. If you already have tags (e.g. from [taggui](https://github.com/jhc13/taggui)), you can upload your images together with matching `.txt` caption files instead and skip the tagging step.
+2. **LLM enhancement:** The vision model analyzes each image alongside its booru tags and generates a natural language addition that describes spatial relationships, mood, atmosphere, and details that tags alone cannot express.
+3. **Final caption:** The output caption combines the original booru tags with the LLM-generated addition.
 
 ### Example
 
@@ -328,10 +327,13 @@ Krea 2 mode supports these placeholders that are replaced per-image:
 
 ## Environment Variables
 
+All variables are optional (defaults shown). See `.env.example`.
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DEFAULT_SERVER_URL` | `http://localhost:8080` | Pre-filled server URL in the UI |
-| `DOCKER_HOST_INTERNAL` | `host.docker.internal` | Host override for server-side calls from Docker |
+| `DOCKER_HOST_INTERNAL` | *(unset)* | Host override for server-side calls from Docker. The compose file sets it to `host.docker.internal` so browser-supplied `localhost` URLs reach your host's llama.cpp server |
+| `TAG_SERVICE_URL` | `http://localhost:8801` | Base URL of the [WD Tagger microservice](tag-service/README.md) (For Anima built-in tagging) |
 
 ## Tech Stack
 
@@ -341,8 +343,9 @@ Krea 2 mode supports these placeholders that are replaced per-image:
 | UI | React 19.2.4 |
 | Styling | Tailwind CSS v4 |
 | Package Manager | Bun |
-| Runtime | Bun (dev), Node 22 (production Docker) |
+| Runtime | Bun 1.3 (dev and Docker image); Next.js standalone server (node) inside the container |
 | Image Processing | sharp |
+| Tagging | tag-service: Flask + ONNX Runtime (WD Tagger) |
 
 ## Development
 
@@ -351,8 +354,14 @@ bun install           # install dependencies
 bun run dev           # start dev server
 bun run build         # production build
 bun run lint          # lint code
-bunx tsc --noEmit     # type check
+bun run typecheck     # type check (tsc --noEmit)
+bun test              # unit + route integration tests (no llama.cpp needed)
+bun test --watch      # tests in watch mode
+bun run test:e2e      # Playwright e2e (needs the app and a llama.cpp server)
+bun run docker:up     # docker compose up -d --build
 ```
+
+The `bun test` suite stubs the llama.cpp server, so it runs anywhere. CI (`.github/workflows/ci.yml`) runs typecheck, lint, and the test suite on every push to `main` and on pull requests. Copy `.env.example` to `.env` only if you need non-default values.
 
 ## Architecture Overview
 
