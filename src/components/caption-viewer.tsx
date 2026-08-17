@@ -8,18 +8,7 @@
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-
-interface CaptionResult {
-  name: string;
-  imageDataUrl: string;
-  status: "queued" | "processing" | "completed" | "failed";
-  caption?: string;
-  partialCaption?: string;
-  reasoningContent?: string;
-  partialReasoning?: string;
-  error?: string;
-  prompt?: string;
-}
+import { CaptionResult } from "@/lib/caption-result";
 
 interface CaptionViewerProps {
   results: CaptionResult[];

@@ -17,9 +17,11 @@ import { applyTokenDelta } from "@/lib/token-accumulate";
 import { consumeSseStream } from "@/lib/sse-client";
 import { triggerDownload } from "@/lib/download";
 import { fileToBase64 } from "@/lib/file-utils";
+import { CaptionResult, stopCaptionSession } from "@/lib/caption-result";
 import { ImageUploader } from "@/components/image-uploader";
 import { ModelSelector } from "@/components/model-selector";
 import { CaptionViewer } from "@/components/caption-viewer";
+import { KvCacheStats } from "@/components/kv-cache-stats";
 import { TagStats } from "@/components/tag-stats";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -36,26 +38,6 @@ interface TagResult {
   tagsWithProbs: { tag: string; probability: number }[];
   status: "pending" | "tagging" | "done" | "error";
   error?: string;
-}
-
-interface CaptionResult {
-  name: string;
-  imageDataUrl: string;
-  status: "queued" | "processing" | "completed" | "failed";
-  caption?: string;
-  partialCaption?: string;
-  reasoningContent?: string;
-  partialReasoning?: string;
-  error?: string;
-  /** Prompt tokens reused from the llama.cpp KV cache. */
-  cachedTokens?: number;
-  /** Total prompt tokens processed for this image. */
-  promptTokens?: number;
-}
-
-/** Format a token count compactly (1234 -> "1.2k"). */
-function formatTokens(n: number): string {
-  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -90,7 +72,7 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
         abortControllerRef.current.abort();
       }
       if (sessionIdRef.current) {
-        fetch(`/api/caption/for-anima?sessionId=${sessionIdRef.current}`, { method: "DELETE" }).catch(() => {});
+        stopCaptionSession("/api/caption/for-anima", sessionIdRef.current);
       }
     };
   }, []);
@@ -605,18 +587,7 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
           )}
 
           {/* KV cache reuse stats */}
-          {(() => {
-            const cachedTotal = llmResults.reduce((s, r) => s + (r.cachedTokens ?? 0), 0);
-            const promptTotal = llmResults.reduce((s, r) => s + (r.promptTokens ?? 0), 0);
-            if (promptTotal === 0) return null;
-            const pct = Math.round((cachedTotal / promptTotal) * 100);
-            return (
-              <p className="text-center text-xs text-slate-500">
-                KV cache: {formatTokens(cachedTotal)}/{formatTokens(promptTotal)} prompt
-                tokens reused ({pct}%)
-              </p>
-            );
-          })()}
+          <KvCacheStats results={llmResults} />
 
           <CaptionViewer results={llmResults} />
 
@@ -643,7 +614,7 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
                   abortControllerRef.current.abort();
                 }
                 if (sessionIdRef.current) {
-                  fetch(`/api/caption/for-anima?sessionId=${sessionIdRef.current}`, { method: "DELETE" }).catch(() => {});
+                  stopCaptionSession("/api/caption/for-anima", sessionIdRef.current);
                   sessionIdRef.current = null;
                 }
               }}
