@@ -3,6 +3,8 @@
  * Provides common file reading, fetch with timeout, and SSE streaming logic.
  */
 
+import { buildChatRequest } from "./llama-request";
+
 // ---------------------------------------------------------------------------
 // File utilities
 // ---------------------------------------------------------------------------
@@ -23,6 +25,61 @@ export async function readFileBuffer(file: File): Promise<Buffer> {
  */
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ---------------------------------------------------------------------------
+// Chat completion
+// ---------------------------------------------------------------------------
+
+export interface ChatCompleteParams {
+  model: string;
+  messages: Array<Record<string, unknown>>;
+  /** llama.cpp slot id to pin this request to (worker index). */
+  slotId: number;
+  /** Per-attempt timeout in ms. */
+  timeoutMs: number;
+  /** Non-streaming request (detection). Defaults to streaming. */
+  stream?: boolean;
+  /** External abort signal (session/user stop). */
+  signal?: AbortSignal;
+  /** Max retries on 5xx/429 (default 3). */
+  maxRetries?: number;
+}
+
+/**
+ * One chat completion call against the llama.cpp server.
+ *
+ * Builds the slot-pinned request (buildChatRequest), applies the
+ * per-attempt timeout and transient-error retry (fetchWithRetry), and
+ * throws `API <status>: <body>` on non-2xx responses.
+ *
+ * @param normalizedUrl Server URL without trailing slash or /v1 suffix.
+ */
+export async function chatComplete(
+  normalizedUrl: string,
+  params: ChatCompleteParams
+): Promise<Response> {
+  const { model, messages, slotId, timeoutMs, stream, signal, maxRetries } = params;
+
+  const response = await fetchWithRetry(
+    `${normalizedUrl}/v1/chat/completions`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildChatRequest({ model, messages, slotId, stream })),
+      cache: "no-store",
+    },
+    timeoutMs,
+    signal,
+    maxRetries
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`API ${response.status}: ${errorText}`);
+  }
+
+  return response;
 }
 
 // ---------------------------------------------------------------------------

@@ -3,7 +3,119 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { readFileBuffer, sleep } from "@/lib/caption-helpers";
+import { readFileBuffer, sleep, chatComplete } from "@/lib/caption-helpers";
+
+// ---------------------------------------------------------------------------
+// chatComplete tests
+// ---------------------------------------------------------------------------
+
+describe("chatComplete", () => {
+  const realFetch = globalThis.fetch;
+
+  it("sends the slot-pinned chat request and returns the response", async () => {
+    let seenBody: Record<string, unknown> | null = null;
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      seenBody = JSON.parse(init?.body as string) as Record<string, unknown>;
+      return new Response("ok", { status: 200 });
+    }) as unknown as typeof fetch;
+
+    try {
+      const response = await chatComplete("http://localhost:8080", {
+        model: "test-model",
+        messages: [{ role: "user", content: "hi" }],
+        slotId: 2,
+        timeoutMs: 1000,
+      });
+      expect(response.status).toBe(200);
+      expect(seenBody!.id_slot).toBe(2);
+      expect(seenBody!.cache_prompt).toBe(true);
+      expect(seenBody!.stream).toBe(true);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it("sends a non-streaming request when stream is false", async () => {
+    let seenBody: Record<string, unknown> | null = null;
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      seenBody = JSON.parse(init?.body as string) as Record<string, unknown>;
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+
+    try {
+      await chatComplete("http://localhost:8080", {
+        model: "test-model",
+        messages: [],
+        slotId: 0,
+        timeoutMs: 1000,
+        stream: false,
+      });
+      expect(seenBody!.stream).toBe(false);
+      expect(seenBody!.stream_options).toBeUndefined();
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it("throws API <status>: <body> for non-retryable (4xx) errors", async () => {
+    globalThis.fetch = (async () =>
+      new Response("bad request body", { status: 400 })) as unknown as typeof fetch;
+
+    try {
+      await expect(
+        chatComplete("http://localhost:8080", {
+          model: "test-model",
+          messages: [],
+          slotId: 0,
+          timeoutMs: 1000,
+        })
+      ).rejects.toThrow("API 400: bad request body");
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it("throws after exhausting retries on repeated 5xx", async () => {
+    globalThis.fetch = (async () =>
+      new Response("server exploded", { status: 500 })) as unknown as typeof fetch;
+
+    try {
+      await expect(
+        chatComplete("http://localhost:8080", {
+          model: "test-model",
+          messages: [],
+          slotId: 0,
+          timeoutMs: 1000,
+          maxRetries: 0,
+        })
+      ).rejects.toThrow(/HTTP 500/);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it("retries transient 5xx responses by default", async () => {
+    let attempts = 0;
+    globalThis.fetch = (async () => {
+      attempts++;
+      if (attempts < 3) return new Response("busy", { status: 503 });
+      return new Response("ok", { status: 200 });
+    }) as unknown as typeof fetch;
+
+    try {
+      const response = await chatComplete("http://localhost:8080", {
+        model: "test-model",
+        messages: [],
+        slotId: 0,
+        timeoutMs: 1000,
+      });
+      expect(response.status).toBe(200);
+      expect(attempts).toBe(3);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+});
 
 // ---------------------------------------------------------------------------
 // sleep tests
