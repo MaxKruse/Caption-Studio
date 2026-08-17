@@ -5,7 +5,7 @@ Items are prioritized roughly: Stability > Performance > UX > Prompting.
 
 ## Completed
 
-- [x] **KV cache slot pinning** (`perf/kv-cache-slot-reuse`): `buildChatRequest` (`src/lib/llama-request.ts`) adds `id_slot` + `cache_prompt` + `n_cache_reuse: 256` to every chat request. All three routes (krea-2, for-anima, detect) pin each worker to one slot (worker index < server `--parallel`), so Krea 2's three phases and same-worker image batches reuse cached image encodings and system-prompt KV
+- [x] **KV cache slot pinning** (`perf/kv-cache-slot-reuse`): `buildChatRequest` (`src/lib/llama-request.ts`) adds `id_slot` + `cache_prompt` + `n_cache_reuse: 256` to every chat request. Both caption routes (krea-2, for-anima) pin each worker to one slot (worker index < server `--parallel`), so Krea 2's three phases and same-worker image batches reuse cached image encodings and system-prompt KV
 - [x] **KV cache stats in the UI**: `streamResponse` reports `cachedTokens`/`promptTokens` from the final usage chunk; completion events carry them; both caption modes show the batch-wide reuse percentage
 - [x] **Delta-only SSE token events**: `token` events no longer re-send the full caption (O(n^2) wire cost); clients accumulate via the shared `applyTokenDelta` helper
 - [x] **Wired `fetchWithRetry` into both caption routes** (exponential backoff on 5xx/429; previously implemented but unused)
@@ -42,15 +42,15 @@ Items are prioritized roughly: Stability > Performance > UX > Prompting.
 - [x] Make temp dir cleanup resilient to SIGKILL: persist session meta to a small JSON index so restart can resume cleanup
 
 ### API robustness
-- [x] Add Zod validation for caption route configs (krea-2, for-anima, detect). Return structured errors
+- [x] Add Zod validation for caption route configs (krea-2, for-anima). Return structured errors
 - [x] Add request ID and structured logging for SSE streams and API calls
-- [x] Implement retry with exponential backoff for 5xx/429 from llama.cpp. Currently only one retry for detection
+- [x] Implement retry with exponential backoff for 5xx/429 from llama.cpp
 - [x] Use `AbortSignal.timeout` where possible instead of manual timeout controller
 - [x] Add health endpoint `GET /api/health` with temp dir writable check and cleanup status
 - [x] Add rate limiting per IP for model discovery and caption endpoints
 
 ### Performance
-- [x] WD Tagger batching endpoint (`/api/tag/batch` proxy + `tag-service /tag-batch`) for programmatic use. The UI intentionally tags one image per call so it can show per-image progress
+- [x] WD Tagger batching via `tag-service /tag-batch` for programmatic use (call the service directly - the Next app proxies only `/api/tag`; an earlier `/api/tag/batch` Next proxy was unreachable and has been removed). The UI intentionally tags one image per call so it can show per-image progress
 - [x] Stream ZIP download instead of buffering entire archive in memory
 - [x] Add per-image timeout per phase in Krea 2 to avoid 15 min worst case
 - [ ] Add concurrency tuning UI: allow user to set parallel requests, cap at server parallel
@@ -106,7 +106,6 @@ Items are prioritized roughly: Stability > Performance > UX > Prompting.
 ### General
 - [ ] Add prompt library UI with search and tags
 - [ ] Log prompt version with session metadata for reproducibility
-- [ ] Consider structured output for detection to reduce parsing fragility
 
 ## What to Test
 

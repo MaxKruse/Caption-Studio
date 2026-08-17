@@ -38,8 +38,6 @@ export interface ChatCompleteParams {
   slotId: number;
   /** Per-attempt timeout in ms. */
   timeoutMs: number;
-  /** Non-streaming request (detection). Defaults to streaming. */
-  stream?: boolean;
   /** External abort signal (session/user stop). */
   signal?: AbortSignal;
   /** Max retries on 5xx/429 (default 3). */
@@ -59,14 +57,14 @@ export async function chatComplete(
   normalizedUrl: string,
   params: ChatCompleteParams
 ): Promise<Response> {
-  const { model, messages, slotId, timeoutMs, stream, signal, maxRetries } = params;
+  const { model, messages, slotId, timeoutMs, signal, maxRetries } = params;
 
   const response = await fetchWithRetry(
     `${normalizedUrl}/v1/chat/completions`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildChatRequest({ model, messages, slotId, stream })),
+      body: JSON.stringify(buildChatRequest({ model, messages, slotId })),
       cache: "no-store",
     },
     timeoutMs,

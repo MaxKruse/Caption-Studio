@@ -4,8 +4,9 @@ WD Tagger microservice for danbooru-style image tagging. Runs the
 [SmilingWolf/wd-convnext-tagger-v3](https://huggingface.co/SmilingWolf/wd-convnext-tagger-v3)
 ONNX model under ONNX Runtime (Flask HTTP API).
 
-Caption-Studio's `/api/tag` and `/api/tag/batch` endpoints proxy to this
-service (see `TAG_SERVICE_URL` in `.env.example`).
+Caption-Studio's `/api/tag` endpoint proxies to this service (see
+`TAG_SERVICE_URL` in `.env.example`). There is no Next proxy for
+`/tag-batch` - call this service directly for batch tagging.
 
 ## Endpoints
 

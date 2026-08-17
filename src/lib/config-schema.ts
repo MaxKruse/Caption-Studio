@@ -26,27 +26,8 @@ export const krea2ConfigSchema = baseConfig.extend({
   characterDescription: z.string().min(1, "characterDescription is required for Krea 2 mode"),
 });
 
-/** For Anima mode config */
-export const forAnimaConfigSchema = baseConfig.extend({
-  // For Anima may have additional optional fields
-  // e.g., useExistingCaptions boolean
-  useExistingCaptions: z.boolean().optional().default(false),
-});
+/** For Anima mode config (currently identical to the base fields) */
+export const forAnimaConfigSchema = baseConfig;
 
 export type Krea2Config = z.infer<typeof krea2ConfigSchema>;
 export type ForAnimaConfig = z.infer<typeof forAnimaConfigSchema>;
-
-// ---------------------------------------------------------------------------
-// Detection config
-// ---------------------------------------------------------------------------
-
-export const detectConfigSchema = z.object({
-  serverUrl: z.string().url(),
-  model: z.string().min(1),
-  /** Prompt style: "sfw" or "nsfw" (default nsfw). */
-  contentMode: z.enum(["sfw", "nsfw"]).default("nsfw"),
-  /** Max concurrent detection requests (defaults to the server's --parallel). */
-  parallelRequests: z.number().int().min(1).max(8).optional(),
-});
-
-export type DetectConfig = z.infer<typeof detectConfigSchema>;
