@@ -503,6 +503,7 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
                 {tagResults.map((tr, i) => (
                   <div key={i} className="flex gap-3 items-start border-b border-slate-700/50 pb-3">
                     <div className="w-16 h-16 flex-shrink-0">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={state.images[i]}
                         alt={state.imageNames[i]}
