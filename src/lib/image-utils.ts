@@ -96,18 +96,6 @@ export async function prepareForApi(
 // ---------------------------------------------------------------------------
 // Crop utilities
 // ---------------------------------------------------------------------------
-
-/**
- * Crop rectangle in 1000-normalized coordinates (same scale as OpenAI bbox_2d).
- */
-export interface CropRect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-// ---------------------------------------------------------------------------
 // Detection utilities
 // ---------------------------------------------------------------------------
 

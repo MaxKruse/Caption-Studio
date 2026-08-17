@@ -13,11 +13,3 @@ export interface ModelInfo {
   };
   input_modalities?: string[];
 }
-
-/** Crop rectangle in 1000-normalized coordinates. */
-export interface CropRect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}

@@ -75,7 +75,7 @@ src/
     anima-prompt.ts         — For Anima system + user prompts, assembleFinalCaption
     prompt-utils.ts         — Prompt text helpers
     string-utils.ts         — getExtension(), baseAndExt() (filename base/ext splitting)
-    types.ts                — ModelInfo, CropRect
+    types.ts                — ModelInfo
 ```
 
 Top-level extras: `.env.example` (the three optional env vars), `tag-service/` (WD Tagger
