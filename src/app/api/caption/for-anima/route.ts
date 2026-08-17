@@ -31,6 +31,7 @@ import { buildChatRequest } from "@/lib/llama-request";
 import { forAnimaConfigSchema, type ForAnimaConfig } from "@/lib/config-schema";
 import { registerSession, unregisterSession, abortSession, getSession } from "@/lib/session-registry";
 import { createSseStream } from "@/lib/sse";
+import { runWorkerPool } from "@/lib/worker-pool";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -291,19 +292,14 @@ export async function POST(request: NextRequest) {
   (async () => {
     try {
       const serverParallel = await serverParallelPromise;
-      const maxConcurrency = Math.min(
-        serverParallel ?? MAX_CONCURRENCY,
-        MAX_CONCURRENCY
-      );
-      const concurrency = Math.min(maxConcurrency, tasks.length);
-      const queue = [...tasks];
-
-      async function processNext(slotId: number): Promise<void> {
-        while (queue.length > 0 && !sessionAbort.signal.aborted) {
-          const task = queue.shift()!;
+      // Each worker is pinned to its own llama.cpp slot (worker index is
+      // always < server --parallel due to the getModelParallel clamp).
+      await runWorkerPool(
+        tasks,
+        Math.min(serverParallel ?? MAX_CONCURRENCY, MAX_CONCURRENCY),
+        (task, slotId) => {
           touchSession(sessionId);
-
-          await processImage(
+          return processImage(
             task,
             sessionId,
             normalizedUrl,
@@ -314,16 +310,9 @@ export async function POST(request: NextRequest) {
             sendEvent,
             sessionAbort.signal
           );
-        }
-      }
-
-      // Each worker is pinned to its own llama.cpp slot (worker index is
-      // always < server --parallel due to the getModelParallel clamp).
-      const workers = Array.from(
-        { length: concurrency },
-        (_, workerIndex) => processNext(workerIndex)
+        },
+        sessionAbort.signal
       );
-      await Promise.all(workers);
 
       if (!sessionAbort.signal.aborted) {
         sendEvent("done", { allComplete: true });

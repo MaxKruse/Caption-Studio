@@ -32,6 +32,7 @@ import { readFileBuffer, fetchWithRetry, streamResponse } from "@/lib/caption-he
 import { buildChatRequest } from "@/lib/llama-request";
 import { registerSession, unregisterSession, abortSession, getSession } from "@/lib/session-registry";
 import { createSseStream } from "@/lib/sse";
+import { runWorkerPool } from "@/lib/worker-pool";
 import { krea2ConfigSchema, type Krea2Config } from "@/lib/config-schema";
 
 // ---------------------------------------------------------------------------
@@ -419,19 +420,15 @@ export async function POST(request: NextRequest) {
   (async () => {
     try {
       const serverParallel = await serverParallelPromise;
-      const maxConcurrency = Math.min(
-        serverParallel ?? MAX_CONCURRENCY,
-        MAX_CONCURRENCY
-      );
-      const concurrency = Math.min(maxConcurrency, tasks.length);
-      const queue = [...tasks];
-
-      async function processNext(slotId: number): Promise<void> {
-        while (queue.length > 0 && !sessionAbort.signal.aborted) {
-          const task = queue.shift()!;
+      // Each worker is pinned to its own llama.cpp slot so its images and
+      // phases share the slot's KV cache (worker index < maxConcurrency
+      // which is clamped to the server's --parallel).
+      await runWorkerPool(
+        tasks,
+        Math.min(serverParallel ?? MAX_CONCURRENCY, MAX_CONCURRENCY),
+        (task, slotId) => {
           touchSession(sessionId);
-
-          await processImageAllPhases(
+          return processImageAllPhases(
             task,
             sessionId,
             normalizedUrl,
@@ -446,17 +443,9 @@ export async function POST(request: NextRequest) {
             sendEvent,
             sessionAbort.signal
           );
-        }
-      }
-
-      // Each worker is pinned to its own llama.cpp slot so its images and
-      // phases share the slot's KV cache (worker index < maxConcurrency
-      // which is clamped to the server's --parallel).
-      const workers = Array.from(
-        { length: concurrency },
-        (_, workerIndex) => processNext(workerIndex)
+        },
+        sessionAbort.signal
       );
-      await Promise.all(workers);
 
       if (!sessionAbort.signal.aborted) {
         sendEvent("done", { allComplete: true });
