@@ -50,36 +50,6 @@ export async function convertToJpeg(imageBuffer: Buffer): Promise<{
 export const API_MAX_DIMENSION = 1536;
 
 /**
- * Resizes an image buffer so its biggest dimension does not exceed `maxDimension`.
- * Returns the original buffer if already within limits.
- * Uses JPEG output (quality 90) to ensure OpenAI compatibility.
- */
-export async function resizeIfNeeded(
-  imageBuffer: Buffer,
-  maxDimension: number
-): Promise<{ buffer: Buffer; mimeType: string }> {
-  const metadata = await sharp(imageBuffer).metadata();
-  const width = metadata.width ?? 0;
-  const height = metadata.height ?? 0;
-  const biggest = Math.max(width, height);
-
-  if (biggest <= maxDimension) {
-    // Already small enough — still convert to JPEG for safe OpenAI delivery
-    return convertToJpeg(imageBuffer);
-  }
-
-  const resized = await sharp(imageBuffer)
-    .resize(maxDimension, maxDimension, {
-      fit: "inside",
-      withoutEnlargement: true,
-    })
-    .jpeg({ quality: 90 })
-    .toBuffer();
-
-  return { buffer: resized, mimeType: "image/jpeg" };
-}
-
-/**
  * Ensures the image data is in an OpenAI-compatible format
  * AND resizes it if the biggest dimension exceeds the API limit.
  * If the file is already PNG or JPEG and within size limits, returns as-is.

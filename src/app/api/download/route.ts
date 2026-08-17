@@ -1,7 +1,6 @@
 /**
  * ZIP download endpoint for captioned images.
- * GET  /api/download?sessionId=<id> - zips temp dir and streams it
- * POST /api/download                - legacy base64 mode (kept for compat)
+ * GET /api/download?sessionId=<id> - zips the session temp dir and streams it
  */
 
 import fs from "fs";
@@ -12,25 +11,8 @@ import { getSession, touchSession } from "@/lib/temp-files";
 import { baseAndExt } from "@/lib/string-utils";
 
 // ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-interface DownloadItem {
-  name: string;
-  imageDataUrl: string;
-  caption?: string;
-}
-
-// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Extract image buffer from a data URL. */
-function parseDataUrl(dataUrl: string): Buffer {
-  const match = dataUrl.match(/^data:image\/\w+;base64,(.+)$/);
-  if (!match) throw new Error("Invalid data URL");
-  return Buffer.from(match[1], "base64");
-}
 
 /**
  * Create a streaming ZIP archive from a temp directory.
@@ -132,60 +114,4 @@ export async function GET(request: Request) {
       { status: 500 }
     );
   }
-}
-
-// ---------------------------------------------------------------------------
-// POST - Legacy mode: create ZIP from base64 data URLs (kept for compat)
-// ---------------------------------------------------------------------------
-
-export async function POST(request: Request) {
-  const body = await request.json();
-  const { items } = body as { items: DownloadItem[] };
-
-  if (!items || !Array.isArray(items) || items.length === 0) {
-    return Response.json(
-      { error: "items array is required and must not be empty" },
-      { status: 400 }
-    );
-  }
-
-  const chunks: Uint8Array[] = [];
-  const archive = new ZipArchive({ zlib: { level: 6 } });
-
-  archive.on("data", (chunk: Uint8Array) => {
-    chunks.push(chunk);
-  });
-
-  // Resume to start flowing data
-  archive.resume();
-
-  for (const item of items) {
-    const uuid = crypto.randomUUID();
-    const ext = baseAndExt(item.name).ext || ".jpg";
-    const imageBuffer = parseDataUrl(item.imageDataUrl);
-
-    archive.append(imageBuffer, { name: `img/${uuid}${ext}` });
-
-    if (item.caption && item.caption.trim()) {
-      archive.append(item.caption.trim(), { name: `img/${uuid}.txt` });
-    }
-  }
-
-  await archive.finalize();
-
-  await new Promise<void>((resolve, reject) => {
-    archive.on("end", () => resolve());
-    archive.on("error", (err: Error) => reject(err));
-    setTimeout(resolve, 2000);
-  });
-
-  const zipBuffer = Buffer.concat(chunks.map((c) => Buffer.from(c)));
-  const uuid = crypto.randomUUID();
-
-  return new Response(zipBuffer as unknown as BodyInit, {
-    headers: {
-      "Content-Type": "application/zip",
-      "Content-Disposition": `attachment; filename="${uuid}.zip"`,
-    },
-  });
 }

@@ -1,7 +1,6 @@
 /**
- * Tests for the activeSessions registry pattern.
- * This pattern is duplicated across all 4 caption route files.
- * Tests the shared session tracking for explicit abort.
+ * Tests for the activeSessions registry: shared session tracking
+ * for explicit abort across the caption and detection routes.
  */
 
 import { describe, it, expect } from "bun:test";
@@ -11,7 +10,6 @@ import {
   unregisterSession,
   abortSession,
   getSession,
-  cleanupAbortedSessions,
   clearAll,
 } from "@/lib/session-registry";
 
@@ -105,54 +103,7 @@ describe("activeSessions registry", () => {
     });
   });
 
-  describe("cleanupAbortedSessions", () => {
-    it("removes sessions that have been aborted externally", () => {
-      clearAll();
-      const ac1 = new AbortController();
-      const ac2 = new AbortController();
-      registerSession("session-1", ac1);
-      registerSession("session-2", ac2);
-
-      // Abort session-1 externally (simulating request.signal abort)
-      ac1.abort();
-
-      cleanupAbortedSessions();
-      expect(activeSessions.size).toBe(1);
-      expect(getSession("session-1")).toBeUndefined();
-      expect(getSession("session-2")).toBe(ac2);
-    });
-
-    it("is a no-op when no sessions are aborted", () => {
-      clearAll();
-      const ac = new AbortController();
-      registerSession("session-1", ac);
-      cleanupAbortedSessions();
-      expect(activeSessions.size).toBe(1);
-    });
-
-    it("handles empty registry", () => {
-      clearAll();
-      cleanupAbortedSessions();
-      expect(activeSessions.size).toBe(0);
-    });
-  });
-
   describe("integration: full lifecycle", () => {
-    it("register -> abort -> cleanup flow", () => {
-      clearAll();
-      const ac = new AbortController();
-      registerSession("test-session", ac);
-      expect(activeSessions.size).toBe(1);
-
-      // Simulate request disconnect
-      ac.abort();
-      expect(getSession("test-session")).toBe(ac); // still registered
-
-      // Cleanup interval runs
-      cleanupAbortedSessions();
-      expect(activeSessions.size).toBe(0);
-    });
-
     it("register -> explicit abort via abortSession", () => {
       clearAll();
       const ac = new AbortController();
@@ -164,29 +115,5 @@ describe("activeSessions registry", () => {
       expect(activeSessions.size).toBe(0);
     });
 
-    it("multiple sessions with mixed abort patterns", () => {
-      clearAll();
-      const ac1 = new AbortController();
-      const ac2 = new AbortController();
-      const ac3 = new AbortController();
-
-      registerSession("a", ac1);
-      registerSession("b", ac2);
-      registerSession("c", ac3);
-      expect(activeSessions.size).toBe(3);
-
-      // Explicit abort of "a"
-      abortSession("a");
-      expect(activeSessions.size).toBe(2);
-
-      // External abort of "b" (request disconnect)
-      ac2.abort();
-      expect(activeSessions.size).toBe(2); // still registered
-
-      // Cleanup removes "b"
-      cleanupAbortedSessions();
-      expect(activeSessions.size).toBe(1);
-      expect(getSession("c")).toBe(ac3);
-    });
   });
 });
