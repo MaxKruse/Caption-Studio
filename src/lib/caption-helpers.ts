@@ -3,6 +3,8 @@
  * Provides common file reading, fetch with timeout, and SSE streaming logic.
  */
 
+import { buildChatRequest } from "./llama-request";
+
 // ---------------------------------------------------------------------------
 // File utilities
 // ---------------------------------------------------------------------------
@@ -15,12 +17,79 @@ export async function readFileBuffer(file: File): Promise<Buffer> {
 }
 
 // ---------------------------------------------------------------------------
+// Timing utilities
+// ---------------------------------------------------------------------------
+
+/**
+ * Promise-based delay.
+ */
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ---------------------------------------------------------------------------
+// Chat completion
+// ---------------------------------------------------------------------------
+
+export interface ChatCompleteParams {
+  model: string;
+  messages: Array<Record<string, unknown>>;
+  /** llama.cpp slot id to pin this request to (worker index). */
+  slotId: number;
+  /** Per-attempt timeout in ms. */
+  timeoutMs: number;
+  /** Non-streaming request (detection). Defaults to streaming. */
+  stream?: boolean;
+  /** External abort signal (session/user stop). */
+  signal?: AbortSignal;
+  /** Max retries on 5xx/429 (default 3). */
+  maxRetries?: number;
+}
+
+/**
+ * One chat completion call against the llama.cpp server.
+ *
+ * Builds the slot-pinned request (buildChatRequest), applies the
+ * per-attempt timeout and transient-error retry (fetchWithRetry), and
+ * throws `API <status>: <body>` on non-2xx responses.
+ *
+ * @param normalizedUrl Server URL without trailing slash or /v1 suffix.
+ */
+export async function chatComplete(
+  normalizedUrl: string,
+  params: ChatCompleteParams
+): Promise<Response> {
+  const { model, messages, slotId, timeoutMs, stream, signal, maxRetries } = params;
+
+  const response = await fetchWithRetry(
+    `${normalizedUrl}/v1/chat/completions`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildChatRequest({ model, messages, slotId, stream })),
+      cache: "no-store",
+    },
+    timeoutMs,
+    signal,
+    maxRetries
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`API ${response.status}: ${errorText}`);
+  }
+
+  return response;
+}
+
+// ---------------------------------------------------------------------------
 // Fetch utilities
 // ---------------------------------------------------------------------------
 
 /**
  * Fetch with timeout + external abort signal support.
- * Uses AbortSignal.timeout where available.
+ * Aborts when either the timeout elapses or the external signal fires
+ * (already-aborted signals abort immediately).
  */
 export async function fetchWithTimeout(
   url: string,
@@ -28,24 +97,9 @@ export async function fetchWithTimeout(
   timeoutMs: number,
   externalSignal?: AbortSignal
 ): Promise<Response> {
-  const timeoutSignal = AbortSignal.timeout(timeoutMs);
-  const controller = new AbortController();
-
-  const onAbort = () => controller.abort();
-  timeoutSignal.addEventListener("abort", onAbort, { once: true });
-  externalSignal?.addEventListener("abort", onAbort, { once: true });
-
-  // Immediate abort if already aborted
-  if (timeoutSignal.aborted || externalSignal?.aborted) {
-    controller.abort();
-  }
-
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    timeoutSignal.removeEventListener("abort", onAbort);
-    externalSignal?.removeEventListener("abort", onAbort);
-  }
+  const signals = [AbortSignal.timeout(timeoutMs)];
+  if (externalSignal) signals.push(externalSignal);
+  return fetch(url, { ...options, signal: AbortSignal.any(signals) });
 }
 
 /**
@@ -75,7 +129,7 @@ export async function fetchWithRetry(
         }
         // Wait with exponential backoff
         const delay = baseDelayMs * Math.pow(2, attempt);
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        await sleep(delay);
         continue;
       }
       return response;
@@ -85,7 +139,7 @@ export async function fetchWithRetry(
         throw err;
       }
       const delay = baseDelayMs * Math.pow(2, attempt);
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      await sleep(delay);
     }
   }
 

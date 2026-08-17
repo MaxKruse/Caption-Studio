@@ -8,15 +8,20 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
-import sharp from "sharp";
 import { NextRequest } from "next/server";
 import { POST } from "@/app/api/caption/krea-2/route";
+import {
+  collectSseEvents,
+  readFirstEvent,
+  makeChatSseResponse,
+  makeTinyJpeg,
+  findEvent,
+  type SseEvent,
+} from "@/lib/__tests__/test-helpers";
 
 // ---------------------------------------------------------------------------
 // Test doubles
 // ---------------------------------------------------------------------------
-
-type SseEvent = { type: string; data: Record<string, unknown> };
 
 const originalFetch = globalThis.fetch;
 let chatCalls: Array<Record<string, unknown>> = [];
@@ -24,54 +29,6 @@ let chatCalls: Array<Record<string, unknown>> = [];
 let failNextChatCalls = 0;
 /** Artificial delay for the /v1/models endpoint (ms). */
 let modelDelayMs = 0;
-
-/** Build the SSE body llama.cpp would stream back for one phase. */
-function makeSseResponse(caption: string, cachedTokens: number): Response {
-  const chunks = [
-    `data: {"choices":[{"delta":{"content":"${caption}"}}]}\n\n`,
-    `data: {"choices":[{"delta":{}}],"usage":{"prompt_tokens":100,"completion_tokens":1,"total_tokens":101,"prompt_tokens_details":{"cached_tokens":${cachedTokens}}}}\n\n`,
-    "data: [DONE]\n\n",
-  ];
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
-      controller.close();
-    },
-  });
-  return new Response(stream, { status: 200 });
-}
-
-/** Collect all SSE events from a route response until the stream closes. */
-async function readSseEvents(response: Response): Promise<SseEvent[]> {
-  const events: SseEvent[] = [];
-  const reader = response.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const blocks = buffer.split("\n\n");
-    buffer = blocks.pop() ?? "";
-    for (const block of blocks) {
-      const match = block.match(/^event: (\w+)\s*\ndata: ([\s\S]+)$/);
-      if (match) {
-        events.push({ type: match[1], data: JSON.parse(match[2]) });
-      }
-    }
-  }
-  return events;
-}
-
-async function makeTinyJpeg(): Promise<Buffer> {
-  return sharp({
-    create: { width: 16, height: 16, channels: 3, background: { r: 200, g: 100, b: 50 } },
-  })
-    .jpeg({ quality: 90 })
-    .toBuffer();
-}
 
 async function postSingleImage(jpeg: Buffer): Promise<SseEvent[]> {
   const formData = new FormData();
@@ -93,7 +50,7 @@ async function postSingleImage(jpeg: Buffer): Promise<SseEvent[]> {
     new NextRequest("http://localhost/api/caption/krea-2", { method: "POST", body: formData })
   );
   expect(response.status).toBe(200);
-  return readSseEvents(response as Response);
+  return collectSseEvents(response as Response);
 }
 
 beforeAll(() => {
@@ -122,7 +79,9 @@ beforeAll(() => {
       // Phase 3 (distill) gets a different cached-token count so tests can
       // tell the phases apart.
       const callIndex = chatCalls.length;
-      return makeSseResponse(`caption-${callIndex}`, callIndex * 100);
+      return makeChatSseResponse(`caption-${callIndex}`, {
+        cachedTokens: callIndex * 100,
+      });
     }
 
     return new Response("not found", { status: 404 });
@@ -214,24 +173,13 @@ describe("krea-2 route - KV cache slot pinning", () => {
       expect(response.status).toBe(200);
 
       // Read only the first SSE event and time it
-      const reader = (response.body as ReadableStream<Uint8Array>).getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let firstEvent: SseEvent | null = null;
-      while (!firstEvent) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const blocks = buffer.split("\n\n");
-        buffer = blocks.pop() ?? "";
-        for (const block of blocks) {
-          const match = block.match(/^event: (\w+)\s*\ndata: ([\s\S]+)$/);
-          if (match) firstEvent = { type: match[1], data: JSON.parse(match[2]) };
-        }
-      }
+      const firstEvent = await readFirstEvent(
+        response.body as ReadableStream<Uint8Array>
+      );
       const elapsed = Date.now() - start;
       // Drain the rest of the stream so the session finishes (and its
       // chat calls stop) before the next test resets the stub state.
+      const reader = (response.body as ReadableStream<Uint8Array>).getReader();
       while (true) {
         const { done } = await reader.read();
         if (done) break;
@@ -250,8 +198,7 @@ describe("krea-2 route - KV cache slot pinning", () => {
     try {
       const events = await postSingleImage(await makeTinyJpeg());
 
-      const captioning = events.find((e) => e.type === "image_complete");
-      expect(captioning!.data.status).toBe("completed");
+      expect(findEvent(events, "image_complete")?.status).toBe("completed");
       expect(events.some((e) => e.type === "done")).toBe(true);
       // 2 failed attempts + 3 successful phases
       expect(chatCalls.length).toBe(3);
@@ -264,14 +211,14 @@ describe("krea-2 route - KV cache slot pinning", () => {
     chatCalls = [];
     const events = await postSingleImage(await makeTinyJpeg());
 
-    const captioning = events.find((e) => e.type === "image_complete");
-    const refining = events.find((e) => e.type === "refine_image_complete");
-    const distilling = events.find((e) => e.type === "distill_image_complete");
+    const captioning = findEvent(events, "image_complete");
+    const refining = findEvent(events, "refine_image_complete");
+    const distilling = findEvent(events, "distill_image_complete");
 
-    expect(captioning!.data.cachedTokens).toBe(100);
-    expect(refining!.data.cachedTokens).toBe(200);
-    expect(distilling!.data.cachedTokens).toBe(300);
+    expect(captioning?.cachedTokens).toBe(100);
+    expect(refining?.cachedTokens).toBe(200);
+    expect(distilling?.cachedTokens).toBe(300);
     // The usage stub reports prompt_tokens: 100 per phase
-    expect(captioning!.data.promptTokens).toBe(100);
+    expect(captioning?.promptTokens).toBe(100);
   });
 });

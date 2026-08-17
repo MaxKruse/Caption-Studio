@@ -6,6 +6,7 @@
 
 import fsp from "fs/promises";
 import path from "path";
+import { baseAndExt } from "./string-utils";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -143,9 +144,7 @@ export function deduplicateFileName(
   originalName: string,
   usedBases: Set<string>
 ): string {
-  const lastDot = originalName.lastIndexOf(".");
-  const ext = lastDot === -1 ? "" : originalName.slice(lastDot);
-  const base = lastDot === -1 ? originalName : originalName.slice(0, lastDot);
+  const { base, ext } = baseAndExt(originalName);
 
   if (!usedBases.has(base)) {
     usedBases.add(base);
@@ -374,8 +373,7 @@ export async function writeCaption(
   const meta = sessions.get(sessionId);
   if (!meta) return false;
 
-  const lastDot = imageServerName.lastIndexOf(".");
-  const base = lastDot === -1 ? imageServerName : imageServerName.slice(0, lastDot);
+  const { base } = baseAndExt(imageServerName);
   const captionPath = path.join(meta.dir, `${base}.txt`);
 
   await fsp.writeFile(captionPath, caption);
@@ -395,8 +393,7 @@ export async function writeTags(
   const meta = sessions.get(sessionId);
   if (!meta) return false;
 
-  const lastDot = imageServerName.lastIndexOf(".");
-  const base = lastDot === -1 ? imageServerName : imageServerName.slice(0, lastDot);
+  const { base } = baseAndExt(imageServerName);
   const tagsPath = path.join(meta.dir, `${base}.tags`);
 
   await fsp.writeFile(tagsPath, tags);
@@ -415,8 +412,7 @@ export async function readCaption(
   const meta = sessions.get(sessionId);
   if (!meta) return null;
 
-  const lastDot = imageServerName.lastIndexOf(".");
-  const base = lastDot === -1 ? imageServerName : imageServerName.slice(0, lastDot);
+  const { base } = baseAndExt(imageServerName);
   const captionPath = path.join(meta.dir, `${base}.txt`);
 
   try {

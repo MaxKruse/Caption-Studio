@@ -44,18 +44,25 @@ src/
       tag/route.ts               — WD Tagger proxy (For Anima workflow)
     home-client.tsx        — App shell (mode switching)
     page.tsx / layout.tsx  — Root page + layout
-  components/              — krea2-mode, for-anima-mode, caption-viewer, image-uploader,
-                             model-selector, prompt-editor, server-check, tag-stats, ui/*
+  components/              — krea2-mode, for-anima-mode, caption-viewer, kv-cache-stats,
+                             image-uploader, model-selector, prompt-editor, server-check,
+                             tag-stats, ui/*
   hooks/                   — use-session (in-memory UI state), use-server-check (polling)
   lib/
     llama-request.ts        — buildChatRequest(): id_slot pinning + cache_prompt + n_cache_reuse
     token-accumulate.ts     — applyTokenDelta(): client-side accumulation of delta token events
-    caption-helpers.ts      — readFileBuffer, fetchWithTimeout, fetchWithRetry, streamResponse
-    config-schema.ts        — Zod schemas (krea2ConfigSchema, forAnimaConfigSchema)
+    caption-helpers.ts      — readFileBuffer, fetchWithTimeout, fetchWithRetry, streamResponse,
+                              chatComplete (slot-pinned call + timeout + error mapping), sleep
+    caption-route.ts        — parseCaptionRequest (multipart + Zod + images preamble),
+                              handleSessionAbort (shared DELETE ?sessionId= handler)
+    caption-result.ts       — shared client CaptionResult type, formatTokens, stopCaptionSession
+    config-schema.ts        — Zod schemas (krea2ConfigSchema, forAnimaConfigSchema, detectConfigSchema)
+    worker-pool.ts          — runWorkerPool(): shared parallel task pool (slot-pinned)
     session-registry.ts     — Active SSE session registry (abort controllers)
     temp-files.ts           — Session temp dirs under /tmp/caption-studio (30-min stale TTL only)
     image-utils.ts          — sharp conversion/resize (1536px default, maxImageDimension override)
-    model-utils.ts          — getModelParallel() (--parallel discovery, non-throwing)
+    model-utils.ts          — fetchModels() (/v1/models primitive, typed error result),
+                              parseParallelArgs(), getModelParallel() (non-throwing)
     sse.ts                  — createSseStream() factory
     rate-limiter.ts         — Per-IP rate limiting for discovery endpoints
     logger.ts               — Structured request logging
@@ -67,9 +74,13 @@ src/
     krea2-system-prompt.ts  — Krea 2 system prompt
     anima-prompt.ts         — For Anima system + user prompts, assembleFinalCaption
     prompt-utils.ts         — Prompt text helpers
-    string-utils.ts         — getExtension()
+    string-utils.ts         — getExtension(), baseAndExt() (filename base/ext splitting)
     types.ts                — ModelInfo, CropRect
 ```
+
+Top-level extras: `.env.example` (the three optional env vars), `tag-service/` (WD Tagger
+microservice - Flask + ONNX Runtime, see `tag-service/README.md`),
+`.github/workflows/ci.yml` (typecheck + lint + tests on push/PR).
 
 ## TypeScript Configuration
 
@@ -171,7 +182,6 @@ Parallel workers (up to 8 concurrent, clamped to the server's `--parallel`) each
 
 ```
 GET /api/download?sessionId=<id>  → zips temp dir (img/ folder), streams as application/zip
-POST /api/download                → legacy base64 mode (kept for compat)
 ```
 
 The GET endpoint reads the temp directory, pairs each image with its `.txt` caption file, places them inside an `img/` folder in the ZIP, and streams the result. Touches the session's last-activity timestamp (extends the 30-minute cleanup window).
@@ -214,17 +224,18 @@ In-memory store — multi-replica deployments will not work correctly.
 
 ### Image Format Handling
 
-OpenAI-compatible APIs only accept PNG/JPEG. Non-compatible formats (WebP, GIF) are converted to JPEG (quality 90) via `sharp` before API calls. Max dimension: 3072px.
+OpenAI-compatible APIs only accept PNG/JPEG. Non-compatible formats (WebP, GIF) are converted to JPEG (quality 90) via `sharp` before API calls. Max dimension: 1536px default (`API_MAX_DIMENSION`, sized to llama.cpp's default 8192 vision-token budget), overridable per request via the `maxImageDimension` config field (256-4096). Detection images are downscaled to 1024px.
 
 ### Before Writing Code
 
 1. Check `node_modules/next/dist/docs/` for Next.js 16 API changes
 2. Use `@/*` path alias for all src imports
-3. Run `bun run lint` before committing
+3. Run `bun run typecheck` and `bun run lint` before committing
+4. The fast test suite (`bun test`) stubs the llama.cpp server - run it before committing
 
 ### After Committing
 
-4. Always redeploy the Docker container after commits that change application code:
+5. Always redeploy the Docker container after commits that change application code:
    ```bash
-   docker compose up -d --build
+   bun run docker:up   # docker compose up -d --build
    ```

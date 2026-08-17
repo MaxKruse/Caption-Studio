@@ -7,6 +7,7 @@
 
 import { useState, useRef, useCallback, useEffect, type DragEvent, type ChangeEvent } from "react";
 import { useSession } from "@/hooks/use-session";
+import { baseAndExt } from "@/lib/string-utils";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -24,10 +25,7 @@ export function ImageUploader({ onImagesReady, acceptCaptions, onCaptionsReady }
   const [captionMap, setCaptionMap] = useState<Map<string, string>>(new Map()); // stem -> caption text
 
   /** Strip extension from filename to get the stem for pairing. */
-  const getStem = (name: string): string => {
-    const lastDot = name.lastIndexOf(".");
-    return lastDot > 0 ? name.slice(0, lastDot) : name;
-  };
+  const getStem = (name: string): string => baseAndExt(name).base || name;
 
   const processFiles = useCallback(
     async (files: FileList | File[]) => {

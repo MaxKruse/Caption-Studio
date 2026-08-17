@@ -1,5 +1,5 @@
 /**
- * Tests for prepareForApi / resizeIfNeeded: default max dimension and
+ * Tests for prepareForApi: default max dimension and
  * the optional per-request override.
  *
  * The default is lowered to 1536px because llama.cpp's default
@@ -9,11 +9,7 @@
 
 import { describe, it, expect } from "bun:test";
 import sharp from "sharp";
-import {
-  prepareForApi,
-  resizeIfNeeded,
-  API_MAX_DIMENSION,
-} from "@/lib/image-utils";
+import { prepareForApi, API_MAX_DIMENSION } from "@/lib/image-utils";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -80,15 +76,5 @@ describe("prepareForApi", () => {
     const { width } = await dims(buffer);
     expect(mimeType).toBe("image/jpeg");
     expect(width).toBe(1536);
-  });
-});
-
-describe("resizeIfNeeded", () => {
-  it("never enlarges images smaller than the target", async () => {
-    const small = await makeJpeg(300, 200);
-    const { buffer } = await resizeIfNeeded(small, 1536);
-    const { width, height } = await dims(buffer);
-    expect(width).toBe(300);
-    expect(height).toBe(200);
   });
 });

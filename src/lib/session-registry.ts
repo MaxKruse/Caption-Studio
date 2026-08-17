@@ -49,18 +49,6 @@ export function getSession(sessionId: string): AbortController | undefined {
 }
 
 /**
- * Remove all sessions whose AbortController has been aborted externally.
- * Intended for periodic cleanup interval.
- */
-export function cleanupAbortedSessions(): void {
-  for (const [sessionId, ac] of activeSessions.entries()) {
-    if (ac.signal.aborted) {
-      activeSessions.delete(sessionId);
-    }
-  }
-}
-
-/**
  * Clear all sessions. Exported for tests only.
  */
 export function clearAll(): void {

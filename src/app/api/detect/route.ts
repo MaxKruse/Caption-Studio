@@ -2,6 +2,12 @@
  * Face/body detection endpoint with SSE progress streaming.
  * POST /api/detect — start detection job, returns jobId
  * GET  /api/detect?jobId=<id> — streams SSE progress updates
+ *
+ * Uses the shared route stack where the wire contract allows it:
+ * parseCaptionRequest (Zod-validated config) and chatComplete
+ * (slot-pinned request building + timeout + error mapping). The SSE
+ * payload format is detect-specific (raw progress objects with a
+ * terminal `done: true` flag) and is kept stable for API consumers.
  */
 
 import { NextRequest } from "next/server";
@@ -9,7 +15,9 @@ import { prepareForDetection } from "@/lib/image-utils";
 import { getModelParallel } from "@/lib/model-utils";
 import { normalizeServerUrl, toDockerHostUrl } from "@/lib/url-utils";
 import { parseDetectionResponse } from "@/lib/detect-parsing";
-import { buildChatRequest } from "@/lib/llama-request";
+import { chatComplete } from "@/lib/caption-helpers";
+import { parseCaptionRequest } from "@/lib/caption-route";
+import { detectConfigSchema } from "@/lib/config-schema";
 import {
   DETECTION_CONCURRENCY,
   getDetectionPrompts,
@@ -27,48 +35,20 @@ import {
 } from "@/lib/detect-store";
 
 // ---------------------------------------------------------------------------
-// Request/response types
+// Constants
 // ---------------------------------------------------------------------------
 
-interface DetectRequest {
-  serverUrl: string;
-  model: string;
-  contentMode: "sfw" | "nsfw";
-  /** Max concurrent detection requests (defaults to DETECTION_CONCURRENCY). */
-  parallelRequests?: number;
-}
+const DETECTION_API_TIMEOUT_MS = 600_000; // 10 min per image
 
 // ---------------------------------------------------------------------------
 // POST - Start detection job (async with SSE progress)
 // ---------------------------------------------------------------------------
 export async function POST(request: NextRequest) {
-  const formData = await request.formData();
+  const parsed = await parseCaptionRequest(request, detectConfigSchema);
+  if (!parsed.ok) return parsed.response;
+  const { config, imageFiles } = parsed;
 
-  const configRaw = formData.get("config");
-  if (!configRaw || typeof configRaw !== "string") {
-    return Response.json({ error: "Missing config" }, { status: 400 });
-  }
-
-  let config: DetectRequest;
-  try {
-    config = JSON.parse(configRaw);
-  } catch {
-    return Response.json({ error: "Invalid config JSON" }, { status: 400 });
-  }
-
-  if (!config.serverUrl || !config.model) {
-    return Response.json(
-      { error: "serverUrl and model are required" },
-      { status: 400 }
-    );
-  }
-
-  const imageFiles = formData.getAll("images") as File[];
-  if (imageFiles.length === 0) {
-    return Response.json({ error: "No images provided" }, { status: 400 });
-  }
-
-  const contentMode = config.contentMode ?? "nsfw";
+  const contentMode = config.contentMode;
 
   // Determine concurrency: use client value, auto-detect from server, or fall back to default
   let parallelRequests: number;
@@ -216,21 +196,21 @@ async function processDetectionJob(
         },
       ];
 
-      const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildChatRequest({ model, messages, slotId, stream: false })),
-        cache: "no-store",
-        signal: AbortSignal.timeout(600_000), // 10 min timeout
+      // maxRetries: 0 - retries are managed by the job-level retry wave,
+      // which also records "failed/retrying" state in the store.
+      const response = await chatComplete(baseUrl, {
+        model,
+        messages,
+        slotId,
+        timeoutMs: DETECTION_API_TIMEOUT_MS,
+        stream: false,
+        maxRetries: 0,
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API ${response.status}: ${errorText}`);
-      }
-
-      const data = await response.json();
-      const content = (data?.choices?.[0]?.message?.content ?? "").trim();
+      const data = (await response.json()) as {
+        choices?: Array<{ message?: { content?: unknown } }>;
+      };
+      const content = String(data.choices?.[0]?.message?.content ?? "").trim();
       const { faceBoxes, bodyBoxes } = parseDetectionResponse(content, { width, height });
 
       // Check if detection found anything useful
@@ -321,5 +301,3 @@ async function processDetectionJob(
     retryQueue.clear();
   }
 }
-
-

@@ -7,7 +7,7 @@
  */
 
 import { NextRequest } from "next/server";
-import { normalizeServerUrl, toDockerHostUrl } from "@/lib/url-utils";
+import { fetchModels } from "@/lib/model-utils";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -20,29 +20,11 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const dockerUrl = toDockerHostUrl(serverUrl);
-  const normalizedUrl = normalizeServerUrl(dockerUrl);
+  // 15s budget: same as the models discovery call
+  const result = await fetchModels(serverUrl, 15_000);
 
-  try {
-    const response = await fetch(`${normalizedUrl}/v1/models`, {
-      method: "GET",
-      headers: { "Content-Type": "application/json" },
-      cache: "no-store",
-      signal: AbortSignal.timeout(15000), // 15s timeout for ping
-    });
-
-    if (!response.ok) {
-      return Response.json(
-        { ok: false, error: `Server responded with ${response.status}` },
-        { status: 502 }
-      );
-    }
-
+  if (result.ok) {
     return Response.json({ ok: true });
-  } catch {
-    return Response.json(
-      { ok: false, error: "Server not reachable" },
-      { status: 502 }
-    );
   }
+  return Response.json({ ok: false, error: result.error }, { status: 502 });
 }

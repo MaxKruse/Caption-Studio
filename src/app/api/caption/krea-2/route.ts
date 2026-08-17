@@ -28,11 +28,12 @@ import {
   buildDistillUserPrompt,
 } from "@/lib/krea2-prompts";
 import { buildKrea2SystemPrompt } from "@/lib/krea2-system-prompt";
-import { readFileBuffer, fetchWithRetry, streamResponse } from "@/lib/caption-helpers";
-import { buildChatRequest } from "@/lib/llama-request";
-import { registerSession, unregisterSession, abortSession, getSession } from "@/lib/session-registry";
+import { readFileBuffer, chatComplete, streamResponse } from "@/lib/caption-helpers";
+import { parseCaptionRequest, handleSessionAbort } from "@/lib/caption-route";
+import { registerSession, unregisterSession } from "@/lib/session-registry";
 import { createSseStream } from "@/lib/sse";
-import { krea2ConfigSchema, type Krea2Config } from "@/lib/config-schema";
+import { runWorkerPool } from "@/lib/worker-pool";
+import { krea2ConfigSchema } from "@/lib/config-schema";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -138,22 +139,13 @@ async function processImageAllPhases(
 
     if (abortSignal.aborted) return;
 
-    const response1 = await fetchWithRetry(
-      `${normalizedUrl}/v1/chat/completions`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildChatRequest({ model, messages, slotId })),
-        cache: "no-store",
-      },
-      API_TIMEOUT_MS,
-      abortSignal
-    );
-
-    if (!response1.ok) {
-      const errorText = await response1.text();
-      throw new Error(`API ${response1.status}: ${errorText}`);
-    }
+    const response1 = await chatComplete(normalizedUrl, {
+      model,
+      messages,
+      slotId,
+      timeoutMs: API_TIMEOUT_MS,
+      signal: abortSignal,
+    });
 
     const result1 = await streamResponse(
       response1,
@@ -198,22 +190,13 @@ async function processImageAllPhases(
 
     if (abortSignal.aborted) return;
 
-    const response2 = await fetchWithRetry(
-      `${normalizedUrl}/v1/chat/completions`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildChatRequest({ model, messages, slotId })),
-        cache: "no-store",
-      },
-      PER_IMAGE_PHASE_TIMEOUT_MS,
-      abortSignal
-    );
-
-    if (!response2.ok) {
-      const errorText = await response2.text();
-      throw new Error(`API ${response2.status}: ${errorText}`);
-    }
+    const response2 = await chatComplete(normalizedUrl, {
+      model,
+      messages,
+      slotId,
+      timeoutMs: PER_IMAGE_PHASE_TIMEOUT_MS,
+      signal: abortSignal,
+    });
 
     const result2 = await streamResponse(
       response2,
@@ -256,22 +239,13 @@ async function processImageAllPhases(
 
     if (abortSignal.aborted) return;
 
-    const response3 = await fetchWithRetry(
-      `${normalizedUrl}/v1/chat/completions`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildChatRequest({ model, messages, slotId })),
-        cache: "no-store",
-      },
-      PER_IMAGE_PHASE_TIMEOUT_MS,
-      abortSignal
-    );
-
-    if (!response3.ok) {
-      const errorText = await response3.text();
-      throw new Error(`API ${response3.status}: ${errorText}`);
-    }
+    const response3 = await chatComplete(normalizedUrl, {
+      model,
+      messages,
+      slotId,
+      timeoutMs: PER_IMAGE_PHASE_TIMEOUT_MS,
+      signal: abortSignal,
+    });
 
     const result3 = await streamResponse(
       response3,
@@ -313,47 +287,9 @@ async function processImageAllPhases(
 // Accepts FormData (images as files + config as JSON string)
 // ---------------------------------------------------------------------------
 export async function POST(request: NextRequest) {
-  const contentType = request.headers.get("content-type") || "";
-
-  if (!contentType.includes("multipart/form-data")) {
-    return Response.json(
-      { error: "Only multipart/form-data is supported" },
-      { status: 400 }
-    );
-  }
-
-  const formData = await request.formData();
-  const configRaw = formData.get("config");
-  if (!configRaw || typeof configRaw !== "string") {
-    return Response.json({ error: "Missing config" }, { status: 400 });
-  }
-
-  let config: Krea2Config;
-
-  try {
-    const parsed = JSON.parse(configRaw);
-    const result = krea2ConfigSchema.safeParse(parsed);
-    if (!result.success) {
-      return Response.json(
-        { error: "Invalid config", details: result.error.flatten() },
-        { status: 400 }
-      );
-    }
-    config = result.data;
-  } catch {
-    return Response.json({ error: "Invalid config JSON" }, { status: 400 });
-  }
-
-  const imageFiles = formData.getAll("images") as File[];
-  if (imageFiles.length === 0) {
-    return Response.json({ error: "No images provided" }, { status: 400 });
-  }
-
-  // Use names from config if provided, otherwise fall back to file names
-  const configNames = formData.get("imageNames");
-  const imageNames = configNames && typeof configNames === "string"
-    ? JSON.parse(configNames) as string[]
-    : imageFiles.map((f) => f.name);
+  const parsed = await parseCaptionRequest(request, krea2ConfigSchema);
+  if (!parsed.ok) return parsed.response;
+  const { config, imageFiles, imageNames } = parsed;
 
   const person = config.triggerWordPerson?.trim() ?? "";
   const other = config.triggerWordOther?.trim() ?? "";
@@ -419,19 +355,15 @@ export async function POST(request: NextRequest) {
   (async () => {
     try {
       const serverParallel = await serverParallelPromise;
-      const maxConcurrency = Math.min(
-        serverParallel ?? MAX_CONCURRENCY,
-        MAX_CONCURRENCY
-      );
-      const concurrency = Math.min(maxConcurrency, tasks.length);
-      const queue = [...tasks];
-
-      async function processNext(slotId: number): Promise<void> {
-        while (queue.length > 0 && !sessionAbort.signal.aborted) {
-          const task = queue.shift()!;
+      // Each worker is pinned to its own llama.cpp slot so its images and
+      // phases share the slot's KV cache (worker index < maxConcurrency
+      // which is clamped to the server's --parallel).
+      await runWorkerPool(
+        tasks,
+        Math.min(serverParallel ?? MAX_CONCURRENCY, MAX_CONCURRENCY),
+        (task, slotId) => {
           touchSession(sessionId);
-
-          await processImageAllPhases(
+          return processImageAllPhases(
             task,
             sessionId,
             normalizedUrl,
@@ -446,17 +378,9 @@ export async function POST(request: NextRequest) {
             sendEvent,
             sessionAbort.signal
           );
-        }
-      }
-
-      // Each worker is pinned to its own llama.cpp slot so its images and
-      // phases share the slot's KV cache (worker index < maxConcurrency
-      // which is clamped to the server's --parallel).
-      const workers = Array.from(
-        { length: concurrency },
-        (_, workerIndex) => processNext(workerIndex)
+        },
+        sessionAbort.signal
       );
-      await Promise.all(workers);
 
       if (!sessionAbort.signal.aborted) {
         sendEvent("done", { allComplete: true });
@@ -484,22 +408,6 @@ export async function POST(request: NextRequest) {
 // ---------------------------------------------------------------------------
 // DELETE - Abort an active session
 // ---------------------------------------------------------------------------
-export async function DELETE(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const sessionId = searchParams.get("sessionId");
-
-  if (!sessionId) {
-    return Response.json({ error: "Missing sessionId" }, { status: 400 });
-  }
-
-  const sessionAbort = getSession(sessionId);
-  if (!sessionAbort) {
-    return Response.json({ error: "Session not found" }, { status: 404 });
-  }
-
-  const aborted = abortSession(sessionId);
-  if (!aborted) {
-    return Response.json({ error: "Session not found" }, { status: 404 });
-  }
-  return Response.json({ ok: true });
+export function DELETE(request: NextRequest) {
+  return handleSessionAbort(request);
 }

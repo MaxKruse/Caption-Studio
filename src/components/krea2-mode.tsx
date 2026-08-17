@@ -12,10 +12,12 @@ import { useSession } from "@/hooks/use-session";
 import { applyTokenDelta } from "@/lib/token-accumulate";
 import { consumeSseStream } from "@/lib/sse-client";
 import { triggerDownload } from "@/lib/download";
+import { CaptionResult, stopCaptionSession } from "@/lib/caption-result";
 import { ImageUploader } from "@/components/image-uploader";
 import { ModelSelector } from "@/components/model-selector";
 import { PromptEditor } from "@/components/prompt-editor";
 import { CaptionViewer } from "@/components/caption-viewer";
+import { KvCacheStats } from "@/components/kv-cache-stats";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -28,37 +30,21 @@ import { Textarea } from "@/components/ui/textarea";
 type Phase = "upload" | "configure" | "processing" | "results";
 type ImagePhase = "captioning" | "refining" | "distilling" | "completed" | "failed";
 
-interface CaptionResult {
-  name: string;
-  imageDataUrl: string;
-  status: "queued" | "processing" | "completed" | "failed";
+/** Krea 2 extends the shared result with the per-image pipeline phase. */
+interface Krea2CaptionResult extends CaptionResult {
   imagePhase: "idle" | ImagePhase;
-  caption?: string;
-  partialCaption?: string;
-  reasoningContent?: string;
-  partialReasoning?: string;
-  error?: string;
-  /** Prompt tokens reused from the llama.cpp KV cache (all phases). */
-  cachedTokensTotal?: number;
-  /** Total prompt tokens processed by all phases for this image. */
-  promptTokensTotal?: number;
 }
 
 /** Accumulate phase token stats into the per-image totals. */
 function withTokenStats(
-  result: CaptionResult,
+  result: Krea2CaptionResult,
   stats: { cachedTokens?: number; promptTokens?: number }
-): CaptionResult {
+): Krea2CaptionResult {
   return {
     ...result,
-    cachedTokensTotal: (result.cachedTokensTotal ?? 0) + (stats.cachedTokens ?? 0),
-    promptTokensTotal: (result.promptTokensTotal ?? 0) + (stats.promptTokens ?? 0),
+    cachedTokens: (result.cachedTokens ?? 0) + (stats.cachedTokens ?? 0),
+    promptTokens: (result.promptTokens ?? 0) + (stats.promptTokens ?? 0),
   };
-}
-
-/** Format a token count compactly (1234 -> "1.2k"). */
-function formatTokens(n: number): string {
-  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -94,7 +80,7 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
   const dimValue = maxImageDimension.trim() === "" ? null : Number(maxImageDimension);
   const dimInvalid =
     dimValue !== null && (!Number.isInteger(dimValue) || dimValue < 256 || dimValue > 4096);
-  const [results, setResults] = useState<CaptionResult[]>([]);
+  const [results, setResults] = useState<Krea2CaptionResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
@@ -107,7 +93,7 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
         abortControllerRef.current.abort();
       }
       if (sessionIdRef.current) {
-        fetch(`/api/caption/krea-2?sessionId=${sessionIdRef.current}`, { method: "DELETE" }).catch(() => {});
+        stopCaptionSession("/api/caption/krea-2", sessionIdRef.current);
       }
     };
   }, []);
@@ -117,7 +103,7 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
   }, []);
 
   const handleStart = useCallback(async () => {
-    const initialResults: CaptionResult[] = state.images.map((dataUrl, i) => ({
+    const initialResults: Krea2CaptionResult[] = state.images.map((dataUrl, i) => ({
       name: state.imageNames[i] || `image-${i}.jpg`,
       imageDataUrl: dataUrl,
       status: "queued" as const,
@@ -514,18 +500,7 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
           />
 
           {/* KV cache reuse stats across all phases */}
-          {(() => {
-            const cachedTotal = results.reduce((s, r) => s + (r.cachedTokensTotal ?? 0), 0);
-            const promptTotal = results.reduce((s, r) => s + (r.promptTokensTotal ?? 0), 0);
-            if (promptTotal === 0) return null;
-            const pct = Math.round((cachedTotal / promptTotal) * 100);
-            return (
-              <p className="text-center text-xs text-slate-500">
-                KV cache: {formatTokens(cachedTotal)}/{formatTokens(promptTotal)} prompt
-                tokens reused ({pct}%)
-              </p>
-            );
-          })()}
+          <KvCacheStats results={results} />
 
           {phase === "results" && (
             <div className="flex justify-center gap-3">
@@ -553,7 +528,7 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
                   abortControllerRef.current.abort();
                 }
                 if (sessionIdRef.current) {
-                  fetch(`/api/caption/krea-2?sessionId=${sessionIdRef.current}`, { method: "DELETE" }).catch(() => {});
+                  stopCaptionSession("/api/caption/krea-2", sessionIdRef.current);
                   sessionIdRef.current = null;
                 }
               }}

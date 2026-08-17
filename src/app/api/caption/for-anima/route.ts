@@ -26,11 +26,12 @@ import {
   writeTags,
   touchSession,
 } from "@/lib/temp-files";
-import { readFileBuffer, fetchWithRetry, streamResponse } from "@/lib/caption-helpers";
-import { buildChatRequest } from "@/lib/llama-request";
-import { forAnimaConfigSchema, type ForAnimaConfig } from "@/lib/config-schema";
-import { registerSession, unregisterSession, abortSession, getSession } from "@/lib/session-registry";
+import { readFileBuffer, chatComplete, streamResponse } from "@/lib/caption-helpers";
+import { forAnimaConfigSchema } from "@/lib/config-schema";
+import { parseCaptionRequest, handleSessionAbort } from "@/lib/caption-route";
+import { registerSession, unregisterSession } from "@/lib/session-registry";
 import { createSseStream } from "@/lib/sse";
+import { runWorkerPool } from "@/lib/worker-pool";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -113,22 +114,13 @@ async function processImage(
       ],
     });
 
-    const response = await fetchWithRetry(
-      `${normalizedUrl}/v1/chat/completions`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildChatRequest({ model, messages, slotId })),
-        cache: "no-store",
-      },
-      API_TIMEOUT_MS,
-      abortSignal
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API ${response.status}: ${errorText}`);
-    }
+    const response = await chatComplete(normalizedUrl, {
+      model,
+      messages,
+      slotId,
+      timeoutMs: API_TIMEOUT_MS,
+      signal: abortSignal,
+    });
 
     const result = await streamResponse(response, "captioning", task.index, sendEvent, abortSignal);
     if (!result || abortSignal.aborted) return;
@@ -178,49 +170,12 @@ async function processImage(
 // Accepts FormData (images + caption files + config as JSON string)
 // ---------------------------------------------------------------------------
 export async function POST(request: NextRequest) {
-  const contentType = request.headers.get("content-type") || "";
-
-  if (!contentType.includes("multipart/form-data")) {
-    return Response.json(
-      { error: "Only multipart/form-data is supported" },
-      { status: 400 }
-    );
-  }
-
-  const formData = await request.formData();
-  const configRaw = formData.get("config");
-  if (!configRaw || typeof configRaw !== "string") {
-    return Response.json({ error: "Missing config" }, { status: 400 });
-  }
-
-  // Zod-validated config (same schema family as krea-2)
-  let config: ForAnimaConfig;
-  try {
-    const result = forAnimaConfigSchema.safeParse(JSON.parse(configRaw));
-    if (!result.success) {
-      return Response.json(
-        { error: "Invalid config", details: result.error.flatten() },
-        { status: 400 }
-      );
-    }
-    config = result.data;
-  } catch {
-    return Response.json({ error: "Invalid config JSON" }, { status: 400 });
-  }
-
-  const imageFiles = formData.getAll("images") as File[];
-  if (imageFiles.length === 0) {
-    return Response.json({ error: "No images provided" }, { status: 400 });
-  }
+  const parsed = await parseCaptionRequest(request, forAnimaConfigSchema, ["captions"]);
+  if (!parsed.ok) return parsed.response;
+  const { config, imageFiles, imageNames } = parsed;
 
   // Caption files (booru tag files) - paired by index with images
-  const captionFiles = formData.getAll("captions") as File[];
-
-  // Use names from config if provided, otherwise fall back to file names
-  const configNames = formData.get("imageNames");
-  const imageNames: string[] = configNames && typeof configNames === "string"
-    ? JSON.parse(configNames) as string[]
-    : imageFiles.map((f) => f.name);
+  const captionFiles = parsed.extraFiles.captions;
 
   // Create session and save images to temp files
   const session = await createSession();
@@ -291,19 +246,14 @@ export async function POST(request: NextRequest) {
   (async () => {
     try {
       const serverParallel = await serverParallelPromise;
-      const maxConcurrency = Math.min(
-        serverParallel ?? MAX_CONCURRENCY,
-        MAX_CONCURRENCY
-      );
-      const concurrency = Math.min(maxConcurrency, tasks.length);
-      const queue = [...tasks];
-
-      async function processNext(slotId: number): Promise<void> {
-        while (queue.length > 0 && !sessionAbort.signal.aborted) {
-          const task = queue.shift()!;
+      // Each worker is pinned to its own llama.cpp slot (worker index is
+      // always < server --parallel due to the getModelParallel clamp).
+      await runWorkerPool(
+        tasks,
+        Math.min(serverParallel ?? MAX_CONCURRENCY, MAX_CONCURRENCY),
+        (task, slotId) => {
           touchSession(sessionId);
-
-          await processImage(
+          return processImage(
             task,
             sessionId,
             normalizedUrl,
@@ -314,16 +264,9 @@ export async function POST(request: NextRequest) {
             sendEvent,
             sessionAbort.signal
           );
-        }
-      }
-
-      // Each worker is pinned to its own llama.cpp slot (worker index is
-      // always < server --parallel due to the getModelParallel clamp).
-      const workers = Array.from(
-        { length: concurrency },
-        (_, workerIndex) => processNext(workerIndex)
+        },
+        sessionAbort.signal
       );
-      await Promise.all(workers);
 
       if (!sessionAbort.signal.aborted) {
         sendEvent("done", { allComplete: true });
@@ -351,22 +294,6 @@ export async function POST(request: NextRequest) {
 // ---------------------------------------------------------------------------
 // DELETE - Abort an active session
 // ---------------------------------------------------------------------------
-export async function DELETE(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const sessionId = searchParams.get("sessionId");
-
-  if (!sessionId) {
-    return Response.json({ error: "Missing sessionId" }, { status: 400 });
-  }
-
-  const sessionAbort = getSession(sessionId);
-  if (!sessionAbort) {
-    return Response.json({ error: "Session not found" }, { status: 404 });
-  }
-
-  const aborted = abortSession(sessionId);
-  if (!aborted) {
-    return Response.json({ error: "Session not found" }, { status: 404 });
-  }
-  return Response.json({ ok: true });
+export function DELETE(request: NextRequest) {
+  return handleSessionAbort(request);
 }
