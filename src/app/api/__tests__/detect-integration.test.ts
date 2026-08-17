@@ -158,3 +158,43 @@ describe("detect route - KV cache slot pinning", () => {
     }
   });
 });
+
+describe("detect route - request validation", () => {
+  it("rejects non-multipart bodies with a 400", async () => {
+    const response = await POST(
+      new NextRequest("http://localhost/api/detect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ serverUrl: "http://localhost:8080", model: "m" }),
+      })
+    );
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects a config missing model with details", async () => {
+    const formData = new FormData();
+    formData.append("config", JSON.stringify({ serverUrl: "http://localhost:8080" }));
+    const jpeg = await makeTinyJpeg();
+    formData.append("images", new File([new Uint8Array(jpeg)], "img.jpg", { type: "image/jpeg" }));
+
+    const response = await POST(
+      new NextRequest("http://localhost/api/detect", { method: "POST", body: formData })
+    );
+    expect(response.status).toBe(400);
+    const data = (await response.json()) as { error: string; details?: unknown };
+    expect(data.error).toBe("Invalid config");
+    expect(JSON.stringify(data.details)).toContain("model");
+  });
+
+  it("rejects a request without images", async () => {
+    const formData = new FormData();
+    formData.append(
+      "config",
+      JSON.stringify({ serverUrl: "http://localhost:8080", model: "test-model" })
+    );
+    const response = await POST(
+      new NextRequest("http://localhost/api/detect", { method: "POST", body: formData })
+    );
+    expect(response.status).toBe(400);
+  });
+});
