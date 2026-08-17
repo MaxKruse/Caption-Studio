@@ -6,63 +6,23 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
-import sharp from "sharp";
 import { NextRequest } from "next/server";
 import { POST, API_TIMEOUT_MS } from "@/app/api/caption/for-anima/route";
+import {
+  collectSseEvents,
+  readFirstEvent,
+  makeChatSseResponse,
+  makeTinyJpeg,
+  findEvent,
+} from "@/lib/__tests__/test-helpers";
 
 // ---------------------------------------------------------------------------
 // Test doubles
 // ---------------------------------------------------------------------------
 
-type SseEvent = { type: string; data: Record<string, unknown> };
-
 const originalFetch = globalThis.fetch;
 let chatCalls: Array<Record<string, unknown>> = [];
 let modelDelayMs = 0;
-
-function makeSseResponse(caption: string, cachedTokens: number): Response {
-  const chunks = [
-    `data: {"choices":[{"delta":{"content":"${caption}"}}]}\n\n`,
-    `data: {"choices":[{"delta":{}}],"usage":{"prompt_tokens":800,"completion_tokens":1,"total_tokens":801,"prompt_tokens_details":{"cached_tokens":${cachedTokens}}}}\n\n`,
-    "data: [DONE]\n\n",
-  ];
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
-      controller.close();
-    },
-  });
-  return new Response(stream, { status: 200 });
-}
-
-async function readSseEvents(response: Response): Promise<SseEvent[]> {
-  const events: SseEvent[] = [];
-  const reader = response.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const blocks = buffer.split("\n\n");
-    buffer = blocks.pop() ?? "";
-    for (const block of blocks) {
-      const match = block.match(/^event: (\w+)\s*\ndata: ([\s\S]+)$/);
-      if (match) events.push({ type: match[1], data: JSON.parse(match[2]) });
-    }
-  }
-  return events;
-}
-
-async function makeTinyJpeg(): Promise<Buffer> {
-  return sharp({
-    create: { width: 16, height: 16, channels: 3, background: { r: 90, g: 90, b: 200 } },
-  })
-    .jpeg({ quality: 90 })
-    .toBuffer();
-}
 
 async function postImages(jpeg: Buffer, config: Record<string, unknown>): Promise<Response> {
   const formData = new FormData();
@@ -95,7 +55,10 @@ beforeAll(() => {
     if (url.endsWith("/v1/chat/completions")) {
       const body = JSON.parse(init?.body as string);
       chatCalls.push(body);
-      return makeSseResponse("an addition", 750);
+      return makeChatSseResponse("an addition", {
+        promptTokens: 800,
+        cachedTokens: 750,
+      });
     }
 
     return new Response("not found", { status: 404 });
@@ -155,22 +118,13 @@ describe("for-anima route - streaming", () => {
       });
       expect(response.status).toBe(200);
 
-      const reader = (response.body as ReadableStream<Uint8Array>).getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let firstEvent: SseEvent | null = null;
-      while (!firstEvent) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const blocks = buffer.split("\n\n");
-        buffer = blocks.pop() ?? "";
-        for (const block of blocks) {
-          const match = block.match(/^event: (\w+)\s*\ndata: ([\s\S]+)$/);
-          if (match) firstEvent = { type: match[1], data: JSON.parse(match[2]) };
-        }
-      }
+      const firstEvent = await readFirstEvent(
+        response.body as ReadableStream<Uint8Array>
+      );
       const elapsed = Date.now() - start;
+      // Drain the rest of the stream so the session finishes before the
+      // next test resets the stub state.
+      const reader = (response.body as ReadableStream<Uint8Array>).getReader();
       while (true) {
         const { done } = await reader.read();
         if (done) break;
@@ -193,7 +147,7 @@ describe("for-anima route - KV cache slot pinning", () => {
       model: "test-model",
     });
     expect(response.status).toBe(200);
-    const events = await readSseEvents(response as Response);
+    const events = await collectSseEvents(response as Response);
 
     expect(chatCalls.length).toBe(1);
     expect(chatCalls[0].id_slot).toBe(0);
@@ -209,10 +163,10 @@ describe("for-anima route - KV cache slot pinning", () => {
       serverUrl: "http://localhost:8080",
       model: "test-model",
     });
-    const events = await readSseEvents(response as Response);
+    const events = await collectSseEvents(response as Response);
 
-    const complete = events.find((e) => e.type === "image_complete");
-    expect(complete!.data.status).toBe("completed");
-    expect(complete!.data.cachedTokens).toBe(750);
+    const complete = findEvent(events, "image_complete");
+    expect(complete?.status).toBe("completed");
+    expect(complete?.cachedTokens).toBe(750);
   });
 });
