@@ -35,18 +35,3 @@ export const forAnimaConfigSchema = baseConfig.extend({
 
 export type Krea2Config = z.infer<typeof krea2ConfigSchema>;
 export type ForAnimaConfig = z.infer<typeof forAnimaConfigSchema>;
-
-// ---------------------------------------------------------------------------
-// Detection config
-// ---------------------------------------------------------------------------
-
-export const detectConfigSchema = z.object({
-  serverUrl: z.string().url(),
-  model: z.string().min(1),
-  /** Prompt style: "sfw" or "nsfw" (default nsfw). */
-  contentMode: z.enum(["sfw", "nsfw"]).default("nsfw"),
-  /** Max concurrent detection requests (defaults to the server's --parallel). */
-  parallelRequests: z.number().int().min(1).max(8).optional(),
-});
-
-export type DetectConfig = z.infer<typeof detectConfigSchema>;

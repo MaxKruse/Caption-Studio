@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { krea2ConfigSchema, forAnimaConfigSchema, detectConfigSchema } from "@/lib/config-schema";
+import { krea2ConfigSchema, forAnimaConfigSchema } from "@/lib/config-schema";
 
 describe("config schema validation", () => {
   describe("krea2ConfigSchema", () => {
@@ -97,39 +97,4 @@ describe("config schema validation", () => {
     });
   });
 
-  describe("detectConfigSchema", () => {
-    it("accepts a valid config and applies the contentMode default", () => {
-      const result = detectConfigSchema.safeParse({
-        serverUrl: "http://localhost:8080",
-        model: "test-model",
-      });
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data.contentMode).toBe("nsfw");
-        expect(result.data.parallelRequests).toBeUndefined();
-      }
-    });
-
-    it("rejects missing model", () => {
-      const result = detectConfigSchema.safeParse({ serverUrl: "http://localhost:8080" });
-      expect(result.success).toBe(false);
-    });
-
-    it("rejects invalid contentMode and out-of-range parallelRequests", () => {
-      expect(
-        detectConfigSchema.safeParse({
-          serverUrl: "http://localhost:8080",
-          model: "m",
-          contentMode: "spicy",
-        }).success
-      ).toBe(false);
-      expect(
-        detectConfigSchema.safeParse({
-          serverUrl: "http://localhost:8080",
-          model: "m",
-          parallelRequests: 99,
-        }).success
-      ).toBe(false);
-    });
-  });
 });

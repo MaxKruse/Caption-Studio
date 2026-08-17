@@ -7,7 +7,7 @@
 
 ## What This Project Is
 
-A batch captioning tool for llama.cpp vision models: web UI (Next.js App Router + React) plus the **llama.cpp server connectivity** layer (API routes + lib utilities). Two caption modes (Krea 2 three-phase pipeline, For Anima booru-tag enhancement) plus a face/body detection endpoint.
+A batch captioning tool for llama.cpp vision models: web UI (Next.js App Router + React) plus the **llama.cpp server connectivity** layer (API routes + lib utilities). Two caption modes: Krea 2 (three-phase pipeline) and For Anima (booru-tag enhancement with built-in WD Tagger tagging).
 
 ## Tech Stack
 
@@ -36,7 +36,6 @@ src/
     api/
       caption/for-anima/route.ts — POST FormData (images + captions + config) → SSE stream
       caption/krea-2/route.ts    — POST FormData (images + config) → SSE stream
-      detect/route.ts            — POST start detection job + GET ?jobId=<id> SSE progress
       download/route.ts          — GET ?sessionId=<id> streams zip of temp dir
       health/route.ts            — GET health check (temp dir writable, cleanup status)
       models/route.ts            — Model discovery proxy to /v1/models
@@ -56,7 +55,7 @@ src/
     caption-route.ts        — parseCaptionRequest (multipart + Zod + images preamble),
                               handleSessionAbort (shared DELETE ?sessionId= handler)
     caption-result.ts       — shared client CaptionResult type, formatTokens, stopCaptionSession
-    config-schema.ts        — Zod schemas (krea2ConfigSchema, forAnimaConfigSchema, detectConfigSchema)
+    config-schema.ts        — Zod schemas (krea2ConfigSchema, forAnimaConfigSchema)
     worker-pool.ts          — runWorkerPool(): shared parallel task pool (slot-pinned)
     session-registry.ts     — Active SSE session registry (abort controllers)
     temp-files.ts           — Session temp dirs under /tmp/caption-studio (30-min stale TTL only)
@@ -67,9 +66,6 @@ src/
     rate-limiter.ts         — Per-IP rate limiting for discovery endpoints
     logger.ts               — Structured request logging
     url-utils.ts            — normalizeServerUrl(), toDockerHostUrl()
-    detect-parsing.ts       — Bounding box parser (Gemma box_2d y-first, Qwen bbox_2d x-first)
-    detection-prompts.ts    — Detection prompt builder
-    detect-store.ts         — In-memory detection job store
     krea2-prompts.ts        — Phase 2/3 prompt builders
     krea2-system-prompt.ts  — Krea 2 system prompt
     anima-prompt.ts         — For Anima system + user prompts, assembleFinalCaption
@@ -142,7 +138,7 @@ Both modes share the same base flow:
 7. Temp dirs auto-cleaned 30 minutes after last activity (checked every 5 minutes; the only deletion path - no exit-handler wipe)
 
 Each worker fetches `<serverUrl>/v1/chat/completions` via `buildChatRequest()` with:
-- `stream: true` + `stream_options: { include_usage: true }` (detection uses `stream: false`)
+- `stream: true` + `stream_options: { include_usage: true}`
 - `id_slot: <workerIndex>` - pins the request to one llama.cpp slot for KV cache reuse
 - `cache_prompt: true`, `n_cache_reuse: 256` - chunk-wise prompt KV reuse
 - Messages array with `image_url` (data URL) + `text` content parts
@@ -186,18 +182,8 @@ GET /api/download?sessionId=<id>  → zips temp dir (img/ folder), streams as ap
 
 The GET endpoint reads the temp directory, pairs each image with its `.txt` caption file, places them inside an `img/` folder in the ZIP, and streams the result. Touches the session's last-activity timestamp (extends the 30-minute cleanup window).
 
-### Detection Job
-
-```
-POST /api/detect  → creates detection job, spawns workers, returns { jobId }
-GET  /api/detect  → SSE stream (300ms poll interval), cleans up on done
-```
-
-Detection images scaled to 1024px max. Response parsed by `parseDetectionResponse()` handling both Gemma `box_2d` (y-first) and Qwen/OpenAI `bbox_2d` (x-first) formats.
-
 ### In-Memory Stores
 
-- `detect-store.ts` — `Map<string, DetectionJob>` (detection jobs, cleaned on SSE close)
 - `temp-files.ts` — `Map<string, SessionMeta>` (temp image sessions, 30min stale cleanup)
 
 ### Temp File System (`/tmp/caption-studio/`)
@@ -210,7 +196,7 @@ Detection images scaled to 1024px max. Response parsed by `parseDetectionRespons
 
 ### Concurrency
 
-Worker pool pattern - configurable 1-8 parallel API requests (default 4 for caption, 3 for detection), clamped to the server's `--parallel` discovered via /v1/models. Each worker is pinned to its own llama.cpp slot for deterministic KV cache reuse.
+Worker pool pattern - configurable 1-8 parallel API requests (default 4), clamped to the server's `--parallel` discovered via /v1/models. Each worker is pinned to its own llama.cpp slot for deterministic KV cache reuse.
 
 ## Key Gotchas
 
@@ -224,7 +210,7 @@ In-memory store — multi-replica deployments will not work correctly.
 
 ### Image Format Handling
 
-OpenAI-compatible APIs only accept PNG/JPEG. Non-compatible formats (WebP, GIF) are converted to JPEG (quality 90) via `sharp` before API calls. Max dimension: 1536px default (`API_MAX_DIMENSION`, sized to llama.cpp's default 8192 vision-token budget), overridable per request via the `maxImageDimension` config field (256-4096). Detection images are downscaled to 1024px.
+OpenAI-compatible APIs only accept PNG/JPEG. Non-compatible formats (WebP, GIF) are converted to JPEG (quality 90) via `sharp` before API calls. Max dimension: 1536px default (`API_MAX_DIMENSION`, sized to llama.cpp's default 8192 vision-token budget), overridable per request via the `maxImageDimension` config field (256-4096).
 
 ### Before Writing Code
 

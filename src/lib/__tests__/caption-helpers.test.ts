@@ -35,28 +35,6 @@ describe("chatComplete", () => {
     }
   });
 
-  it("sends a non-streaming request when stream is false", async () => {
-    let seenBody: Record<string, unknown> | null = null;
-    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
-      seenBody = JSON.parse(init?.body as string) as Record<string, unknown>;
-      return new Response("{}", { status: 200 });
-    }) as unknown as typeof fetch;
-
-    try {
-      await chatComplete("http://localhost:8080", {
-        model: "test-model",
-        messages: [],
-        slotId: 0,
-        timeoutMs: 1000,
-        stream: false,
-      });
-      expect(seenBody!.stream).toBe(false);
-      expect(seenBody!.stream_options).toBeUndefined();
-    } finally {
-      globalThis.fetch = realFetch;
-    }
-  });
-
   it("throws API <status>: <body> for non-retryable (4xx) errors", async () => {
     globalThis.fetch = (async () =>
       new Response("bad request body", { status: 400 })) as unknown as typeof fetch;

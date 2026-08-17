@@ -39,8 +39,6 @@ export interface ChatRequestOptions {
   messages: Array<Record<string, unknown>>;
   /** llama.cpp slot id to pin this request to (worker index). */
   slotId: number;
-  /** Non-streaming request (detection). Defaults to streaming. */
-  stream?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -52,12 +50,11 @@ export interface ChatRequestOptions {
  * with slot pinning and KV cache reuse enabled.
  */
 export function buildChatRequest(options: ChatRequestOptions): Record<string, unknown> {
-  const stream = options.stream ?? true;
   return {
     model: options.model,
     messages: options.messages,
-    stream,
-    ...(stream ? { stream_options: { include_usage: true } } : {}),
+    stream: true,
+    stream_options: { include_usage: true },
     id_slot: options.slotId,
     cache_prompt: true,
     n_cache_reuse: CACHE_REUSE_TOKENS,

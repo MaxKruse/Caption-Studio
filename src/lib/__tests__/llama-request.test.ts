@@ -84,17 +84,4 @@ describe("buildChatRequest", () => {
     expect(body.n_cache_reuse).toBe(256);
   });
 
-  it("builds a non-streaming request without stream_options", () => {
-    const body = buildChatRequest({
-      model: "gemma",
-      messages: sampleMessages(),
-      slotId: 2,
-      stream: false,
-    });
-
-    expect(body.stream).toBe(false);
-    expect(body.stream_options).toBeUndefined();
-    expect(body.id_slot).toBe(2);
-    expect(body.cache_prompt).toBe(true);
-  });
 });
