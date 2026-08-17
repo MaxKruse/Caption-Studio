@@ -361,7 +361,7 @@ bun run test:e2e      # Playwright e2e (needs the app and a llama.cpp server)
 bun run docker:up     # docker compose up -d --build
 ```
 
-The `bun test` suite stubs the llama.cpp server, so it runs anywhere. CI (`.github/workflows/ci.yml`) runs typecheck, lint, and the test suite on every push to `main` and on pull requests. Copy `.env.example` to `.env` only if you need non-default values.
+The `bun test` suite stubs the llama.cpp server, so it runs anywhere. Run `bun run typecheck`, `bun run lint`, and `bun test` before pushing. Copy `.env.example` to `.env` only if you need non-default values.
 
 ## Architecture Overview
 

@@ -75,8 +75,7 @@ src/
 ```
 
 Top-level extras: `.env.example` (the three optional env vars), `tag-service/` (WD Tagger
-microservice - Flask + ONNX Runtime, see `tag-service/README.md`),
-`.github/workflows/ci.yml` (typecheck + lint + tests on push/PR).
+microservice - Flask + ONNX Runtime, see `tag-service/README.md`).
 
 ## TypeScript Configuration
 
