@@ -9,6 +9,7 @@ import path from "path";
 import { PassThrough } from "stream";
 import { ZipArchive } from "archiver";
 import { getSession, touchSession } from "@/lib/temp-files";
+import { baseAndExt } from "@/lib/string-utils";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -29,13 +30,6 @@ function parseDataUrl(dataUrl: string): Buffer {
   const match = dataUrl.match(/^data:image\/\w+;base64,(.+)$/);
   if (!match) throw new Error("Invalid data URL");
   return Buffer.from(match[1], "base64");
-}
-
-/** Extract file extension (with dot) from filename. */
-function getExtension(filename: string): string {
-  const lastDot = filename.lastIndexOf(".");
-  if (lastDot === -1) return ".jpg";
-  return filename.slice(lastDot);
 }
 
 /**
@@ -62,10 +56,9 @@ function streamDirectory(dirPath: string): NodeJS.ReadableStream {
     archive.append(fs.createReadStream(filePath), { name: `img/${file}`, stats: stat });
     processed.add(file);
 
-    const lastDot = file.lastIndexOf(".");
-    if (lastDot === -1) continue;
+    const { base, ext } = baseAndExt(file);
+    if (ext === "") continue;
 
-    const base = file.slice(0, lastDot);
     const txtFile = `${base}.txt`;
     const txtPath = path.join(dirPath, txtFile);
 
@@ -168,7 +161,7 @@ export async function POST(request: Request) {
 
   for (const item of items) {
     const uuid = crypto.randomUUID();
-    const ext = getExtension(item.name);
+    const ext = baseAndExt(item.name).ext || ".jpg";
     const imageBuffer = parseDataUrl(item.imageDataUrl);
 
     archive.append(imageBuffer, { name: `img/${uuid}${ext}` });
