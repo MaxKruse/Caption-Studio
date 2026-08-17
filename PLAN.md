@@ -69,7 +69,7 @@ Items are prioritized roughly: Stability > Performance > UX > Prompting.
 ## UI / UX
 
 ### Progress & feedback
-- [ ] Add progress bar with ETA using average processing time from `store.ts`
+- [ ] Add progress bar with ETA using average processing time from the UI session state (use-session)
 - [ ] Show per-image status icons, copy button, and inline edit for captions
 - [ ] Show reasoning panel toggle per image, with token count
 - [ ] Toast notifications for API errors, abort, and download complete

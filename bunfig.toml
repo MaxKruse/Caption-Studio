@@ -1,3 +1,4 @@
 [test]
-# Exclude Playwright e2e tests - run with `npx playwright test`
+# Limit bun test discovery to src/ - the Playwright e2e suite lives in
+# tests/e2e and runs separately via `bun run test:e2e`
 root = "./src"
