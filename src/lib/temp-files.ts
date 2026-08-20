@@ -27,8 +27,12 @@ const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 /** Maximum size per image (10 MB). */
 const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
 
-/** Maximum number of images per session. */
-const MAX_IMAGES_PER_SESSION = 100;
+/**
+ * Maximum number of images per session.
+ * Large-batch workflow (700+ images) is a core use case; the cap is a
+ * backstop against pathological accumulation, not a product limit.
+ */
+export const MAX_IMAGES_PER_SESSION = 5000;
 
 // ---------------------------------------------------------------------------
 // Types
