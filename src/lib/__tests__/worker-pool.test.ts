@@ -7,7 +7,8 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { runWorkerPool } from "@/lib/worker-pool";
+import { runWorkerPool, runWorkerPoolStreaming } from "@/lib/worker-pool";
+import { createSessionQueue } from "@/lib/session-queue";
 
 describe("runWorkerPool", () => {
   it("processes every task", async () => {
@@ -89,6 +90,108 @@ describe("runWorkerPool", () => {
       },
       controller.signal
     );
+    expect(called).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runWorkerPoolStreaming
+// ---------------------------------------------------------------------------
+
+describe("runWorkerPoolStreaming", () => {
+  it("processes every item enqueued before draining completes", async () => {
+    const queue = createSessionQueue<number>({ expected: 6 });
+    for (let i = 0; i < 6; i++) queue.enqueue(i);
+
+    const seen: number[] = [];
+    await runWorkerPoolStreaming(queue, 2, async (task) => {
+      seen.push(task);
+    });
+    expect(seen.sort()).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(await queue.done).toBe("drained");
+  });
+
+  it("starts working on items that arrive while the pool runs", async () => {
+    const queue = createSessionQueue<number>({ expected: 4, idleTimeoutMs: 5_000 });
+    queue.enqueue(1);
+    queue.enqueue(2);
+
+    const seen: number[] = [];
+    const pool = runWorkerPoolStreaming(queue, 2, async (task) => {
+      seen.push(task);
+      if (seen.length === 1) {
+        // Second half of the batch "arrives" mid-flight
+        queue.enqueue(3);
+        queue.enqueue(4);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2));
+    });
+    await pool;
+    expect(seen.sort()).toEqual([1, 2, 3, 4]);
+    expect(await queue.done).toBe("drained");
+  });
+
+  it("never exceeds the requested concurrency", async () => {
+    const queue = createSessionQueue<number>({ expected: 8 });
+    for (let i = 0; i < 8; i++) queue.enqueue(i);
+
+    let inFlight = 0;
+    let maxInFlight = 0;
+    await runWorkerPoolStreaming(
+      queue,
+      3,
+      async () => {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 3));
+        inFlight--;
+      }
+    );
+    expect(maxInFlight).toBeLessThanOrEqual(3);
+  });
+
+  it("pins each worker to a stable slot id below concurrency", async () => {
+    const queue = createSessionQueue<number>({ expected: 10 });
+    for (let i = 0; i < 10; i++) queue.enqueue(i);
+
+    const slots = new Set<number>();
+    await runWorkerPoolStreaming(queue, 3, async (_task, slotId) => {
+      slots.add(slotId);
+    });
+    expect([...slots].every((s) => s >= 0 && s < 3)).toBe(true);
+    expect(slots.size).toBeGreaterThan(0);
+  });
+
+  it("stops pulling new items when the signal aborts", async () => {
+    const queue = createSessionQueue<number>({ expected: 10 });
+    for (let i = 0; i < 10; i++) queue.enqueue(i);
+    const controller = new AbortController();
+
+    let processed = 0;
+    await runWorkerPoolStreaming(
+      queue,
+      2,
+      async () => {
+        processed++;
+        if (processed === 2) controller.abort();
+      },
+      controller.signal
+    );
+    expect(processed).toBeLessThan(10);
+    expect(processed).toBeGreaterThanOrEqual(2);
+  });
+
+  it("resolves immediately when already aborted", async () => {
+    const queue = createSessionQueue<number>({ expected: 2 });
+    queue.enqueue(1);
+    queue.enqueue(2);
+    const controller = new AbortController();
+    controller.abort();
+
+    const called: unknown[] = [];
+    await runWorkerPoolStreaming(queue, 2, async (task) => {
+      called.push(task);
+    }, controller.signal);
     expect(called).toEqual([]);
   });
 });
