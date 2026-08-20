@@ -19,7 +19,7 @@ interface ImageUploaderProps {
 }
 
 export function ImageUploader({ onImagesReady, acceptCaptions, onCaptionsReady }: ImageUploaderProps) {
-  const { state, addImage, removeImage, clearImages } = useSession();
+  const { state, addImages, removeImage, clearImages } = useSession();
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [captionMap, setCaptionMap] = useState<Map<string, string>>(new Map()); // stem -> caption text
@@ -53,14 +53,18 @@ export function ImageUploader({ onImagesReady, acceptCaptions, onCaptionsReady }
         }
       }
 
-      // Add images, pairing with caption by stem. Previews use object URLs
-      // (created inside addImage) - no multi-MB base64 strings in state.
-      for (const file of imageFiles) {
-        const stem = getStem(file.name);
-        addImage(file, file.name, currentCaptionMap.get(stem));
-      }
+      // Add all images in ONE state update (hundreds of per-file updates
+      // would re-render the whole tree per image). Previews use object
+      // URLs (created inside addImages) - no multi-MB base64 in state.
+      addImages(
+        imageFiles.map((file) => ({
+          file,
+          name: file.name,
+          caption: currentCaptionMap.get(getStem(file.name)),
+        }))
+      );
     },
-    [addImage, acceptCaptions, onCaptionsReady, captionMap]
+    [addImages, acceptCaptions, onCaptionsReady, captionMap]
   );
 
   const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
@@ -174,6 +178,8 @@ export function ImageUploader({ onImagesReady, acceptCaptions, onCaptionsReady }
                       src={dataUrl}
                       alt={state.imageNames[index] || `Image ${index + 1}`}
                       className="w-full h-full object-cover flex-shrink-0"
+                      loading="lazy"
+                      decoding="async"
                     />
                     <button
                       onClick={(e) => {

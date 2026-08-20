@@ -53,6 +53,8 @@ export function CaptionViewer({ results }: CaptionViewerProps) {
               src={result.imageDataUrl}
               alt={result.name}
               className="w-full h-full object-cover"
+              loading="lazy"
+              decoding="async"
             />
             {result.status === "completed" && (
               <span className="absolute top-0 right-0 w-2 h-2 bg-green-400 rounded-full" />
