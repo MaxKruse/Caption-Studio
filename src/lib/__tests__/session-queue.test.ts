@@ -1,8 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { createSessionQueue } from "@/lib/session-queue";
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
 // ---------------------------------------------------------------------------
 // createSessionQueue
 //

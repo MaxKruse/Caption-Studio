@@ -383,9 +383,8 @@ async function handleChunkStart(
   imageNames: string[],
   captionFiles: File[]
 ): Promise<Response> {
-  let session;
   try {
-    session = await createSession(sessionId);
+    await createSession(sessionId);
   } catch {
     return Response.json({ error: "Session already exists" }, { status: 400 });
   }

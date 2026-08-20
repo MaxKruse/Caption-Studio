@@ -61,7 +61,6 @@ export function createSessionQueue<T>(options: SessionQueueOptions): SessionQueu
   const waiters: Array<(item: T | undefined) => void> = [];
   let arrived = 0;
   let finished = false;
-  let outcome: QueueOutcome | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let doneResolve: (o: QueueOutcome) => void;
 
@@ -72,7 +71,6 @@ export function createSessionQueue<T>(options: SessionQueueOptions): SessionQueu
   const finish = (result: QueueOutcome): void => {
     if (finished) return;
     finished = true;
-    outcome = result;
     if (timer) {
       clearTimeout(timer);
       timer = undefined;
