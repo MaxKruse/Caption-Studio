@@ -133,6 +133,8 @@ Click **Next** when the server is available.
 
 Drag and drop images or click to browse. Supports any common image format (PNG, JPEG, WebP, GIF, etc.). Non-PNG/JPEG images are automatically converted before sending to the API.
 
+Large batches are fully supported (up to 5,000 images per session). Batches above 25 images upload in 25-image chunks: captioning starts from the first chunk while the rest of the batch is still uploading, so you do not wait for the whole upload before the first tokens appear.
+
 ### Step 4: Configure
 
 **Model selector:** Auto-populated with vision models from your server. Pick the one you want.
@@ -198,12 +200,23 @@ POST /api/caption/for-anima
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `config` | string (JSON) | `{"serverUrl": "...", "model": "..."}` |
+| `config` | string (JSON) | `{"serverUrl": "...", "model": "..."}` plus optional chunk fields below |
 | `images` | File[] | Image files to process |
 | `captions` | File[] | Caption files (booru tags), paired by index with images |
 | `imageNames` | string (JSON) | Optional: `string[]` of display names for images |
 
-**SSE events:** `session`, `image_start`, `token`, `image_complete`, `done`.
+**Chunked uploads** (large batches): the config JSON may carry four extra fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sessionId` | string (UUIDv4) | Client-provided session id (chunk 0) |
+| `expectedImageCount` | number | Total images the batch will contain (chunk 0) |
+| `chunkIndex` | number | `0` opens the SSE stream; `> 0` appends to that session and gets a JSON ack `{ok, accepted, rejected}` (404 once the session has finished) |
+| `chunkSize` | number | Images per chunk (max 100) |
+
+Chunked batches are processed as they arrive: a worker pool drains the session's image queue while the client is still uploading, and the queue drains after a 5-minute silence if the upload stalls. If the batch exceeds the 5,000-image per-session cap, the extra images are rejected and a `warning` SSE event tells the client how many.
+
+**SSE events:** `session`, `image_start`, `token`, `image_complete`, `warning`, `error`, `done`.
 
 The `image_complete` event includes additional fields:
 - `booruTags`: The original booru tags from the caption file
@@ -310,6 +323,7 @@ POST /api/caption/krea-2
 | `refine_image_complete` | `{ index, name, status, caption, reasoningContent, cachedTokens, promptTokens }` | Phase 2 complete |
 | `distill_image_complete` | `{ index, name, status, caption, reasoningContent, cachedTokens, promptTokens }` | Phase 3 complete (final caption) |
 | `done` | `{ allComplete: true }` | All processing complete |
+| `warning` | `{ message }` | Non-fatal problem (e.g. batch truncated at the 5,000-image cap) |
 | `error` | `{ error }` | Error occurred |
 
 Both caption routes also support an optional `maxImageDimension` config field (integer 256-4096) to override the 1536px client-side downscale default. Transient `5xx`/`429` responses from the model server are retried with exponential backoff (3 retries).
@@ -397,5 +411,6 @@ Browser                          Server (Next.js)                 llama.cpp
 - Images are saved to `/tmp/caption-studio/<sessionId>/` on the server
 - Caption `.txt` files are written alongside images during processing
 - Temp directories auto-clean 30 minutes after last activity (the session index in `sessions.json` is adopted across restarts; the process never deletes session dirs on shutdown, so a Docker rebuild cannot destroy undownloaded results)
+- Each session holds up to 5,000 images; larger batches upload in 25-image chunks and are processed as they arrive (the worker pool drains a session queue while the client is still uploading)
 - Processing uses a worker pool (up to 8 parallel API requests, clamped to the server's `--parallel`), with each worker pinned to its own llama.cpp slot for KV cache reuse
 - Phase 1 has a 15-minute timeout; phases 2/3 have a 5-minute timeout each
