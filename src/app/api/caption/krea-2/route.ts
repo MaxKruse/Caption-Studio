@@ -350,6 +350,11 @@ export async function POST(request: NextRequest) {
 
   // Send sessionId as first event
   sendEvent("session", { sessionId });
+  if (tasks.length < imageFiles.length) {
+    sendEvent("warning", {
+      message: `Only ${tasks.length} of ${imageFiles.length} images accepted (per-session limit or invalid image data)`,
+    });
+  }
 
   // Process all images (each image goes through all 3 phases sequentially)
   (async () => {

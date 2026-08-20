@@ -1,6 +1,12 @@
 import { describe, it, expect } from "bun:test";
 import fsp from "fs/promises";
-import { createSession, saveImage, saveImagesBatch, deleteSession } from "@/lib/temp-files";
+import {
+  createSession,
+  saveImage,
+  saveImagesBatch,
+  deleteSession,
+  MAX_IMAGES_PER_SESSION,
+} from "@/lib/temp-files";
 
 describe("temp-files saveImage validation", () => {
   it("saves valid image buffer", async () => {
@@ -96,17 +102,20 @@ describe("temp-files saveImagesBatch", () => {
   it("enforces the per-session image cap like saveImage does", async () => {
     const session = await createSession();
     const usedBases = new Set<string>();
-    const items = Array.from({ length: 105 }, (_, i) => ({
+    // Pre-fill the session to cap-2 (same object reference the module uses)
+    session.imageCount = MAX_IMAGES_PER_SESSION - 2;
+    const items = Array.from({ length: 5 }, (_, i) => ({
       originalName: `img-${i}.png`,
       data: PNG_BYTES,
     }));
     const results = await saveImagesBatch(session.id, items, usedBases);
     const saved = results.filter((r) => r !== null).length;
-    expect(saved).toBe(100);
-    // First 100 keep input order, the rest are rejected
-    expect(results[99]).toBe("img-99.png");
-    expect(results[100]).toBeNull();
-    expect(results[104]).toBeNull();
+    expect(saved).toBe(2);
+    // First two keep input order, the rest are rejected
+    expect(results[0]).toBe("img-0.png");
+    expect(results[1]).toBe("img-1.png");
+    expect(results[2]).toBeNull();
+    expect(results[4]).toBeNull();
     await deleteSession(session.id);
   });
 

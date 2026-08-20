@@ -25,13 +25,15 @@ import {
   writeCaption,
   writeTags,
   touchSession,
+  deleteSession,
 } from "@/lib/temp-files";
 import { readFileBuffer, chatComplete, streamResponse } from "@/lib/caption-helpers";
-import { forAnimaConfigSchema } from "@/lib/config-schema";
+import { forAnimaConfigSchema, type ForAnimaConfig } from "@/lib/config-schema";
 import { parseCaptionRequest, handleSessionAbort } from "@/lib/caption-route";
 import { registerSession, unregisterSession } from "@/lib/session-registry";
 import { createSseStream } from "@/lib/sse";
-import { runWorkerPool } from "@/lib/worker-pool";
+import { runWorkerPool, runWorkerPoolStreaming } from "@/lib/worker-pool";
+import { createSessionQueue, type SessionQueue } from "@/lib/session-queue";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -48,6 +50,26 @@ export const API_TIMEOUT_MS = 5 * 60 * 1000;
 
 /** Default max concurrency for parallel image processing. */
 const MAX_CONCURRENCY = 8;
+
+/**
+ * Chunked uploads: if no further chunk arrives within this window (and
+ * the expected image count has not been reached), the session ends with
+ * an error instead of hanging open.
+ */
+export const CHUNK_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+
+// ---------------------------------------------------------------------------
+// Chunked upload state
+// ---------------------------------------------------------------------------
+
+/** Per-session state for in-flight chunked uploads. */
+interface ChunkedSessionEntry {
+  queue: SessionQueue<ImageTask>;
+  /** Base-name dedup set, shared across all chunks of the session. */
+  usedBases: Set<string>;
+}
+
+const chunkedSessions = new Map<string, ChunkedSessionEntry>();
 
 // ---------------------------------------------------------------------------
 // Image processing
@@ -166,24 +188,22 @@ async function processImage(
 }
 
 // ---------------------------------------------------------------------------
-// POST - Start processing and return SSE stream
-// Accepts FormData (images + caption files + config as JSON string)
+// Shared chunk saving
 // ---------------------------------------------------------------------------
-export async function POST(request: NextRequest) {
-  const parsed = await parseCaptionRequest(request, forAnimaConfigSchema, ["captions"]);
-  if (!parsed.ok) return parsed.response;
-  const { config, imageFiles, imageNames } = parsed;
 
-  // Caption files (booru tag files) - paired by index with images
-  const captionFiles = parsed.extraFiles.captions;
-
-  // Create session and save images to temp files
-  const session = await createSession();
-  const sessionId = session.id;
-  const usedBases = new Set<string>();
-  const tasks: ImageTask[] = [];
-
-  // Read image buffers and caption texts in parallel
+/**
+ * Read a chunk's images + caption texts, validate/save them into the
+ * session directory, and return the processing tasks with GLOBAL image
+ * indices (indexOffset + local position).
+ */
+async function saveChunkToSession(
+  sessionId: string,
+  imageFiles: File[],
+  imageNames: string[],
+  captionFiles: File[],
+  usedBases: Set<string>,
+  indexOffset: number
+): Promise<ImageTask[]> {
   const readItems = await Promise.all(
     imageFiles.map(async (file, i) => {
       const [imageBuffer, booruTags] = await Promise.all([
@@ -194,12 +214,11 @@ export async function POST(request: NextRequest) {
         i,
         imageBuffer,
         booruTags,
-        originalName: imageNames[i] || `image-${i}.jpg`,
+        originalName: imageNames[i] || `image-${indexOffset + i}.jpg`,
       };
     })
   );
 
-  // Write all validated image buffers to disk in parallel.
   const serverNames = await saveImagesBatch(
     sessionId,
     readItems.map(({ imageBuffer, originalName }) => ({
@@ -209,18 +228,73 @@ export async function POST(request: NextRequest) {
     usedBases
   );
 
+  const tasks: ImageTask[] = [];
   readItems.forEach(({ i, imageBuffer, booruTags, originalName }, idx) => {
     const serverName = serverNames[idx];
     if (serverName) {
-      tasks.push({ index: i, serverName, originalName, imageBuffer, booruTags });
+      tasks.push({ index: indexOffset + i, serverName, originalName, imageBuffer, booruTags });
     }
   });
+  return tasks;
+}
+
+// ---------------------------------------------------------------------------
+// POST - Start processing and return SSE stream
+// Accepts FormData (images + caption files + config as JSON string).
+// Large batches arrive in chunks: chunk 0 (config.sessionId + chunkIndex 0)
+// opens the SSE stream and workers start immediately; later chunks POST to
+// the same route and receive a JSON ack while their images are enqueued.
+// ---------------------------------------------------------------------------
+export async function POST(request: NextRequest) {
+  const parsed = await parseCaptionRequest(request, forAnimaConfigSchema, ["captions"]);
+  if (!parsed.ok) return parsed.response;
+  const { config, imageFiles, imageNames } = parsed;
+
+  // Caption files (booru tag files) - paired by index with images
+  const captionFiles = parsed.extraFiles.captions;
+
+  // Aliased condition: when isChunked is true, all four locals are defined.
+  const { sessionId, expectedImageCount, chunkIndex, chunkSize } = config;
+  const isChunked =
+    sessionId !== undefined &&
+    expectedImageCount !== undefined &&
+    chunkIndex !== undefined &&
+    chunkSize !== undefined;
+
+  if (!isChunked) {
+    return handleSingleShot(request, config, imageFiles, imageNames, captionFiles);
+  }
+
+  if (imageFiles.length > chunkSize) {
+    return Response.json({ error: "Chunk exceeds chunkSize" }, { status: 400 });
+  }
+
+  if (chunkIndex > 0) {
+    return handleChunkContinuation(sessionId, chunkIndex, chunkSize, imageFiles, imageNames, captionFiles);
+  }
+
+  return handleChunkStart(request, config, sessionId, expectedImageCount, imageFiles, imageNames, captionFiles);
+}
+
+// ---------------------------------------------------------------------------
+// Single-shot upload (small batches - legacy behavior)
+// ---------------------------------------------------------------------------
+
+async function handleSingleShot(
+  request: NextRequest,
+  config: ForAnimaConfig,
+  imageFiles: File[],
+  imageNames: string[],
+  captionFiles: File[]
+): Promise<Response> {
+  const session = await createSession();
+  const sessionId = session.id;
+  const usedBases = new Set<string>();
+  const tasks = await saveChunkToSession(sessionId, imageFiles, imageNames, captionFiles, usedBases, 0);
 
   if (tasks.length === 0) {
-    return Response.json(
-      { error: "No valid images to process" },
-      { status: 400 }
-    );
+    await deleteSession(sessionId);
+    return Response.json({ error: "No valid images to process" }, { status: 400 });
   }
 
   const normalizedUrl = normalizeServerUrl(toDockerHostUrl(config.serverUrl));
@@ -241,6 +315,11 @@ export async function POST(request: NextRequest) {
 
   // Send sessionId as first event
   sendEvent("session", { sessionId });
+  if (tasks.length < imageFiles.length) {
+    sendEvent("warning", {
+      message: `Only ${tasks.length} of ${imageFiles.length} images accepted (per-session limit or invalid image data)`,
+    });
+  }
 
   // Process images in parallel
   (async () => {
@@ -288,6 +367,150 @@ export async function POST(request: NextRequest) {
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
     },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Chunked upload: chunk 0 (opens the SSE stream)
+// ---------------------------------------------------------------------------
+
+async function handleChunkStart(
+  request: NextRequest,
+  config: ForAnimaConfig,
+  sessionId: string,
+  expectedImageCount: number,
+  imageFiles: File[],
+  imageNames: string[],
+  captionFiles: File[]
+): Promise<Response> {
+  try {
+    await createSession(sessionId);
+  } catch {
+    return Response.json({ error: "Session already exists" }, { status: 400 });
+  }
+
+  const usedBases = new Set<string>();
+  const firstTasks = await saveChunkToSession(sessionId, imageFiles, imageNames, captionFiles, usedBases, 0);
+
+  if (firstTasks.length === 0) {
+    await deleteSession(sessionId);
+    return Response.json({ error: "No valid images to process" }, { status: 400 });
+  }
+
+  const queue = createSessionQueue<ImageTask>({
+    expected: expectedImageCount,
+    idleTimeoutMs: CHUNK_IDLE_TIMEOUT_MS,
+  });
+  chunkedSessions.set(sessionId, { queue, usedBases });
+
+  const normalizedUrl = normalizeServerUrl(toDockerHostUrl(config.serverUrl));
+  const systemPrompt = buildAnimaSystemPrompt();
+  const [stream, sendEvent, closeStream] = createSseStream();
+  const serverParallelPromise = getModelParallel(config.serverUrl, config.model);
+
+  const sessionAbort = new AbortController();
+  registerSession(sessionId, sessionAbort);
+
+  request.signal.addEventListener("abort", () => {
+    sessionAbort.abort();
+  });
+
+  // Send sessionId as first event, then start draining chunk 0 while the
+  // remaining chunks are still uploading.
+  sendEvent("session", { sessionId });
+  if (firstTasks.length < imageFiles.length) {
+    sendEvent("warning", {
+      message: `Only ${firstTasks.length} of ${imageFiles.length} images in the first chunk were accepted`,
+    });
+  }
+  for (const task of firstTasks) {
+    queue.enqueue(task);
+  }
+
+  (async () => {
+    try {
+      const serverParallel = await serverParallelPromise;
+      await runWorkerPoolStreaming(
+        queue,
+        Math.min(serverParallel ?? MAX_CONCURRENCY, MAX_CONCURRENCY),
+        (task, slotId) => {
+          touchSession(sessionId);
+          return processImage(
+            task,
+            sessionId,
+            normalizedUrl,
+            config.model,
+            slotId,
+            systemPrompt,
+            config.maxImageDimension,
+            sendEvent,
+            sessionAbort.signal
+          );
+        },
+        sessionAbort.signal
+      );
+
+      const outcome = await queue.done;
+      if (outcome === "timed-out" && !sessionAbort.signal.aborted) {
+        sendEvent("error", {
+          error: `Upload incomplete: expected ${expectedImageCount} images, received ${queue.arrived}`,
+        });
+      } else if (!sessionAbort.signal.aborted) {
+        sendEvent("done", { allComplete: true });
+      }
+      closeStream();
+    } catch (error) {
+      if (!sessionAbort.signal.aborted) {
+        sendEvent("error", { error: String(error) });
+      }
+      closeStream();
+    } finally {
+      chunkedSessions.delete(sessionId);
+      queue.dispose();
+      unregisterSession(sessionId);
+    }
+  })();
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Chunked upload: continuation chunks (JSON ack)
+// ---------------------------------------------------------------------------
+
+async function handleChunkContinuation(
+  sessionId: string,
+  chunkIndex: number,
+  chunkSize: number,
+  imageFiles: File[],
+  imageNames: string[],
+  captionFiles: File[]
+): Promise<Response> {
+  const entry = chunkedSessions.get(sessionId);
+  if (!entry) {
+    // Session finished, timed out, or was aborted - the client treats a
+    // 404 as "nothing more to send".
+    return Response.json({ error: "Session not found" }, { status: 404 });
+  }
+
+  const indexOffset = chunkIndex * chunkSize;
+  const tasks = await saveChunkToSession(sessionId, imageFiles, imageNames, captionFiles, entry.usedBases, indexOffset);
+
+  touchSession(sessionId);
+  for (const task of tasks) {
+    entry.queue.enqueue(task);
+  }
+
+  return Response.json({
+    ok: true,
+    accepted: tasks.length,
+    rejected: imageFiles.length - tasks.length,
   });
 }
 

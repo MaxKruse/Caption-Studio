@@ -42,3 +42,62 @@ export async function runWorkerPool<T>(
     Array.from({ length: workerCount }, (_, workerIndex) => processNext(workerIndex))
   );
 }
+
+// ---------------------------------------------------------------------------
+// Streaming pool (chunked uploads)
+// ---------------------------------------------------------------------------
+
+/**
+ * Drain a SessionQueue with at most `concurrency` parallel workers.
+ * Streaming variant of runWorkerPool: items arrive incrementally (as
+ * upload chunks are received) and workers pull them via queue.next()
+ * instead of consuming a pre-built array. Workers stop pulling once the
+ * queue closes (drained / timed out / aborted) or the signal fires;
+ * in-flight work is allowed to finish.
+ *
+ * @param queue The queue fed by arriving chunks.
+ * @param concurrency Max parallel workers.
+ * @param worker Async work for one item; receives the item and the
+ *                worker's stable slot id (0-based).
+ * @param signal Optional abort signal that stops new work from starting.
+ */
+export async function runWorkerPoolStreaming<T>(
+  queue: {
+    next: () => Promise<T | undefined>;
+    done: Promise<string>;
+    expected: number;
+    abort?: () => void;
+  },
+  concurrency: number,
+  worker: (item: T, slotId: number) => Promise<void>,
+  signal?: AbortSignal
+): Promise<void> {
+  if (signal?.aborted) return;
+
+  const workerCount = Math.max(1, Math.min(concurrency, queue.expected));
+
+  // Signal abort closes the queue so workers blocked in next() unblock.
+  const onSignalAbort = (): void => queue.abort?.();
+  signal?.addEventListener("abort", onSignalAbort, { once: true });
+
+  async function processNext(slotId: number): Promise<void> {
+    for (;;) {
+      if (signal?.aborted) return;
+      const item = await queue.next();
+      if (item === undefined) return; // queue closed
+      await worker(item, slotId);
+    }
+  }
+
+  const workers = Promise.all(
+    Array.from({ length: workerCount }, (_, workerIndex) => processNext(workerIndex))
+  );
+
+  try {
+    // The queue may end via timeout/abort without workers draining it; wait
+    // for both so the caller can inspect the final outcome.
+    await Promise.all([workers, queue.done]);
+  } finally {
+    signal?.removeEventListener("abort", onSignalAbort);
+  }
+}

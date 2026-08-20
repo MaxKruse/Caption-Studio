@@ -170,3 +170,35 @@ describe("for-anima route - KV cache slot pinning", () => {
     expect(complete?.cachedTokens).toBe(750);
   });
 });
+
+describe("for-anima route - rejected image warning", () => {
+  it("emits a warning event when some uploaded images are rejected", async () => {
+    chatCalls = [];
+    const jpeg = await makeTinyJpeg();
+    const formData = new FormData();
+    formData.append(
+      "config",
+      JSON.stringify({ serverUrl: "http://localhost:8080", model: "test-model" })
+    );
+    formData.append("images", new File([new Uint8Array(jpeg)], "good.jpg", { type: "image/jpeg" }));
+    formData.append(
+      "images",
+      new File([new TextEncoder().encode("not an image at all")], "bad.jpg")
+    );
+
+    const response = await POST(
+      new NextRequest("http://localhost/api/caption/for-anima", {
+        method: "POST",
+        body: formData,
+      })
+    );
+    expect(response.status).toBe(200);
+    const events = await collectSseEvents(response as Response);
+
+    const warning = findEvent(events, "warning");
+    expect(warning).toBeDefined();
+    expect(String(warning?.message)).toContain("1 of 2");
+    expect(findEvent(events, "image_complete")?.status).toBe("completed");
+    expect(events.some((e) => e.type === "done")).toBe(true);
+  });
+});

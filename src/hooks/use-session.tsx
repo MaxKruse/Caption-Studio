@@ -13,6 +13,13 @@ import { useState, useCallback, useRef, createContext, useContext } from "react"
 
 export type AppMode = "for-anima" | "krea-2";
 
+/** One image being added to the session (batch add entry). */
+export interface ImageEntry {
+  file: File;
+  name: string;
+  caption?: string;
+}
+
 export interface SessionState {
   mode: AppMode | null;
   serverUrl: string;
@@ -108,6 +115,11 @@ interface SessionContextValue {
   setServerUrl: (serverUrl: string) => void;
   setModel: (model: string) => void;
   addImage: (file: File, name: string, caption?: string) => void;
+  /**
+   * Add many images in a single state update. Dropped/picked batches of
+   * hundreds must not trigger one re-render per file.
+   */
+  addImages: (entries: ImageEntry[]) => void;
   removeImage: (index: number) => void;
   clearImages: () => void;
   setSystemPrompt: (systemPrompt: string) => void;
@@ -147,17 +159,25 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => ({ ...prev, model }));
   }, []);
 
-  const addImage = useCallback((file: File, name: string, caption?: string) => {
-    const objectUrl = URL.createObjectURL(file);
-    imageUrlsRef.current = [...imageUrlsRef.current, objectUrl];
+  const addImages = useCallback((entries: ImageEntry[]) => {
+    if (entries.length === 0) return;
+    const urls = entries.map((entry) => URL.createObjectURL(entry.file));
+    imageUrlsRef.current = [...imageUrlsRef.current, ...urls];
     setState((prev) => ({
       ...prev,
-      images: [...prev.images, objectUrl],
-      imageNames: [...prev.imageNames, name],
-      imageFiles: [...prev.imageFiles, file],
-      imageCaptions: [...prev.imageCaptions, caption ?? ""],
+      images: [...prev.images, ...urls],
+      imageNames: [...prev.imageNames, ...entries.map((e) => e.name)],
+      imageFiles: [...prev.imageFiles, ...entries.map((e) => e.file)],
+      imageCaptions: [...prev.imageCaptions, ...entries.map((e) => e.caption ?? "")],
     }));
   }, []);
+
+  const addImage = useCallback(
+    (file: File, name: string, caption?: string) => {
+      addImages([{ file, name, caption }]);
+    },
+    [addImages]
+  );
 
   const removeImage = useCallback((index: number) => {
     const url = imageUrlsRef.current[index];
@@ -236,6 +256,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setServerUrl,
     setModel,
     addImage,
+    addImages,
     removeImage,
     clearImages,
     setSystemPrompt,

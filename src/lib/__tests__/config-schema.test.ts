@@ -97,4 +97,56 @@ describe("config schema validation", () => {
     });
   });
 
+  describe("chunked upload fields", () => {
+    const base = { serverUrl: "http://localhost", model: "m" };
+    const chunkFields = {
+      sessionId: "11111111-2222-4333-8444-555555555555",
+      expectedImageCount: 700,
+      chunkIndex: 1,
+      chunkSize: 25,
+    };
+
+    it("accepts chunk fields in the for-anima config", () => {
+      const result = forAnimaConfigSchema.safeParse({ ...base, ...chunkFields });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.sessionId).toBe(chunkFields.sessionId);
+        expect(result.data.expectedImageCount).toBe(700);
+        expect(result.data.chunkIndex).toBe(1);
+        expect(result.data.chunkSize).toBe(25);
+      }
+    });
+
+    it("leaves chunk fields undefined when absent", () => {
+      const result = forAnimaConfigSchema.safeParse(base);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.sessionId).toBeUndefined();
+        expect(result.data.expectedImageCount).toBeUndefined();
+        expect(result.data.chunkIndex).toBeUndefined();
+        expect(result.data.chunkSize).toBeUndefined();
+      }
+    });
+
+    it("rejects non-UUID sessionIds", () => {
+      const result = forAnimaConfigSchema.safeParse({
+        ...base,
+        sessionId: "../escape",
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects invalid chunk geometry", () => {
+      for (const bad of [
+        { ...chunkFields, expectedImageCount: 0 },
+        { ...chunkFields, expectedImageCount: 1.5 },
+        { ...chunkFields, chunkIndex: -1 },
+        { ...chunkFields, chunkSize: 0 },
+        { ...chunkFields, chunkSize: 10_000 },
+      ]) {
+        const result = forAnimaConfigSchema.safeParse({ ...base, ...bad });
+        expect(result.success).toBe(false);
+      }
+    });
+  });
 });

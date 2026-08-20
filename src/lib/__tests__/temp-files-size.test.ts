@@ -1,5 +1,11 @@
 import { describe, it, expect } from "bun:test";
-import { createSession, saveImage, deleteSession } from "@/lib/temp-files";
+import {
+  createSession,
+  saveImage,
+  saveImagesBatch,
+  deleteSession,
+  MAX_IMAGES_PER_SESSION,
+} from "@/lib/temp-files";
 
 describe("temp-files size limits", () => {
   it("rejects image larger than max size", async () => {
@@ -26,18 +32,37 @@ describe("temp-files size limits", () => {
     await deleteSession(session.id);
   });
 
-  it("rejects when max image count exceeded", async () => {
+  it("accepts far more than the old 100-image limit", async () => {
     const session = await createSession();
     const usedBases = new Set<string>();
     const png = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00]);
-    // Fill up to max 100 images
-    for (let i = 0; i < 100; i++) {
-      const name = await saveImage(session.id, `img${i}.png`, png, usedBases);
-      expect(name).not.toBeNull();
-    }
-    // 101st should be rejected
-    const name = await saveImage(session.id, "img101.png", png, usedBases);
-    expect(name).toBeNull();
+    // 150 valid images must all be accepted (large-batch workflow, e.g. 700+)
+    const names = await saveImagesBatch(
+      session.id,
+      Array.from({ length: 150 }, (_, i) => ({ originalName: `img${i}.png`, data: png })),
+      usedBases
+    );
+    expect(names.every((n) => n !== null)).toBe(true);
+    expect(session.imageCount).toBe(150);
+    await deleteSession(session.id);
+  });
+
+  it("rejects images beyond the per-session cap", async () => {
+    const session = await createSession();
+    const usedBases = new Set<string>();
+    const png = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00]);
+    // Pre-fill the session to cap-1 (same object reference the module uses)
+    session.imageCount = MAX_IMAGES_PER_SESSION - 1;
+    const names = await saveImagesBatch(
+      session.id,
+      [
+        { originalName: "last.png", data: png },
+        { originalName: "over.png", data: png },
+      ],
+      usedBases
+    );
+    expect(names[0]).toBe("last.png");
+    expect(names[1]).toBeNull();
     await deleteSession(session.id);
   });
 });

@@ -18,6 +18,8 @@ import { consumeSseStream } from "@/lib/sse-client";
 import { triggerDownload } from "@/lib/download";
 import { fileToBase64 } from "@/lib/file-utils";
 import { CaptionResult, stopCaptionSession } from "@/lib/caption-result";
+import { planChunkedUpload, buildChunkFormData } from "@/lib/upload-chunking";
+import { sleep } from "@/lib/caption-helpers";
 import { ImageUploader } from "@/components/image-uploader";
 import { ModelSelector } from "@/components/model-selector";
 import { CaptionViewer } from "@/components/caption-viewer";
@@ -62,8 +64,11 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
   const [llmResults, setLlmResults] = useState<CaptionResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [serverNotice, setServerNotice] = useState<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  /** Why the run stopped (user stop vs. failed chunk upload). */
+  const stopReasonRef = useRef<string>("Stopped by user");
 
   // Cleanup on unmount
   useEffect(() => {
@@ -100,29 +105,40 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
     }));
     setTagResults(initialTags);
 
-    // Tag images one by one (no batching per user request). Base64 is read
-    // from the raw File on demand - previews use object URLs.
+    // Tag images one by one (no batching per user request).
     const localTags = [...initialTags];
-    const base64Images: string[] = new Array(state.imageFiles.length);
-    for (let i = 0; i < state.imageFiles.length; i++) {
-      try {
-        base64Images[i] = await fileToBase64(state.imageFiles[i]);
-      } catch {
-        base64Images[i] = "";
-      }
-    }
 
-    for (let i = 0; i < base64Images.length; i++) {
-      setCurrentTagIndex(i);
-      localTags[i] = { ...localTags[i], status: "tagging" };
+    // Re-render at most every 200ms: with hundreds of images, flushing on
+    // every image re-renders the whole results list O(n^2) times.
+    let lastFlush = 0;
+    const flushProgress = (index: number | null, force = false) => {
+      const now = Date.now();
+      if (!force && now - lastFlush < 200) return;
+      lastFlush = now;
       setTagResults([...localTags]);
+      setCurrentTagIndex(index);
+    };
+
+    const imageFiles = state.imageFiles;
+    for (let i = 0; i < imageFiles.length; i++) {
+      localTags[i] = { ...localTags[i], status: "tagging" };
+      flushProgress(i);
+
+      // Base64 is read right before the request: pre-encoding a whole
+      // batch would hold ~1.3x its size in strings for the entire run.
+      let base64 = "";
+      try {
+        base64 = await fileToBase64(imageFiles[i]);
+      } catch {
+        base64 = "";
+      }
 
       try {
         const res = await fetch("/api/tag", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            image: base64Images[i],
+            image: base64,
             minProbability: state.tagMinProbability,
             maxTags: state.tagMaxTags,
             customTags: state.tagCustomTags,
@@ -134,24 +150,22 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
         if (!res.ok) {
           const err = await res.json();
           localTags[i] = { ...localTags[i], status: "error", error: err.error || "Tagging failed" };
-          setTagResults([...localTags]);
-          continue;
+        } else {
+          const data = await res.json();
+          localTags[i] = {
+            tags: data.tags ?? [],
+            tagsWithProbs: data.tagsWithProbs ?? [],
+            status: "done",
+          };
         }
-
-        const data = await res.json();
-        localTags[i] = {
-          tags: data.tags ?? [],
-          tagsWithProbs: data.tagsWithProbs ?? [],
-          status: "done",
-        };
-        setTagResults([...localTags]);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         localTags[i] = { ...localTags[i], status: "error", error: message };
-        setTagResults([...localTags]);
       }
+      flushProgress(i);
     }
 
+    flushProgress(null, true);
     setCurrentTagIndex(null);
     setIsTagging(false);
     setAppPhase("tag-review");
@@ -183,7 +197,9 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
     setAppPhase("llm-processing");
     setIsProcessing(true);
     setSessionId(null);
+    setServerNotice(null);
     sessionIdRef.current = null;
+    stopReasonRef.current = "Stopped by user";
 
     const initialLlm: CaptionResult[] = state.images.map((dataUrl, i) => ({
       name: state.imageNames[i] || `image-${i}.jpg`,
@@ -192,46 +208,136 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
     }));
     setLlmResults(initialLlm);
 
-    // Build FormData
-    const formData = new FormData();
-    const config = {
-      serverUrl,
-      model: state.model,
-    };
-    formData.append("config", JSON.stringify(config));
-    formData.append("imageNames", JSON.stringify(state.imageNames));
+    const total = state.imageFiles.length;
+    const baseConfig = { serverUrl, model: state.model };
+    // Generated tags become the booru caption text for each image
+    const captionTexts = state.imageNames.map((_, i) => (tagResults[i]?.tags ?? []).join(", "));
+    const signal = abortControllerRef.current?.signal;
 
-    for (let i = 0; i < state.imageFiles.length; i++) {
-      formData.append("images", state.imageFiles[i]);
-      // Use generated tags as caption text
-      const tags = tagResults[i]?.tags ?? [];
-      const captionText = tags.join(", ");
-      if (captionText) {
-        formData.append("captions", new Blob([captionText], { type: "text/plain" }), state.imageNames[i] + ".txt");
+    // Large batches upload in chunks: chunk 0 opens the SSE stream and the
+    // server starts captioning while the remaining chunks are still in
+    // flight. Small batches keep the single-shot request shape.
+    const plan = planChunkedUpload(total);
+    const chunkJobs: Promise<void>[] = [];
+
+    let response: Response;
+    try {
+      if (plan.isChunked) {
+        const uploadSessionId = crypto.randomUUID();
+        response = await fetch("/api/caption/for-anima", {
+          method: "POST",
+          body: buildChunkFormData({
+            baseConfig,
+            sessionId: uploadSessionId,
+            expectedImageCount: total,
+            chunkIndex: 0,
+            chunkSize: plan.chunkSize,
+            imageFiles: state.imageFiles,
+            imageNames: state.imageNames,
+            captionTexts,
+          }),
+          signal,
+        });
+
+        // Remaining chunks: JSON ack, retried on failure. A 404 means the
+        // session already finished (upload slower than inference) - OK.
+        for (let c = 1; c < plan.chunks; c++) {
+          chunkJobs.push(
+            (async () => {
+              for (let attempt = 1; attempt <= 3; attempt++) {
+                if (signal?.aborted) return;
+                try {
+                  const res = await fetch("/api/caption/for-anima", {
+                    method: "POST",
+                    body: buildChunkFormData({
+                      baseConfig,
+                      sessionId: uploadSessionId,
+                      expectedImageCount: total,
+                      chunkIndex: c,
+                      chunkSize: plan.chunkSize,
+                      imageFiles: state.imageFiles,
+                      imageNames: state.imageNames,
+                      captionTexts,
+                    }),
+                    signal,
+                  });
+                  if (res.ok || res.status === 404) return;
+                  throw new Error(`chunk rejected (HTTP ${res.status})`);
+                } catch (error) {
+                  if (signal?.aborted) return;
+                  if (attempt === 3) {
+                    stopReasonRef.current = `A batch chunk failed to upload: ${
+                      error instanceof Error ? error.message : String(error)
+                    }`;
+                    abortControllerRef.current?.abort();
+                    if (sessionIdRef.current) {
+                      stopCaptionSession("/api/caption/for-anima", sessionIdRef.current);
+                    }
+                    return;
+                  }
+                  await sleep(1500 * attempt);
+                }
+              }
+            })()
+          );
+        }
+      } else {
+        const formData = new FormData();
+        formData.append("config", JSON.stringify(baseConfig));
+        formData.append("imageNames", JSON.stringify(state.imageNames));
+        for (let i = 0; i < total; i++) {
+          formData.append("images", state.imageFiles[i]);
+          const captionText = captionTexts[i];
+          if (captionText) {
+            formData.append(
+              "captions",
+              new Blob([captionText], { type: "text/plain" }),
+              state.imageNames[i] + ".txt"
+            );
+          }
+        }
+        response = await fetch("/api/caption/for-anima", {
+          method: "POST",
+          body: formData,
+          signal,
+        });
       }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const failed = initialLlm.map((r) => ({
+        ...r,
+        status: "failed" as const,
+        error: signal?.aborted ? stopReasonRef.current : message,
+      }));
+      setLlmResults(failed);
+      abortControllerRef.current = null;
+      setIsProcessing(false);
+      setAppPhase("results");
+      return;
     }
 
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: "Upload failed" }));
+      const failed = initialLlm.map((r) => ({ ...r, status: "failed" as const, error: error.error }));
+      setLlmResults(failed);
+      abortControllerRef.current = null;
+      setIsProcessing(false);
+      setAppPhase("results");
+      return;
+    }
+
+    const body = response.body;
+    if (!body) {
+      abortControllerRef.current = null;
+      setIsProcessing(false);
+      setAppPhase("results");
+      return;
+    }
+
+    const localLlm = [...initialLlm];
+    let streamError: string | null = null;
+
     try {
-      const response = await fetch("/api/caption/for-anima", {
-        method: "POST",
-        body: formData,
-        signal: abortControllerRef.current?.signal,
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        const failed = initialLlm.map((r) => ({ ...r, status: "failed" as const, error: error.error }));
-        setLlmResults(failed);
-        setIsProcessing(false);
-        setAppPhase("results");
-        return;
-      }
-
-      const body = response.body;
-      if (!body) return;
-
-      const localLlm = [...initialLlm];
-
       await consumeSseStream(body, (event) => {
         if (event.type === "session") {
           const sid = (event.data as { sessionId: string }).sessionId;
@@ -287,32 +393,38 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
             }
             break;
           }
+          case "warning":
+          case "error": {
+            const data = event.data as { message?: string; error?: string };
+            setServerNotice(data.message ?? data.error ?? null);
+            break;
+          }
         }
 
         setLlmResults([...localLlm]);
       });
-
-      if (abortControllerRef.current && abortControllerRef.current.signal.aborted) {
-        for (const result of localLlm) {
-          if (result.status === "queued" || result.status === "processing") {
-            result.status = "failed";
-            result.error = "Stopped by user";
-          }
-        }
-        setLlmResults([...localLlm]);
-      }
-
-      abortControllerRef.current = null;
-      setIsProcessing(false);
-      setAppPhase("results");
     } catch (error) {
-      if (!(error instanceof DOMException && error.name === "AbortError")) {
-        // Already handled abort above
-      }
-      abortControllerRef.current = null;
-      setIsProcessing(false);
-      setAppPhase("results");
+      streamError = error instanceof Error ? error.message : String(error);
     }
+
+    // Wait for in-flight chunk uploads to settle before finalizing
+    await Promise.all(chunkJobs);
+
+    // Never leave images stuck as queued/processing: the stream ended
+    // (normal completion, abort, upload timeout, or server error).
+    for (const result of localLlm) {
+      if (result.status === "queued" || result.status === "processing") {
+        result.status = "failed";
+        result.error = signal?.aborted
+          ? stopReasonRef.current
+          : streamError ?? "The stream ended before this image finished";
+      }
+    }
+    setLlmResults([...localLlm]);
+
+    abortControllerRef.current = null;
+    setIsProcessing(false);
+    setAppPhase("results");
   }, [state, serverUrl, tagResults]);
 
   const handleNewBatch = useCallback(() => {
@@ -321,7 +433,9 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
     setLlmResults([]);
     setIsProcessing(false);
     setSessionId(null);
+    setServerNotice(null);
     sessionIdRef.current = null;
+    stopReasonRef.current = "Stopped by user";
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -508,6 +622,8 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
                         src={state.images[i]}
                         alt={state.imageNames[i]}
                         className="w-full h-full object-cover rounded"
+                        loading="lazy"
+                        decoding="async"
                       />
                     </div>
                     <div className="flex-1 min-w-0">
@@ -587,6 +703,12 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
             </div>
           )}
 
+          {serverNotice && (
+            <div className="bg-amber-900/30 border border-amber-700 rounded-lg p-3 text-sm text-amber-200">
+              {serverNotice}
+            </div>
+          )}
+
           {/* KV cache reuse stats */}
           <KvCacheStats results={llmResults} />
 
@@ -611,6 +733,7 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
               variant="danger"
               size="sm"
               onClick={() => {
+                stopReasonRef.current = "Stopped by user";
                 if (abortControllerRef.current) {
                   abortControllerRef.current.abort();
                 }
