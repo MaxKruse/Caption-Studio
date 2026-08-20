@@ -225,29 +225,51 @@ export function isValidImageBuffer(data: Buffer): boolean {
 // Public API
 // ---------------------------------------------------------------------------
 
+/** Strict UUIDv4 - the only shape accepted for client-provided session ids. */
+const UUID_V4_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
 /**
  * Create a new session directory and return session metadata.
+ *
+ * @param clientId Optional client-generated UUIDv4. Chunked uploads name
+ *   the session from the client so it knows the id before the stream
+ *   opens. Because the id becomes a directory name, only strict UUIDv4
+ *   strings are accepted (anything else is a path-traversal vector).
  */
-export async function createSession(): Promise<SessionMeta> {
+export async function createSession(clientId?: string): Promise<SessionMeta> {
   await ensureBaseDir();
 
-  let sessionId: string;
   let dir: string;
+  let sessionId: string;
 
-  // Ensure unique session ID
-  while (true) {
-    sessionId = generateSessionId();
+  if (clientId !== undefined) {
+    if (!UUID_V4_RE.test(clientId)) {
+      throw new Error("Invalid client session id");
+    }
+    sessionId = clientId;
     dir = path.join(TEMP_BASE, sessionId);
     try {
-      await fsp.access(dir);
-      // exists, try again
+      await fsp.mkdir(dir);
     } catch {
-      // doesn't exist, good
-      break;
+      throw new Error("Session already exists");
     }
+  } else {
+    // Generate a unique session ID
+    for (;;) {
+      sessionId = generateSessionId();
+      dir = path.join(TEMP_BASE, sessionId);
+      try {
+        await fsp.access(dir);
+        // exists, try again
+        continue;
+      } catch {
+        // doesn't exist, good
+        break;
+      }
+    }
+    await fsp.mkdir(dir, { recursive: true });
   }
-
-  await fsp.mkdir(dir, { recursive: true });
 
   const meta: SessionMeta = {
     id: sessionId,
