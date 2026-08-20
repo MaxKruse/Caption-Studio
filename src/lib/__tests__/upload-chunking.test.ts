@@ -75,7 +75,7 @@ describe("buildChunkFormData", () => {
     expect(configOf(fd).chunkIndex).toBe(1);
   });
 
-  it("pairs captions with the chunk's images only", () => {
+  it("pairs captions with the chunk's images only", async () => {
     const fd = buildChunkFormData({
       ...base,
       chunkIndex: 1,
@@ -83,7 +83,7 @@ describe("buildChunkFormData", () => {
     });
     const captions = fd.getAll("captions") as Blob[];
     expect(captions.length).toBe(1);
-    expect((captions[0] as File).name).toBe("c.txt");
+    expect((captions[0] as File).name).toBe("c.jpg.txt");
     expect(await captions[0].text()).toBe("2girls");
   });
 
@@ -97,6 +97,6 @@ describe("buildChunkFormData", () => {
     const captions = fd.getAll("captions") as File[];
     expect(images.length).toBe(2);
     expect(captions.length).toBe(1);
-    expect(captions[0].name).toBe("a.txt");
+    expect(captions[0].name).toBe("a.jpg.txt");
   });
 });
