@@ -165,7 +165,7 @@ When all images are processed, click **Download ZIP**. The ZIP contains an `img/
 
 This mode is designed for creating high-quality dataset captions for the [Anima](https://github.com/CircleStone-Labs/Anima) text-to-image model. It combines automated booru tagging with LLM-generated natural language descriptions.
 
-The system prompt enforces strict NSFW-enabling policies, requiring explicit description of all visible content without censorship.
+The system prompt enforces strict NSFW-enabling policies, requiring explicit description of all visible content without censorship. The addition must always state each character's line of sight - direct eye contact is described as "looking at the viewer" (booru convention, space-separated), averted gaze names the direction.
 
 ### Workflow
 
@@ -229,7 +229,7 @@ The config is validated with Zod (`forAnimaConfigSchema`); invalid configs retur
 
 This mode is designed for creating high-quality dataset captions optimized for the Krea 2 text-to-image model. It works in three phases, all within a **single multi-turn conversation** per image:
 
-The default system prompt enforces strict NSFW-enabling policies, requiring explicit description of all visible content without censorship.
+The default system prompt enforces strict NSFW-enabling policies, requiring explicit description of all visible content without censorship. Captions always anchor the subject's line of sight to the camera (e.g. "looking directly at the camera", "gazing off to the left of the camera") - never relative to the viewer.
 
 ### Multi-turn Conversation (KV Cache Reuse)
 

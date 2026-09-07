@@ -46,6 +46,11 @@ Focus on details that booru tags typically miss:
 - **Background depth:** foreground/background layering, environmental storytelling
 - **Character expressions and poses:** nuanced description beyond simple tag names
 
+## Line of Sight
+- Always state where each character is looking in the addition, even if the tags don't capture it
+- Direct eye contact: describe the character as "looking at the viewer"
+- Averted gaze: name the direction - "looking away", "looking up", "looking down", "looking to the left", "looking to the right", "looking over the shoulder"
+
 ## Natural Language Mixing
 - The Qwen encoder reads your text literally, like natural language.
 - Aim for at least 2 descriptive sentences separated by periods (not just commas).
