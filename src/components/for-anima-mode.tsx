@@ -214,7 +214,19 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
     setLlmResults(initialLlm);
 
     const total = state.imageFiles.length;
-    const baseConfig = { serverUrl, model: state.model };
+    // Session timeout (min) for the chunked upload: how long the server waits
+    // for the rest of the batch before closing. Omitted when empty or out of
+    // range so the server falls back to its 30-min default.
+    const timeoutMin = parseInt(state.sessionTimeoutMinutes, 10);
+    const sessionTimeoutMs =
+      Number.isFinite(timeoutMin) && timeoutMin >= 1 && timeoutMin <= 180
+        ? timeoutMin * 60_000
+        : undefined;
+    const baseConfig: Record<string, unknown> = {
+      serverUrl,
+      model: state.model,
+      ...(sessionTimeoutMs !== undefined ? { sessionTimeoutMs } : {}),
+    };
     // Generated tags become the booru caption text for each image
     const captionTexts = state.imageNames.map((_, i) => (tagResults[i]?.tags ?? []).join(", "));
     const signal = abortControllerRef.current?.signal;

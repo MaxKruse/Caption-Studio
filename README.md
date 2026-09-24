@@ -129,6 +129,8 @@ Click **Next** when the server is available.
 | **Krea 2** | Dataset captioning with character-aware de-duplication - three-phase pipeline removes repetitive character traits and distills to a concise prompt |
 | **For Anima** | Dataset captioning with booru tags - tags images with the built-in WD Tagger (or bring your own tag files), then describes the whole image as seen (tags as grounding) and transcribes any visible text verbatim |
 
+Before picking a mode you can set the **session timeout** (minutes): how long the server waits for a large batch to finish uploading before closing the session. 30 min by default, up to 3h (180 min) for very large or slow batches.
+
 ### Step 3: Upload Images
 
 Drag and drop images or click to browse. Accepted formats: PNG, JPEG, GIF, WebP, AVIF, and TIFF (10 MB per image). Non-PNG/JPEG images are automatically converted to JPEG before sending to the API. Images that fail validation are not silently dropped: each affected row shows its rejection reason (oversized, unsupported format, or session cap reached), and a warning event summarizes the rejections.
@@ -205,7 +207,7 @@ POST /api/caption/for-anima
 | `captions` | File[] | Caption files (booru tags), paired by index with images (one part per image, even when empty, so the index pairing holds) |
 | `imageNames` | string (JSON) | Optional: `string[]` of display names for images |
 
-**Chunked uploads** (large batches): the config JSON may carry four extra fields:
+**Chunked uploads** (large batches): the config JSON may carry five extra fields:
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -213,8 +215,9 @@ POST /api/caption/for-anima
 | `expectedImageCount` | number | Total images the batch will contain (chunk 0) |
 | `chunkIndex` | number | `0` opens the SSE stream; `> 0` appends to that session and gets a JSON ack `{ok, accepted, rejected}` (404 once the session has finished) |
 | `chunkSize` | number | Images per chunk (max 100) |
+| `sessionTimeoutMs` | number | Optional: how long (ms) the server keeps the session open waiting for the rest of the upload before closing it. Defaults to 30 min (1800000 ms); max 3h (10800000 ms) |
 
-Chunked batches are processed as they arrive: a worker pool drains the session's image queue while the client is still uploading, and the queue drains after a 5-minute silence if the upload stalls. Images rejected at upload (oversized, unsupported format, or over the 5,000-image per-session cap) are accounted for in the queue, so they never trigger a false "upload incomplete" timeout: each gets an `image_complete` event with `status: "failed"` and the reason, plus a `warning` event summarizing the rejections.
+Chunked batches are processed as they arrive: a worker pool drains the session's image queue while the client is still uploading. If the client goes silent while images are still outstanding, the session closes after the session timeout (30 min by default, up to 3h via `sessionTimeoutMs`) and reports an "upload incomplete" error naming the expected vs received counts. The timeout never fires once every expected image has arrived - a fully uploaded batch always drains to completion, no matter how long the slowest image takes. Images rejected at upload (oversized, unsupported format, or over the 5,000-image per-session cap) are accounted for in the queue, so they never trigger a false timeout: each gets an `image_complete` event with `status: "failed"` and the reason, plus a `warning` event summarizing the rejections.
 
 **SSE events:** `session`, `image_start`, `token`, `image_complete`, `warning`, `error`, `done`.
 

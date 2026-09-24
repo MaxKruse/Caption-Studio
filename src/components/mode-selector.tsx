@@ -7,6 +7,7 @@
 import { useSession } from "@/hooks/use-session";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 
 interface ModeSelectorProps {
   serverUrl: string;
@@ -14,7 +15,7 @@ interface ModeSelectorProps {
 }
 
 export function ModeSelector({ onModeSelected }: ModeSelectorProps) {
-  const { setMode } = useSession();
+  const { state, setMode, setSessionTimeoutMinutes } = useSession();
 
   const handleSelect = (mode: "for-anima" | "krea-2") => {
     setMode(mode);
@@ -27,6 +28,25 @@ export function ModeSelector({ onModeSelected }: ModeSelectorProps) {
         <h2 className="text-2xl font-semibold text-slate-100">Choose a Mode</h2>
         <p className="text-slate-400 mt-2">
           Select how you want to generate captions for your images.
+        </p>
+      </div>
+
+      {/* Session timeout (bounds how long a large upload may take) */}
+      <div className="w-full max-w-md mx-auto bg-slate-800/40 border border-slate-700 rounded-lg p-4">
+        <Input
+          label="Timeout for this session (min)"
+          type="number"
+          min={5}
+          max={180}
+          step={5}
+          value={state.sessionTimeoutMinutes}
+          onChange={(e) => setSessionTimeoutMinutes(e.target.value)}
+          placeholder="30 (default)"
+        />
+        <p className="text-xs text-slate-500 mt-2">
+          How long the server waits for a large upload to finish before closing
+          the session. 30 min by default, up to 3h (180 min) for very big
+          batches.
         </p>
       </div>
 

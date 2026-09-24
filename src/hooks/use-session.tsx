@@ -43,6 +43,9 @@ export interface SessionState {
   tagEncourage: string;
   tagExclude: string;
   tagCustomTags: string; // user-defined tags (character name, artist name, etc.)
+  // Session timeout (minutes) for large chunked uploads: how long the server
+  // waits for the rest of the upload before closing. Default 30, max 180 (3h).
+  sessionTimeoutMinutes: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -103,6 +106,7 @@ const DEFAULT_STATE: SessionState = {
   tagEncourage: "",
   tagExclude: "",
   tagCustomTags: "",
+  sessionTimeoutMinutes: "30",
 };
 
 // ---------------------------------------------------------------------------
@@ -133,6 +137,7 @@ interface SessionContextValue {
   setTagEncourage: (v: string) => void;
   setTagExclude: (v: string) => void;
   setTagCustomTags: (v: string) => void;
+  setSessionTimeoutMinutes: (v: string) => void;
   reset: () => void;
 }
 
@@ -236,6 +241,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => ({ ...prev, tagCustomTags: v }));
   }, []);
 
+  const setSessionTimeoutMinutes = useCallback((v: string) => {
+    setState((prev) => ({ ...prev, sessionTimeoutMinutes: v }));
+  }, []);
+
   const setSystemPrompt = useCallback((systemPrompt: string) => {
     setState((prev) => ({ ...prev, systemPrompt }));
   }, []);
@@ -269,6 +278,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setTagEncourage,
     setTagExclude,
     setTagCustomTags,
+    setSessionTimeoutMinutes,
     reset,
   };
 

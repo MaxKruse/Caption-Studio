@@ -60,11 +60,13 @@ export const API_TIMEOUT_MS = 5 * 60 * 1000;
 const MAX_CONCURRENCY = 8;
 
 /**
- * Chunked uploads: if no further chunk arrives within this window (and
- * the expected image count has not been reached), the session ends with
- * an error instead of hanging open.
+ * Default session timeout for chunked uploads: if no further chunk
+ * arrives within this window (and the expected image count has not been
+ * reached), the session ends with an error instead of hanging open.
+ * Overridable per request via config.sessionTimeoutMs (up to 3h) for
+ * very large or slow uploads.
  */
-export const CHUNK_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+export const DEFAULT_SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
 // Chunked upload state
@@ -476,10 +478,14 @@ async function handleChunkStart(
   const serverParallelPromise = getModelParallel(config.serverUrl, config.model);
 
   // Rejected images never arrive, so account for them up front: the queue
-  // must drain on the remaining (valid) images, not time out after 5 minutes.
+  // must drain on the remaining (valid) images, not trip the idle timeout.
+  // The idle window is configurable per request (config.sessionTimeoutMs),
+  // defaulting to 30 min. It only bounds waiting for OUTSTANDING chunks and
+  // never fires once every expected image has arrived.
+  const idleTimeoutMs = config.sessionTimeoutMs ?? DEFAULT_SESSION_TIMEOUT_MS;
   const queue = createSessionQueue<ImageTask>({
     expected: Math.max(0, expectedImageCount - firstRejections.length),
-    idleTimeoutMs: CHUNK_IDLE_TIMEOUT_MS,
+    idleTimeoutMs,
   });
   chunkedSessions.set(sessionId, { queue, usedBases, sendEvent });
 
@@ -490,6 +496,7 @@ async function handleChunkStart(
     chunkSize: config.chunkSize,
     accepted: firstTasks.length,
     rejected: firstRejections.length,
+    sessionTimeoutMs: idleTimeoutMs,
   });
 
   const sessionAbort = new AbortController();
@@ -549,7 +556,7 @@ async function handleChunkStart(
       );
       if (outcome === "timed-out" && !sessionAbort.signal.aborted) {
         sendEvent("error", {
-          error: `Upload incomplete: expected ${queue.expected} images, received ${queue.arrived}`,
+          error: `Upload incomplete: expected ${queue.expected} images, received ${queue.arrived}. No further chunks arrived within the ${Math.round(idleTimeoutMs / 60000)} min session timeout, so the session was closed.`,
         });
       } else if (!sessionAbort.signal.aborted) {
         sendEvent("done", { allComplete: true });

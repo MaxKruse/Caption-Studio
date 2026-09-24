@@ -37,6 +37,18 @@ const baseConfig = z.object({
   chunkIndex: z.number().int().min(0).max(10_000).optional(),
   /** Images per chunk (fixed except the last, which may be shorter). */
   chunkSize: z.number().int().min(1).max(200).optional(),
+  /**
+   * How long (ms) the server keeps a chunked upload open waiting for the
+   * remaining chunks before declaring it incomplete. Only relevant to
+   * chunked (large-batch) uploads; a single-shot upload finishes in one
+   * POST. Defaults to 30 min when omitted; the UI allows up to 3h.
+   */
+  sessionTimeoutMs: z
+    .number()
+    .int()
+    .min(1000)
+    .max(3 * 60 * 60 * 1000)
+    .optional(),
 });
 
 /** Krea 2 mode requires character description */
