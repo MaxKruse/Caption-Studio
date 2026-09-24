@@ -135,7 +135,7 @@ Before picking a mode you can set the **session timeout** (minutes): how long th
 
 Drag and drop images or click to browse. Accepted formats: PNG, JPEG, GIF, WebP, AVIF, and TIFF (10 MB per image). Non-PNG/JPEG images are automatically converted to JPEG before sending to the API. Images that fail validation are not silently dropped: each affected row shows its rejection reason (oversized, unsupported format, or session cap reached), and a warning event summarizes the rejections.
 
-Large batches are fully supported (up to 5,000 images per session). Batches above 25 images upload in 25-image chunks: captioning starts from the first chunk while the rest of the batch is still uploading, so you do not wait for the whole upload before the first tokens appear.
+Large batches are fully supported (up to 5,000 images per session). Batches larger than one chunk upload in chunks sized to the server's parallelism (twice the `--parallel` slot count, so the worker pool stays fed): captioning starts from the first chunk while the rest of the batch is still uploading, so you do not wait for the whole upload before the first tokens appear.
 
 ### Step 4: Configure
 
@@ -214,7 +214,7 @@ POST /api/caption/for-anima
 | `sessionId` | string (UUIDv4) | Client-provided session id (chunk 0) |
 | `expectedImageCount` | number | Total images the batch will contain (chunk 0) |
 | `chunkIndex` | number | `0` opens the SSE stream; `> 0` appends to that session and gets a JSON ack `{ok, accepted, rejected}` (404 once the session has finished) |
-| `chunkSize` | number | Images per chunk (max 100) |
+| `chunkSize` | number | Images per chunk. Set client-side to twice the selected model's `--parallel` (so the worker pool stays fed); falls back to 25 when the server does not report it |
 | `sessionTimeoutMs` | number | Optional: how long (ms) the server keeps the session open waiting for the rest of the upload before closing it. Defaults to 30 min (1800000 ms); max 3h (10800000 ms) |
 
 Chunked batches are processed as they arrive: a worker pool drains the session's image queue while the client is still uploading. If the client goes silent while images are still outstanding, the session closes after the session timeout (30 min by default, up to 3h via `sessionTimeoutMs`) and reports an "upload incomplete" error naming the expected vs received counts. The timeout never fires once every expected image has arrived - a fully uploaded batch always drains to completion, no matter how long the slowest image takes. Images rejected at upload (oversized, unsupported format, or over the 5,000-image per-session cap) are accounted for in the queue, so they never trigger a false timeout: each gets an `image_complete` event with `status: "failed"` and the reason, plus a `warning` event summarizing the rejections.
@@ -414,6 +414,6 @@ Browser                          Server (Next.js)                 llama.cpp
 - Images are saved to `/tmp/caption-studio/<sessionId>/` on the server
 - Caption `.txt` files are written alongside images during processing
 - Temp directories auto-clean 30 minutes after last activity (the session index in `sessions.json` is adopted across restarts; the process never deletes session dirs on shutdown, so a Docker rebuild cannot destroy undownloaded results)
-- Each session holds up to 5,000 images; larger batches upload in 25-image chunks and are processed as they arrive (the worker pool drains a session queue while the client is still uploading)
+- Each session holds up to 5,000 images; larger batches upload in chunks sized to the server's `--parallel` (twice the slot count) and are processed as they arrive (the worker pool drains a session queue while the client is still uploading)
 - Processing uses a worker pool (up to 8 parallel API requests, clamped to the server's `--parallel`), with each worker pinned to its own llama.cpp slot for KV cache reuse. If the server's `--parallel` cannot be detected, the batch runs serially (concurrency 1) and a warning is shown in the UI - in-flight requests never exceed the server's slot count
 - Phase 1 has a 15-minute timeout; phases 2/3 have a 5-minute timeout each

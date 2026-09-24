@@ -2,6 +2,7 @@ import { describe, it, expect } from "bun:test";
 import {
   UPLOAD_CHUNK_SIZE,
   planChunkedUpload,
+  chunkSizeForParallel,
   buildChunkFormData,
   buildSingleShotFormData,
 } from "@/lib/upload-chunking";
@@ -37,6 +38,23 @@ describe("planChunkedUpload", () => {
   it("splits large batches into fixed-size chunks", () => {
     expect(planChunkedUpload(UPLOAD_CHUNK_SIZE + 1)).toEqual({ isChunked: true, chunks: 2, chunkSize: UPLOAD_CHUNK_SIZE });
     expect(planChunkedUpload(700)).toEqual({ isChunked: true, chunks: 28, chunkSize: UPLOAD_CHUNK_SIZE });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// chunkSizeForParallel
+// ---------------------------------------------------------------------------
+
+describe("chunkSizeForParallel", () => {
+  it("scales the chunk to twice the server's parallelism", () => {
+    expect(chunkSizeForParallel(8)).toBe(16);
+    expect(chunkSizeForParallel(4)).toBe(8);
+    expect(chunkSizeForParallel(1)).toBe(2);
+  });
+
+  it("falls back to the default when parallelism is unknown", () => {
+    expect(chunkSizeForParallel(null)).toBe(UPLOAD_CHUNK_SIZE);
+    expect(chunkSizeForParallel(undefined)).toBe(UPLOAD_CHUNK_SIZE);
   });
 });
 

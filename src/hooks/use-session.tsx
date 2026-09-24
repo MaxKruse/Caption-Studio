@@ -24,6 +24,8 @@ export interface SessionState {
   mode: AppMode | null;
   serverUrl: string;
   model: string;
+  /** --parallel of the selected model (from /v1/models); sizes upload chunks. Null if unreported. */
+  modelParallel: number | null;
   /** Object URLs (URL.createObjectURL) for preview - not base64. */
   images: string[];
   imageNames: string[];
@@ -56,6 +58,7 @@ const DEFAULT_STATE: SessionState = {
   mode: null,
   serverUrl: "",
   model: "",
+  modelParallel: null,
   images: [],
   imageNames: [],
   imageFiles: [],
@@ -118,6 +121,7 @@ interface SessionContextValue {
   setMode: (mode: AppMode | null) => void;
   setServerUrl: (serverUrl: string) => void;
   setModel: (model: string) => void;
+  setModelParallel: (v: number | null) => void;
   addImage: (file: File, name: string, caption?: string) => void;
   /**
    * Add many images in a single state update. Dropped/picked batches of
@@ -162,6 +166,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const setModel = useCallback((model: string) => {
     setState((prev) => ({ ...prev, model }));
+  }, []);
+
+  const setModelParallel = useCallback((v: number | null) => {
+    setState((prev) => ({ ...prev, modelParallel: v }));
   }, []);
 
   const addImages = useCallback((entries: ImageEntry[]) => {
@@ -264,6 +272,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setMode,
     setServerUrl,
     setModel,
+    setModelParallel,
     addImage,
     addImages,
     removeImage,

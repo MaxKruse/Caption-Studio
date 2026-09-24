@@ -55,6 +55,19 @@ export function planChunkedUpload(
   return { isChunked: true, chunks: Math.ceil(totalImages / chunkSize), chunkSize };
 }
 
+/**
+ * Upload chunk size for a batch, scaled to the server's parallelism.
+ *
+ * A chunk of twice the slot count keeps the worker pool fed: while one
+ * slot's worth of images is being captioned, another slot's worth is queued,
+ * so a finishing worker almost always has the next image ready. Each POST
+ * stays a moderate size. Falls back to UPLOAD_CHUNK_SIZE when parallelism is
+ * unknown (older server, model-id mismatch, or a slow /v1/models).
+ */
+export function chunkSizeForParallel(parallel: number | null | undefined): number {
+  return parallel && parallel >= 1 ? 2 * parallel : UPLOAD_CHUNK_SIZE;
+}
+
 // ---------------------------------------------------------------------------
 // Chunk FormData
 // ---------------------------------------------------------------------------

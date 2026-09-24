@@ -13,7 +13,7 @@ interface ModelSelectorProps {
 }
 
 export function ModelSelector({ serverUrl }: ModelSelectorProps) {
-  const { state, setModel } = useSession();
+  const { state, setModel, setModelParallel } = useSession();
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,6 +42,7 @@ export function ModelSelector({ serverUrl }: ModelSelectorProps) {
       // Auto-select first model if none selected
       if (foundModels.length > 0 && !state.model) {
         setModel(foundModels[0].id);
+        setModelParallel(foundModels[0].parallel ?? null);
       }
     } catch {
       setError("Failed to connect to server");
@@ -49,7 +50,7 @@ export function ModelSelector({ serverUrl }: ModelSelectorProps) {
     } finally {
       setLoading(false);
     }
-  }, [serverUrl, state.model, setModel]);
+  }, [serverUrl, state.model, setModel, setModelParallel]);
 
   // Fetch on mount only
   useEffect(() => {
@@ -67,7 +68,12 @@ export function ModelSelector({ serverUrl }: ModelSelectorProps) {
       <div className="flex gap-2">
         <select
           value={state.model}
-          onChange={(e) => setModel(e.target.value)}
+          onChange={(e) => {
+            const id = e.target.value;
+            setModel(id);
+            const selected = models.find((m) => m.id === id);
+            setModelParallel(selected?.parallel ?? null);
+          }}
           className="flex-1 bg-slate-800/80 border border-slate-600 rounded-lg px-3 py-2 text-slate-100 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
           disabled={loading || models.length === 0}
         >

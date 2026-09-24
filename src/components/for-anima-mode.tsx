@@ -21,6 +21,7 @@ import { CaptionResult, stopCaptionSession } from "@/lib/caption-result";
 import {
   CHUNK_UPLOAD_TIMEOUT_MS,
   planChunkedUpload,
+  chunkSizeForParallel,
   buildChunkFormData,
   buildSingleShotFormData,
 } from "@/lib/upload-chunking";
@@ -231,10 +232,11 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
     const captionTexts = state.imageNames.map((_, i) => (tagResults[i]?.tags ?? []).join(", "));
     const signal = abortControllerRef.current?.signal;
 
-    // Large batches upload in chunks: chunk 0 opens the SSE stream and the
-    // server starts captioning while the remaining chunks are still in
-    // flight. Small batches keep the single-shot request shape.
-    const plan = planChunkedUpload(total);
+    // Large batches upload in chunks sized to the server's parallelism (2x
+    // the slot count, so the worker pool stays fed): chunk 0 opens the SSE
+    // stream and the server starts captioning while the remaining chunks are
+    // still in flight. Batches no larger than one chunk stay single-shot.
+    const plan = planChunkedUpload(total, chunkSizeForParallel(state.modelParallel));
     const chunkJobs: Promise<void>[] = [];
     // Aborted when the SSE stream ends (done, error, or user stop) so an
     // in-flight chunk upload cannot wedge the finalization wait: by then
