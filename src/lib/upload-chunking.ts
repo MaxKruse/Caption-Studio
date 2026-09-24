@@ -19,6 +19,15 @@
 /** Images per chunk. ~25 keeps the first response in seconds for typical 1-2 MB images. */
 export const UPLOAD_CHUNK_SIZE = 25;
 
+/**
+ * Per-attempt deadline for a chunk POST (headers + body + ack). The
+ * server's chunk-idle watchdog ends the session when uploads stall, but
+ * without this bound a hung body read would wedge the client forever
+ * (it awaits the chunk jobs before finalizing). 2 min is below the
+ * watchdog (5 min) and above a slow 25-image chunk on a bad link.
+ */
+export const CHUNK_UPLOAD_TIMEOUT_MS = 2 * 60 * 1000;
+
 // ---------------------------------------------------------------------------
 // Plan
 // ---------------------------------------------------------------------------
@@ -103,6 +112,49 @@ export function buildChunkFormData(options: ChunkFormDataOptions): FormData {
   fd.append("imageNames", JSON.stringify(imageNames.slice(start, end)));
 
   for (let i = start; i < end; i++) {
+    fd.append("images", imageFiles[i]);
+    // Always append a caption part (possibly empty) to keep the `captions`
+    // parts 1:1 index-aligned with the `images` parts on the server.
+    // A File (not Blob) is required: empty Blobs lose their filename in
+    // the multipart encoding.
+    fd.append(
+      "captions",
+      new File([captionTexts[i] ?? ""], `${imageNames[i]}.txt`, { type: "text/plain" })
+    );
+  }
+
+  return fd;
+}
+
+// ---------------------------------------------------------------------------
+// Single-shot FormData (small batches)
+// ---------------------------------------------------------------------------
+
+export interface SingleShotFormDataOptions {
+  /** Config fields (serverUrl, model, ...) - no chunk fields. */
+  config: Record<string, unknown>;
+  /** Image file array. */
+  imageFiles: File[];
+  /** Image name array (aligned with imageFiles). */
+  imageNames: string[];
+  /** Caption text array (aligned; "" = no caption for that image). */
+  captionTexts: string[];
+}
+
+/**
+ * Build the multipart body for a single-shot upload (batches of chunkSize
+ * or fewer): config, image names, and one image + one caption part per
+ * image. A caption part is appended for EVERY image (empty text when there
+ * is none) so the server can pair captions to images by 1:1 index.
+ */
+export function buildSingleShotFormData(options: SingleShotFormDataOptions): FormData {
+  const { config, imageFiles, imageNames, captionTexts } = options;
+
+  const fd = new FormData();
+  fd.append("config", JSON.stringify(config));
+  fd.append("imageNames", JSON.stringify(imageNames));
+
+  for (let i = 0; i < imageFiles.length; i++) {
     fd.append("images", imageFiles[i]);
     // Always append a caption part (possibly empty) to keep the `captions`
     // parts 1:1 index-aligned with the `images` parts on the server.

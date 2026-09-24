@@ -18,7 +18,12 @@ import { consumeSseStream } from "@/lib/sse-client";
 import { triggerDownload } from "@/lib/download";
 import { fileToBase64 } from "@/lib/file-utils";
 import { CaptionResult, stopCaptionSession } from "@/lib/caption-result";
-import { planChunkedUpload, buildChunkFormData } from "@/lib/upload-chunking";
+import {
+  CHUNK_UPLOAD_TIMEOUT_MS,
+  planChunkedUpload,
+  buildChunkFormData,
+  buildSingleShotFormData,
+} from "@/lib/upload-chunking";
 import { sleep } from "@/lib/caption-helpers";
 import { ImageUploader } from "@/components/image-uploader";
 import { ModelSelector } from "@/components/model-selector";
@@ -282,19 +287,12 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
           );
         }
       } else {
-        const formData = new FormData();
-        formData.append("config", JSON.stringify(baseConfig));
-        formData.append("imageNames", JSON.stringify(state.imageNames));
-        for (let i = 0; i < total; i++) {
-          // Always append a caption part (possibly empty) to keep the
-          // `captions` parts 1:1 index-aligned with the `images` parts.
-          // A File (not Blob) is required: empty Blobs lose their filename
-          // in the multipart encoding.
-          formData.append(
-            "captions",
-            new File([captionTexts[i] ?? ""], state.imageNames[i] + ".txt", { type: "text/plain" })
-          );
-        }
+        const formData = buildSingleShotFormData({
+          config: baseConfig,
+          imageFiles: state.imageFiles,
+          imageNames: state.imageNames,
+          captionTexts,
+        });
         response = await fetch("/api/caption/for-anima", {
           method: "POST",
           body: formData,

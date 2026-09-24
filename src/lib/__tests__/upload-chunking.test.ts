@@ -3,6 +3,7 @@ import {
   UPLOAD_CHUNK_SIZE,
   planChunkedUpload,
   buildChunkFormData,
+  buildSingleShotFormData,
 } from "@/lib/upload-chunking";
 
 // ---------------------------------------------------------------------------
@@ -101,5 +102,51 @@ describe("buildChunkFormData", () => {
     expect(await captions[0].text()).toBe("1girl");
     expect(captions[1].name).toBe("b.jpg.txt");
     expect(await captions[1].text()).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildSingleShotFormData
+// ---------------------------------------------------------------------------
+
+describe("buildSingleShotFormData", () => {
+  const config = { serverUrl: "http://localhost:8080", model: "m" };
+  const imageFiles = makeFiles(3);
+  const imageNames = imageFiles.map((f) => f.name);
+
+  it("sends one image part per image, aligned with imageNames", () => {
+    const fd = buildSingleShotFormData({
+      config,
+      imageFiles,
+      imageNames,
+      captionTexts: ["", "", ""],
+    });
+    const images = fd.getAll("images") as File[];
+    expect(images.length).toBe(3);
+    expect(images.map((f) => f.name)).toEqual(imageNames);
+    expect(namesOf(fd)).toEqual(imageNames);
+    // No chunk fields in the config - the server treats this as single-shot
+    const parsed = configOf(fd);
+    expect(parsed.sessionId).toBeUndefined();
+    expect(parsed.expectedImageCount).toBeUndefined();
+    expect(parsed.chunkIndex).toBeUndefined();
+    expect(parsed.serverUrl).toBe("http://localhost:8080");
+    expect(parsed.model).toBe("m");
+  });
+
+  it("sends a (possibly empty) caption part per image so indexes stay aligned", async () => {
+    const fd = buildSingleShotFormData({
+      config,
+      imageFiles,
+      imageNames,
+      captionTexts: ["1girl", "", "2girls"],
+    });
+    const captions = fd.getAll("captions") as File[];
+    expect(captions.length).toBe(3);
+    expect(captions[0].name).toBe("img0.jpg.txt");
+    expect(await captions[0].text()).toBe("1girl");
+    expect(await captions[1].text()).toBe("");
+    expect(captions[2].name).toBe("img2.jpg.txt");
+    expect(await captions[2].text()).toBe("2girls");
   });
 });
