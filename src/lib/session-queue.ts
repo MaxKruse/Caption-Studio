@@ -6,11 +6,13 @@
  * instead of waiting for the whole batch. SessionQueue is the
  * producer/consumer bridge:
  *
- * - enqueue(item) is called as each upload chunk arrives (resets the idle timer)
+ * - enqueue(item) is called as each upload chunk arrives; while items are
+ *   still outstanding it (re)arms the idle timer, and once every expected
+ *   item has arrived it clears the timer
  * - workers call next() to pull the next item (blocks until one arrives)
  * - done resolves with "drained" once every expected item has arrived
- *   AND been consumed, "timed-out" if chunks stop arriving, or "aborted"
- *   when the caller aborts
+ *   AND been consumed, "timed-out" if the expected count is not reached
+ *   before the idle window elapses, or "aborted" when the caller aborts
  */
 
 // ---------------------------------------------------------------------------
@@ -20,7 +22,11 @@
 export type QueueOutcome = "drained" | "timed-out" | "aborted";
 
 export interface SessionQueue<T> {
-  /** Enqueue an item (from an arriving upload chunk). Resets the idle timer. */
+  /**
+   * Enqueue an item (from an arriving upload chunk). While items are still
+   * outstanding this (re)arms the idle timer; once every expected item has
+   * arrived it clears the timer so the backlog can drain at its own pace.
+   */
   enqueue(item: T): void;
   /**
    * Record that `count` expected items were rejected before enqueue (e.g.
@@ -96,8 +102,15 @@ export function createSessionQueue<T>(options: SessionQueueOptions): SessionQueu
 
   const armIdleTimer = (): void => {
     if (!idleTimeoutMs) return;
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => finish("timed-out"), idleTimeoutMs);
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = undefined;
+      // Only time out while chunks are still outstanding. If every expected
+      // item arrived before the window elapsed, the backlog is legitimately
+      // still being processed - there is nothing left to wait for.
+      if (arrived >= expected) return;
+      finish("timed-out");
+    }, idleTimeoutMs);
   };
 
   const enqueue = (item: T): void => {
@@ -109,8 +122,15 @@ export function createSessionQueue<T>(options: SessionQueueOptions): SessionQueu
     } else {
       pending.push(item);
     }
-    if (arrived >= expected && pending.length === 0) {
-      finish("drained");
+    if (arrived >= expected) {
+      // Every expected item has arrived: nothing more to wait for. Clear the
+      // idle timer - the queue drains as workers consume the backlog, even if
+      // that takes longer than the idle window (large batches).
+      if (timer) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+      checkDrained();
     } else {
       armIdleTimer();
     }

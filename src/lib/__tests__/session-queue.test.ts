@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, jest } from "bun:test";
 import { createSessionQueue } from "@/lib/session-queue";
 
 // ---------------------------------------------------------------------------
@@ -63,6 +63,28 @@ describe("createSessionQueue", () => {
     const pending = q.next(); // waiter blocks past the timeout
     expect(await q.done).toBe("timed-out");
     expect(await pending).toBeUndefined();
+  });
+
+  it("does not time out once every expected item has arrived (backlog drains at its own pace)", async () => {
+    jest.useFakeTimers();
+    try {
+      const q = createSessionQueue<number>({ expected: 3, idleTimeoutMs: 50 });
+      q.enqueue(1);
+      q.enqueue(2);
+      q.enqueue(3); // all arrived - the idle timer must be cleared now
+
+      // Advance past the idle window. Pre-fix this is where the timer fired
+      // "timed-out" even though every item had already arrived.
+      jest.advanceTimersByTime(150);
+
+      // The backlog must still drain normally instead of timing out.
+      expect(await q.next()).toBe(1);
+      expect(await q.next()).toBe(2);
+      expect(await q.next()).toBe(3);
+      expect(await q.done).toBe("drained");
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it("abort() resolves done with 'aborted' and unblocks waiters", async () => {
