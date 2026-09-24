@@ -4,6 +4,7 @@ import {
   createSession,
   saveImage,
   saveImagesBatch,
+  readImage,
   deleteSession,
   MAX_IMAGES_PER_SESSION,
   MAX_IMAGE_SIZE_BYTES,
@@ -169,6 +170,31 @@ describe("temp-files saveImagesBatch", () => {
     const session = await createSession();
     const results = await saveImagesBatch(session.id, [], new Set());
     expect(results).toEqual([]);
+    await deleteSession(session.id);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// readImage
+// ---------------------------------------------------------------------------
+
+describe("temp-files readImage", () => {
+  it("returns the saved bytes for a stored image", async () => {
+    const session = await createSession();
+    const usedBases = new Set<string>();
+    await saveImage(session.id, "roundtrip.png", PNG_BYTES, usedBases);
+    const read = await readImage(session.id, "roundtrip.png");
+    expect(read).not.toBeNull();
+    expect(Buffer.compare(read!, PNG_BYTES)).toBe(0);
+    await deleteSession(session.id);
+  });
+
+  it("returns null for a missing file or an unknown session", async () => {
+    const session = await createSession();
+    expect(await readImage(session.id, "never-saved.png")).toBeNull();
+    expect(
+      await readImage("00000000-0000-4000-8000-000000000000", "roundtrip.png")
+    ).toBeNull();
     await deleteSession(session.id);
   });
 });

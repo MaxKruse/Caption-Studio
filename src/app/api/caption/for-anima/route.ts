@@ -22,6 +22,7 @@ import {
 import {
   createSession,
   saveImagesBatch,
+  readImage,
   writeCaption,
   writeTags,
   touchSession,
@@ -86,10 +87,9 @@ const chunkedSessions = new Map<string, ChunkedSessionEntry>();
 
 interface ImageTask {
   index: number;
-  serverName: string;     // deduplicated filename on disk
-  originalName: string;   // original uploaded filename
-  imageBuffer: Buffer;    // raw image data (for API call)
-  booruTags: string;      // existing caption text (booru tags)
+  serverName: string;    // deduplicated filename on disk (bytes read at process time)
+  originalName: string;  // original uploaded filename
+  booruTags: string;     // existing caption text (booru tags)
 }
 
 /**
@@ -116,9 +116,21 @@ async function processImage(
   sendEvent("image_start", { index: task.index, name: task.originalName });
 
   try {
+    // Read the image from the session dir at process time: tasks carry
+    // only names, so a large queue does not hold raw image bytes in RAM.
+    const imageBuffer = await readImage(sessionId, task.serverName);
+    if (!imageBuffer) {
+      sendEvent("image_complete", {
+        index: task.index,
+        name: task.originalName,
+        status: "failed",
+        error: "image file missing from the session (it may have been cleaned up)",
+      });
+      return;
+    }
     const { buffer: apiBuffer, mimeType } = await prepareForApi(
       task.originalName,
-      task.imageBuffer,
+      imageBuffer,
       maxImageDimension
     );
     const base64 = apiBuffer.toString("base64");
@@ -240,10 +252,10 @@ async function saveChunkToSession(
 
   const tasks: ImageTask[] = [];
   const rejections: RejectedImage[] = [];
-  readItems.forEach(({ i, imageBuffer, booruTags, originalName }, idx) => {
+  readItems.forEach(({ i, booruTags, originalName }, idx) => {
     const result = results[idx];
     if (result.name) {
-      tasks.push({ index: indexOffset + i, serverName: result.name, originalName, imageBuffer, booruTags });
+      tasks.push({ index: indexOffset + i, serverName: result.name, originalName, booruTags });
     } else {
       rejections.push({
         index: indexOffset + i,

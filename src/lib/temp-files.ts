@@ -515,6 +515,27 @@ export async function readCaption(
 }
 
 /**
+ * Read an uploaded image's bytes back from the session directory.
+ * Queued tasks carry only the server-side filename, so a large batch
+ * never holds raw image data in memory while waiting for a worker.
+ * Returns null if the session or image file is missing (e.g. the
+ * session dir was cleaned up while the job was still running).
+ */
+export async function readImage(
+  sessionId: string,
+  imageServerName: string
+): Promise<Buffer | null> {
+  const meta = sessions.get(sessionId);
+  if (!meta) return null;
+
+  try {
+    return await fsp.readFile(path.join(meta.dir, imageServerName));
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Get session metadata by ID. Touches the last-activity timestamp.
  */
 export function getSession(sessionId: string): SessionMeta | null {

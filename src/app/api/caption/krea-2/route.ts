@@ -20,6 +20,7 @@ import { buildUserPrompt } from "@/lib/prompt-utils";
 import {
   createSession,
   saveImagesBatch,
+  readImage,
   writeCaption,
   touchSession,
   deleteSession,
@@ -48,9 +49,8 @@ import { krea2ConfigSchema } from "@/lib/config-schema";
 
 interface ImageTask {
   index: number;
-  serverName: string;    // deduplicated filename on disk
+  serverName: string;    // deduplicated filename on disk (bytes read at process time)
   originalName: string;  // original uploaded filename
-  imageBuffer: Buffer;   // raw image data (for API call)
 }
 
 // ---------------------------------------------------------------------------
@@ -106,10 +106,23 @@ async function processImageAllPhases(
   sendEvent("image_start", { index: task.index, name: task.originalName });
 
   try {
+    // Read the image from the session dir at process time: tasks carry
+    // only names, so a large batch does not hold raw image bytes in RAM.
+    // The buffer is kept for all 3 phases of this conversation.
+    const imageBuffer = await readImage(sessionId, task.serverName);
+    if (!imageBuffer) {
+      sendEvent("image_complete", {
+        index: task.index,
+        name: task.originalName,
+        status: "failed",
+        error: "image file missing from the session (it may have been cleaned up)",
+      });
+      return;
+    }
     // Prepare image once (used in first message of the conversation)
     const { buffer: apiBuffer, mimeType } = await prepareForApi(
       task.originalName,
-      task.imageBuffer,
+      imageBuffer,
       maxImageDimension
     );
     const base64 = apiBuffer.toString("base64");
@@ -326,10 +339,10 @@ export async function POST(request: NextRequest) {
 
   const tasks: ImageTask[] = [];
   const rejections: RejectedImage[] = [];
-  readItems.forEach(({ i, imageBuffer, originalName }, idx) => {
+  readItems.forEach(({ i, originalName }, idx) => {
     const result = results[idx];
     if (result.name) {
-      tasks.push({ index: i, serverName: result.name, originalName, imageBuffer });
+      tasks.push({ index: i, serverName: result.name, originalName });
     } else {
       rejections.push({
         index: i,
