@@ -70,7 +70,9 @@ export interface ChunkFormDataOptions {
 
 /**
  * Build the multipart body for one chunk: config (with chunk fields),
- * this chunk's image names, and its image + caption parts.
+ * this chunk's image names, and its image + caption parts. A caption part
+ * is appended for EVERY image (empty text when there is none) so the
+ * server can pair captions to images by 1:1 index.
  */
 export function buildChunkFormData(options: ChunkFormDataOptions): FormData {
   const {
@@ -102,14 +104,14 @@ export function buildChunkFormData(options: ChunkFormDataOptions): FormData {
 
   for (let i = start; i < end; i++) {
     fd.append("images", imageFiles[i]);
-    const caption = captionTexts[i] ?? "";
-    if (caption) {
-      fd.append(
-        "captions",
-        new Blob([caption], { type: "text/plain" }),
-        `${imageNames[i]}.txt`
-      );
-    }
+    // Always append a caption part (possibly empty) to keep the `captions`
+    // parts 1:1 index-aligned with the `images` parts on the server.
+    // A File (not Blob) is required: empty Blobs lose their filename in
+    // the multipart encoding.
+    fd.append(
+      "captions",
+      new File([captionTexts[i] ?? ""], `${imageNames[i]}.txt`, { type: "text/plain" })
+    );
   }
 
   return fd;

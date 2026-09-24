@@ -286,15 +286,14 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
         formData.append("config", JSON.stringify(baseConfig));
         formData.append("imageNames", JSON.stringify(state.imageNames));
         for (let i = 0; i < total; i++) {
-          formData.append("images", state.imageFiles[i]);
-          const captionText = captionTexts[i];
-          if (captionText) {
-            formData.append(
-              "captions",
-              new Blob([captionText], { type: "text/plain" }),
-              state.imageNames[i] + ".txt"
-            );
-          }
+          // Always append a caption part (possibly empty) to keep the
+          // `captions` parts 1:1 index-aligned with the `images` parts.
+          // A File (not Blob) is required: empty Blobs lose their filename
+          // in the multipart encoding.
+          formData.append(
+            "captions",
+            new File([captionTexts[i] ?? ""], state.imageNames[i] + ".txt", { type: "text/plain" })
+          );
         }
         response = await fetch("/api/caption/for-anima", {
           method: "POST",

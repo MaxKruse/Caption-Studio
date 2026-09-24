@@ -64,8 +64,8 @@ describe("buildChunkFormData", () => {
     expect(config.chunkSize).toBe(2);
     expect(config.serverUrl).toBe("http://localhost:8080");
     expect(config.model).toBe("m");
-    // No captions -> no caption parts
-    expect(fd.getAll("captions").length).toBe(0);
+    // Empty captions still get a (blank) part so captions stay 1:1 with images
+    expect(fd.getAll("captions").length).toBe(2);
   });
 
   it("the last chunk carries only the remaining images", () => {
@@ -87,7 +87,7 @@ describe("buildChunkFormData", () => {
     expect(await captions[0].text()).toBe("2girls");
   });
 
-  it("skips empty captions but keeps the part order aligned", () => {
+  it("sends a (possibly empty) caption part per image so indexes stay aligned", async () => {
     const fd = buildChunkFormData({
       ...base,
       chunkIndex: 0,
@@ -96,7 +96,10 @@ describe("buildChunkFormData", () => {
     const images = fd.getAll("images") as File[];
     const captions = fd.getAll("captions") as File[];
     expect(images.length).toBe(2);
-    expect(captions.length).toBe(1);
+    expect(captions.length).toBe(2);
     expect(captions[0].name).toBe("a.jpg.txt");
+    expect(await captions[0].text()).toBe("1girl");
+    expect(captions[1].name).toBe("b.jpg.txt");
+    expect(await captions[1].text()).toBe("");
   });
 });
