@@ -152,7 +152,7 @@ POST /api/caption/for-anima → FormData (images + caption files + JSON config),
 DELETE ?sessionId=<id>      → aborts session
 ```
 
-Takes images + existing booru tag caption files. LLM generates natural language additions. Final caption = original tags + LLM addition.
+Takes images + existing booru tag caption files. The LLM describes the whole image as seen, using the tags as grounding (consistent, never rephrasing/echoing them), and transcribes any visible text verbatim (exact wording/language/capitalization) with its position. Final caption = original tags + LLM addition.
 
 ### Krea 2 Mode (3-phase multi-turn pipeline)
 
@@ -209,7 +209,7 @@ In-memory store — multi-replica deployments will not work correctly.
 
 ### Image Format Handling
 
-OpenAI-compatible APIs only accept PNG/JPEG. Non-compatible formats (WebP, GIF) are converted to JPEG (quality 90) via `sharp` before API calls. Max dimension: 1536px default (`API_MAX_DIMENSION`, sized to llama.cpp's default 8192 vision-token budget), overridable per request via the `maxImageDimension` config field (256-4096).
+Accepted upload formats: PNG, JPEG, GIF, WEBP, AVIF, TIFF (10 MB per image; `MAX_IMAGE_SIZE_BYTES`), validated by magic bytes in `temp-files.ts`. OpenAI-compatible APIs only accept PNG/JPEG, so non-compatible formats are converted to JPEG (quality 90) via `sharp` before API calls. Rejected uploads (oversized / invalid format / session cap) are reported per-image with a reason - never silently dropped. Max dimension: 1536px default (`API_MAX_DIMENSION`, sized to llama.cpp's default 8192 vision-token budget), overridable per request via the `maxImageDimension` config field (256-4096).
 
 ### Before Writing Code
 

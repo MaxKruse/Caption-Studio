@@ -8,7 +8,7 @@ Batch captioning tool for llama.cpp vision models. Web UI (Next.js/React) plus a
 - Auto-discover loaded vision models
 - Upload images in bulk (drag-and-drop or file picker)
 - Generate detailed captions with streaming token feedback
-- Two prompt modes: **Krea 2** (three-phase captioning with character description), and **For Anima** (booru tag enhancement, with built-in WD Tagger tagging)
+- Two prompt modes: **Krea 2** (three-phase captioning with character description), and **For Anima** (whole-image description grounded in booru tags, with built-in WD Tagger tagging)
 - Optional trigger word injection for character/subject naming
 - llama.cpp **KV cache reuse**: workers are pinned to server slots so Krea 2's three phases (and image batches) reuse cached image encodings; the UI shows the prompt-token reuse percentage per batch
 - Transient server errors (5xx/429) are retried automatically with exponential backoff
@@ -127,11 +127,11 @@ Click **Next** when the server is available.
 | Mode | Best For |
 |------|----------|
 | **Krea 2** | Dataset captioning with character-aware de-duplication - three-phase pipeline removes repetitive character traits and distills to a concise prompt |
-| **For Anima** | Dataset captioning with booru tags - tags images with the built-in WD Tagger (or bring your own tag files) and enriches them with natural language |
+| **For Anima** | Dataset captioning with booru tags - tags images with the built-in WD Tagger (or bring your own tag files), then describes the whole image as seen (tags as grounding) and transcribes any visible text verbatim |
 
 ### Step 3: Upload Images
 
-Drag and drop images or click to browse. Supports any common image format (PNG, JPEG, WebP, GIF, etc.). Non-PNG/JPEG images are automatically converted before sending to the API.
+Drag and drop images or click to browse. Accepted formats: PNG, JPEG, GIF, WebP, AVIF, and TIFF (10 MB per image). Non-PNG/JPEG images are automatically converted to JPEG before sending to the API. Images that fail validation are not silently dropped: each affected row shows its rejection reason (oversized, unsupported format, or session cap reached), and a warning event summarizes the rejections.
 
 Large batches are fully supported (up to 5,000 images per session). Batches above 25 images upload in 25-image chunks: captioning starts from the first chunk while the rest of the batch is still uploading, so you do not wait for the whole upload before the first tokens appear.
 
@@ -165,12 +165,12 @@ When all images are processed, click **Download ZIP**. The ZIP contains an `img/
 
 This mode is designed for creating high-quality dataset captions for the [Anima](https://github.com/CircleStone-Labs/Anima) text-to-image model. It combines automated booru tagging with LLM-generated natural language descriptions.
 
-The system prompt enforces strict NSFW-enabling policies, requiring explicit description of all visible content without censorship. The addition must always state each character's line of sight - direct eye contact is described as "looking at the viewer" (booru convention, space-separated), averted gaze names the direction.
+The system prompt enforces strict NSFW-enabling policies, requiring explicit description of all visible content without censorship. The addition must always state each character's line of sight - direct eye contact is described as "looking at the viewer" (booru convention, space-separated), averted gaze names the direction. Readable text in the image (speech bubbles, captions, signs, titles, overlays) is transcribed verbatim - exact wording, original language, original capitalization - in double quotes, with its position in the image stated. The booru tags are grounding only: the description stays consistent with them but never rephrases or echoes them.
 
 ### Workflow
 
 1. **Tag the images:** In For Anima mode, upload your images and start the built-in tagging step. The app calls the [tag-service](tag-service/README.md) (WD Tagger, `SmilingWolf/wd-convnext-tagger-v3`) image by image so you can watch per-image progress, then review/adjust the generated tags. If you already have tags (e.g. from [taggui](https://github.com/jhc13/taggui)), you can upload your images together with matching `.txt` caption files instead and skip the tagging step.
-2. **LLM enhancement:** The vision model analyzes each image alongside its booru tags and generates a natural language addition that describes spatial relationships, mood, atmosphere, and details that tags alone cannot express.
+2. **LLM enhancement:** The vision model describes the whole image as seen - spatial relationships, mood, atmosphere, action, expressions - using the booru tags as grounding (consistent with them, never rephrasing or echoing them). Any readable text in the image is transcribed verbatim in double quotes, with its position in the image.
 3. **Final caption:** The output caption combines the original booru tags with the LLM-generated addition.
 
 ### Example
@@ -202,7 +202,7 @@ POST /api/caption/for-anima
 |-------|------|-------------|
 | `config` | string (JSON) | `{"serverUrl": "...", "model": "..."}` plus optional chunk fields below |
 | `images` | File[] | Image files to process |
-| `captions` | File[] | Caption files (booru tags), paired by index with images |
+| `captions` | File[] | Caption files (booru tags), paired by index with images (one part per image, even when empty, so the index pairing holds) |
 | `imageNames` | string (JSON) | Optional: `string[]` of display names for images |
 
 **Chunked uploads** (large batches): the config JSON may carry four extra fields:
@@ -214,7 +214,7 @@ POST /api/caption/for-anima
 | `chunkIndex` | number | `0` opens the SSE stream; `> 0` appends to that session and gets a JSON ack `{ok, accepted, rejected}` (404 once the session has finished) |
 | `chunkSize` | number | Images per chunk (max 100) |
 
-Chunked batches are processed as they arrive: a worker pool drains the session's image queue while the client is still uploading, and the queue drains after a 5-minute silence if the upload stalls. If the batch exceeds the 5,000-image per-session cap, the extra images are rejected and a `warning` SSE event tells the client how many.
+Chunked batches are processed as they arrive: a worker pool drains the session's image queue while the client is still uploading, and the queue drains after a 5-minute silence if the upload stalls. Images rejected at upload (oversized, unsupported format, or over the 5,000-image per-session cap) are accounted for in the queue, so they never trigger a false "upload incomplete" timeout: each gets an `image_complete` event with `status: "failed"` and the reason, plus a `warning` event summarizing the rejections.
 
 **SSE events:** `session`, `image_start`, `token`, `image_complete`, `warning`, `error`, `done`.
 
