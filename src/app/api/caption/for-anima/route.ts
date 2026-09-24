@@ -29,7 +29,13 @@ import {
 } from "@/lib/temp-files";
 import { readFileBuffer, chatComplete, streamResponse } from "@/lib/caption-helpers";
 import { forAnimaConfigSchema, type ForAnimaConfig } from "@/lib/config-schema";
-import { parseCaptionRequest, handleSessionAbort } from "@/lib/caption-route";
+import {
+  parseCaptionRequest,
+  handleSessionAbort,
+  emitRejectionEvents,
+  summarizeRejections,
+  type RejectedImage,
+} from "@/lib/caption-route";
 import { registerSession, unregisterSession } from "@/lib/session-registry";
 import { createSseStream } from "@/lib/sse";
 import { runWorkerPool, runWorkerPoolStreaming } from "@/lib/worker-pool";
@@ -67,7 +73,10 @@ interface ChunkedSessionEntry {
   queue: SessionQueue<ImageTask>;
   /** Base-name dedup set, shared across all chunks of the session. */
   usedBases: Set<string>;
+  /** Emits rejection feedback (failed events + warning) to the open SSE stream. */
+  sendEvent: (type: string, data: unknown) => void;
 }
+
 
 const chunkedSessions = new Map<string, ChunkedSessionEntry>();
 
@@ -193,8 +202,9 @@ async function processImage(
 
 /**
  * Read a chunk's images + caption texts, validate/save them into the
- * session directory, and return the processing tasks with GLOBAL image
- * indices (indexOffset + local position).
+ * session directory, and return the accepted processing tasks (with GLOBAL
+ * image indices: indexOffset + local position) and the rejected images
+ * (with reasons).
  */
 async function saveChunkToSession(
   sessionId: string,
@@ -203,7 +213,7 @@ async function saveChunkToSession(
   captionFiles: File[],
   usedBases: Set<string>,
   indexOffset: number
-): Promise<ImageTask[]> {
+): Promise<{ tasks: ImageTask[]; rejections: RejectedImage[] }> {
   const readItems = await Promise.all(
     imageFiles.map(async (file, i) => {
       const [imageBuffer, booruTags] = await Promise.all([
@@ -219,7 +229,7 @@ async function saveChunkToSession(
     })
   );
 
-  const serverNames = await saveImagesBatch(
+  const results = await saveImagesBatch(
     sessionId,
     readItems.map(({ imageBuffer, originalName }) => ({
       originalName,
@@ -229,14 +239,22 @@ async function saveChunkToSession(
   );
 
   const tasks: ImageTask[] = [];
+  const rejections: RejectedImage[] = [];
   readItems.forEach(({ i, imageBuffer, booruTags, originalName }, idx) => {
-    const serverName = serverNames[idx];
-    if (serverName) {
-      tasks.push({ index: indexOffset + i, serverName, originalName, imageBuffer, booruTags });
+    const result = results[idx];
+    if (result.name) {
+      tasks.push({ index: indexOffset + i, serverName: result.name, originalName, imageBuffer, booruTags });
+    } else {
+      rejections.push({
+        index: indexOffset + i,
+        name: originalName,
+        reason: result.reason ?? "invalid-format",
+      });
     }
   });
-  return tasks;
+  return { tasks, rejections };
 }
+
 
 // ---------------------------------------------------------------------------
 // POST - Start processing and return SSE stream
@@ -290,11 +308,21 @@ async function handleSingleShot(
   const session = await createSession();
   const sessionId = session.id;
   const usedBases = new Set<string>();
-  const tasks = await saveChunkToSession(sessionId, imageFiles, imageNames, captionFiles, usedBases, 0);
+  const { tasks, rejections } = await saveChunkToSession(
+    sessionId,
+    imageFiles,
+    imageNames,
+    captionFiles,
+    usedBases,
+    0
+  );
 
   if (tasks.length === 0) {
     await deleteSession(sessionId);
-    return Response.json({ error: "No valid images to process" }, { status: 400 });
+    return Response.json(
+      { error: `No valid images to process - ${summarizeRejections(rejections, imageFiles.length)}` },
+      { status: 400 }
+    );
   }
 
   const normalizedUrl = normalizeServerUrl(toDockerHostUrl(config.serverUrl));
@@ -313,13 +341,10 @@ async function handleSingleShot(
     sessionAbort.abort();
   });
 
-  // Send sessionId as first event
+  // Send sessionId as first event, then report any upload rejections so
+  // each affected row shows its reason instead of a vague timeout.
   sendEvent("session", { sessionId });
-  if (tasks.length < imageFiles.length) {
-    sendEvent("warning", {
-      message: `Only ${tasks.length} of ${imageFiles.length} images accepted (per-session limit or invalid image data)`,
-    });
-  }
+  emitRejectionEvents(sendEvent, rejections, imageFiles.length);
 
   // Process images in parallel
   (async () => {
@@ -390,23 +415,35 @@ async function handleChunkStart(
   }
 
   const usedBases = new Set<string>();
-  const firstTasks = await saveChunkToSession(sessionId, imageFiles, imageNames, captionFiles, usedBases, 0);
+  const { tasks: firstTasks, rejections: firstRejections } = await saveChunkToSession(
+    sessionId,
+    imageFiles,
+    imageNames,
+    captionFiles,
+    usedBases,
+    0
+  );
 
   if (firstTasks.length === 0) {
     await deleteSession(sessionId);
-    return Response.json({ error: "No valid images to process" }, { status: 400 });
+    return Response.json(
+      { error: `No valid images to process - ${summarizeRejections(firstRejections, imageFiles.length)}` },
+      { status: 400 }
+    );
   }
-
-  const queue = createSessionQueue<ImageTask>({
-    expected: expectedImageCount,
-    idleTimeoutMs: CHUNK_IDLE_TIMEOUT_MS,
-  });
-  chunkedSessions.set(sessionId, { queue, usedBases });
 
   const normalizedUrl = normalizeServerUrl(toDockerHostUrl(config.serverUrl));
   const systemPrompt = buildAnimaSystemPrompt();
   const [stream, sendEvent, closeStream] = createSseStream();
   const serverParallelPromise = getModelParallel(config.serverUrl, config.model);
+
+  // Rejected images never arrive, so account for them up front: the queue
+  // must drain on the remaining (valid) images, not time out after 5 minutes.
+  const queue = createSessionQueue<ImageTask>({
+    expected: Math.max(0, expectedImageCount - firstRejections.length),
+    idleTimeoutMs: CHUNK_IDLE_TIMEOUT_MS,
+  });
+  chunkedSessions.set(sessionId, { queue, usedBases, sendEvent });
 
   const sessionAbort = new AbortController();
   registerSession(sessionId, sessionAbort);
@@ -415,14 +452,10 @@ async function handleChunkStart(
     sessionAbort.abort();
   });
 
-  // Send sessionId as first event, then start draining chunk 0 while the
-  // remaining chunks are still uploading.
+  // Send sessionId as first event, report upload rejections, then start
+  // draining chunk 0 while the remaining chunks are still uploading.
   sendEvent("session", { sessionId });
-  if (firstTasks.length < imageFiles.length) {
-    sendEvent("warning", {
-      message: `Only ${firstTasks.length} of ${imageFiles.length} images in the first chunk were accepted`,
-    });
-  }
+  emitRejectionEvents(sendEvent, firstRejections, imageFiles.length);
   for (const task of firstTasks) {
     queue.enqueue(task);
   }
@@ -453,7 +486,7 @@ async function handleChunkStart(
       const outcome = await queue.done;
       if (outcome === "timed-out" && !sessionAbort.signal.aborted) {
         sendEvent("error", {
-          error: `Upload incomplete: expected ${expectedImageCount} images, received ${queue.arrived}`,
+          error: `Upload incomplete: expected ${queue.expected} images, received ${queue.arrived}`,
         });
       } else if (!sessionAbort.signal.aborted) {
         sendEvent("done", { allComplete: true });
@@ -500,11 +533,24 @@ async function handleChunkContinuation(
   }
 
   const indexOffset = chunkIndex * chunkSize;
-  const tasks = await saveChunkToSession(sessionId, imageFiles, imageNames, captionFiles, entry.usedBases, indexOffset);
+  const { tasks, rejections } = await saveChunkToSession(
+    sessionId,
+    imageFiles,
+    imageNames,
+    captionFiles,
+    entry.usedBases,
+    indexOffset
+  );
 
   touchSession(sessionId);
   for (const task of tasks) {
     entry.queue.enqueue(task);
+  }
+  // reject() after enqueue: it may drain the queue, and enqueue() after
+  // finish is a no-op that would silently drop the accepted tasks.
+  entry.queue.reject(rejections.length);
+  if (rejections.length > 0) {
+    emitRejectionEvents(entry.sendEvent, rejections, imageFiles.length);
   }
 
   return Response.json({

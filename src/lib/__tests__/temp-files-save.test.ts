@@ -6,6 +6,7 @@ import {
   saveImagesBatch,
   deleteSession,
   MAX_IMAGES_PER_SESSION,
+  MAX_IMAGE_SIZE_BYTES,
 } from "@/lib/temp-files";
 
 describe("temp-files saveImage validation", () => {
@@ -56,7 +57,11 @@ describe("temp-files saveImagesBatch", () => {
       ],
       usedBases
     );
-    expect(results).toEqual(["a.png", "b.jpg", "c.png"]);
+    expect(results).toEqual([
+      { name: "a.png" },
+      { name: "b.jpg" },
+      { name: "c.png" },
+    ]);
 
     const files = await fsp.readdir(session.dir);
     expect(files.sort()).toEqual(["a.png", "b.jpg", "c.png"]);
@@ -75,7 +80,11 @@ describe("temp-files saveImagesBatch", () => {
       ],
       usedBases
     );
-    expect(results).toEqual(["1.png", "1_1.jpg", "1_2.png"]);
+    expect(results).toEqual([
+      { name: "1.png" },
+      { name: "1_1.jpg" },
+      { name: "1_2.png" },
+    ]);
     await deleteSession(session.id);
   });
 
@@ -92,7 +101,12 @@ describe("temp-files saveImagesBatch", () => {
       ],
       usedBases
     );
-    expect(results).toEqual(["good.png", null, "good2.png", null]);
+    expect(results).toEqual([
+      { name: "good.png" },
+      { name: null, reason: "invalid-format" },
+      { name: "good2.png" },
+      { name: null, reason: "invalid-format" },
+    ]);
 
     const files = (await fsp.readdir(session.dir)).sort();
     expect(files).toEqual(["good.png", "good2.png"]);
@@ -109,13 +123,13 @@ describe("temp-files saveImagesBatch", () => {
       data: PNG_BYTES,
     }));
     const results = await saveImagesBatch(session.id, items, usedBases);
-    const saved = results.filter((r) => r !== null).length;
+    const saved = results.filter((r) => r.name !== null).length;
     expect(saved).toBe(2);
-    // First two keep input order, the rest are rejected
-    expect(results[0]).toBe("img-0.png");
-    expect(results[1]).toBe("img-1.png");
-    expect(results[2]).toBeNull();
-    expect(results[4]).toBeNull();
+    // First two keep input order, the rest are rejected as session-full
+    expect(results[0].name).toBe("img-0.png");
+    expect(results[1].name).toBe("img-1.png");
+    expect(results[2]).toEqual({ name: null, reason: "session-full" });
+    expect(results[4]).toEqual({ name: null, reason: "session-full" });
     await deleteSession(session.id);
   });
 
@@ -125,7 +139,30 @@ describe("temp-files saveImagesBatch", () => {
       [{ originalName: "a.png", data: PNG_BYTES }],
       new Set()
     );
-    expect(results).toEqual([null]);
+    expect(results).toEqual([{ name: null }]);
+  });
+
+  it("reports oversized and invalid-format reasons per item", async () => {
+    const session = await createSession();
+    // 10 MB + 1 byte with a valid PNG header: oversized wins over format
+    const big = Buffer.alloc(MAX_IMAGE_SIZE_BYTES + 1);
+    big[0] = 0x89;
+    big[1] = 0x50;
+    big[2] = 0x4e;
+    big[3] = 0x47;
+    const results = await saveImagesBatch(
+      session.id,
+      [
+        { originalName: "big.png", data: big },
+        { originalName: "bad.png", data: Buffer.from("not an image") },
+      ],
+      new Set<string>()
+    );
+    expect(results).toEqual([
+      { name: null, reason: "oversized" },
+      { name: null, reason: "invalid-format" },
+    ]);
+    await deleteSession(session.id);
   });
 
   it("returns an empty array for no items", async () => {

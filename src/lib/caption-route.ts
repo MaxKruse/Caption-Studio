@@ -12,6 +12,52 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { abortSession } from "@/lib/session-registry";
+import { imageRejectionMessage, type ImageRejectionReason } from "@/lib/temp-files";
+
+// ---------------------------------------------------------------------------
+// Upload rejection reporting
+// ---------------------------------------------------------------------------
+
+/** An image rejected during upload, with its GLOBAL index and reason. */
+export interface RejectedImage {
+  index: number;
+  name: string;
+  reason: ImageRejectionReason;
+}
+
+/**
+ * Short human summary of upload rejections, in the "N of M images accepted"
+ * shape the warning consumers expect, with the per-image reasons appended
+ * (name list capped at 5).
+ */
+export function summarizeRejections(rejections: RejectedImage[], total: number): string {
+  const listed = rejections
+    .slice(0, 5)
+    .map((r) => `"${r.name}": ${imageRejectionMessage(r.reason)}`);
+  if (rejections.length > 5) listed.push(`and ${rejections.length - 5} more`);
+  return `Only ${total - rejections.length} of ${total} images accepted - ${listed.join(", ")}`;
+}
+
+/**
+ * Emit per-image failed events (so the UI shows the reason on each row)
+ * plus a warning summarizing the rejections.
+ */
+export function emitRejectionEvents(
+  sendEvent: (type: string, data: unknown) => void,
+  rejections: RejectedImage[],
+  total: number
+): void {
+  if (rejections.length === 0) return;
+  for (const rej of rejections) {
+    sendEvent("image_complete", {
+      index: rej.index,
+      name: rej.name,
+      status: "failed",
+      error: imageRejectionMessage(rej.reason),
+    });
+  }
+  sendEvent("warning", { message: summarizeRejections(rejections, total) });
+}
 
 // ---------------------------------------------------------------------------
 // POST preamble

@@ -42,7 +42,7 @@ describe("temp-files size limits", () => {
       Array.from({ length: 150 }, (_, i) => ({ originalName: `img${i}.png`, data: png })),
       usedBases
     );
-    expect(names.every((n) => n !== null)).toBe(true);
+    expect(names.every((n) => n.name !== null)).toBe(true);
     expect(session.imageCount).toBe(150);
     await deleteSession(session.id);
   });
@@ -61,8 +61,8 @@ describe("temp-files size limits", () => {
       ],
       usedBases
     );
-    expect(names[0]).toBe("last.png");
-    expect(names[1]).toBeNull();
+    expect(names[0]).toEqual({ name: "last.png" });
+    expect(names[1]).toEqual({ name: null, reason: "session-full" });
     await deleteSession(session.id);
   });
 });

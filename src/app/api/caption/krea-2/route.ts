@@ -22,6 +22,7 @@ import {
   saveImagesBatch,
   writeCaption,
   touchSession,
+  deleteSession,
 } from "@/lib/temp-files";
 import {
   buildRefineUserPrompt,
@@ -29,7 +30,13 @@ import {
 } from "@/lib/krea2-prompts";
 import { buildKrea2SystemPrompt } from "@/lib/krea2-system-prompt";
 import { readFileBuffer, chatComplete, streamResponse } from "@/lib/caption-helpers";
-import { parseCaptionRequest, handleSessionAbort } from "@/lib/caption-route";
+import {
+  parseCaptionRequest,
+  handleSessionAbort,
+  emitRejectionEvents,
+  summarizeRejections,
+  type RejectedImage,
+} from "@/lib/caption-route";
 import { registerSession, unregisterSession } from "@/lib/session-registry";
 import { createSseStream } from "@/lib/sse";
 import { runWorkerPool } from "@/lib/worker-pool";
@@ -298,7 +305,6 @@ export async function POST(request: NextRequest) {
   const session = await createSession();
   const sessionId = session.id;
   const usedBases = new Set<string>();
-  const tasks: ImageTask[] = [];
 
   // Read all image buffers in parallel, then write them to disk in parallel.
   const readItems = await Promise.all(
@@ -309,7 +315,7 @@ export async function POST(request: NextRequest) {
     }))
   );
 
-  const serverNames = await saveImagesBatch(
+  const results = await saveImagesBatch(
     sessionId,
     readItems.map(({ imageBuffer, originalName }) => ({
       originalName,
@@ -318,16 +324,25 @@ export async function POST(request: NextRequest) {
     usedBases
   );
 
+  const tasks: ImageTask[] = [];
+  const rejections: RejectedImage[] = [];
   readItems.forEach(({ i, imageBuffer, originalName }, idx) => {
-    const serverName = serverNames[idx];
-    if (serverName) {
-      tasks.push({ index: i, serverName, originalName, imageBuffer });
+    const result = results[idx];
+    if (result.name) {
+      tasks.push({ index: i, serverName: result.name, originalName, imageBuffer });
+    } else {
+      rejections.push({
+        index: i,
+        name: originalName,
+        reason: result.reason ?? "invalid-format",
+      });
     }
   });
 
   if (tasks.length === 0) {
+    await deleteSession(sessionId);
     return Response.json(
-      { error: "No valid images to process" },
+      { error: `No valid images to process - ${summarizeRejections(rejections, imageFiles.length)}` },
       { status: 400 }
     );
   }
@@ -348,13 +363,10 @@ export async function POST(request: NextRequest) {
     sessionAbort.abort();
   });
 
-  // Send sessionId as first event
+  // Send sessionId as first event, then report any upload rejections so
+  // each affected row shows its reason instead of a vague timeout.
   sendEvent("session", { sessionId });
-  if (tasks.length < imageFiles.length) {
-    sendEvent("warning", {
-      message: `Only ${tasks.length} of ${imageFiles.length} images accepted (per-session limit or invalid image data)`,
-    });
-  }
+  emitRejectionEvents(sendEvent, rejections, imageFiles.length);
 
   // Process all images (each image goes through all 3 phases sequentially)
   (async () => {

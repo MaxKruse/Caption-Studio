@@ -238,4 +238,99 @@ describe("for-anima route - chunked upload", () => {
     expect(findEvent(events, "image_complete")?.status).toBe("completed");
     expect(events.some((e) => e.type === "done")).toBe(true);
   });
+
+  it("a rejected image in a continuation chunk reports its reason and the stream still ends with done", async () => {
+    chatCalls = [];
+    jpeg = await makeTinyJpeg();
+    const sessionId = "33333333-4444-4555-8666-777777777777";
+
+    const makeChunk = (chunkIndex: number, names: string[], files: File[]) => {
+      const formData = new FormData();
+      formData.append(
+        "config",
+        JSON.stringify({
+          serverUrl: "http://localhost:8080",
+          model: "test-model",
+          sessionId,
+          expectedImageCount: 4,
+          chunkIndex,
+          chunkSize: 2,
+        })
+      );
+      formData.append("imageNames", JSON.stringify(names));
+      files.forEach((f) => formData.append("images", f));
+      names.forEach((n) =>
+        formData.append(
+          "captions",
+          new Blob(["1girl"], { type: "text/plain" }),
+          n.replace(/\.\w+$/, ".txt")
+        )
+      );
+      return POST(
+        new NextRequest("http://localhost/api/caption/for-anima", {
+          method: "POST",
+          body: formData,
+        })
+      );
+    };
+
+    // Chunk 0: two valid images (global 0-1) -> SSE stream
+    const start = await makeChunk(
+      0,
+      ["a.jpg", "b.jpg"],
+      [
+        new File([new Uint8Array(jpeg)], "a.jpg", { type: "image/jpeg" }),
+        new File([new Uint8Array(jpeg)], "b.jpg", { type: "image/jpeg" }),
+      ]
+    );
+    expect(start.status).toBe(200);
+
+    // Chunk 1: one valid (global 2) + one invalid (global 3). Without
+    // rejection accounting the stream would idle-timeout with a false
+    // "Upload incomplete" error.
+    const ack = await makeChunk(
+      1,
+      ["c.jpg", "bad.jpg"],
+      [
+        new File([new Uint8Array(jpeg)], "c.jpg", { type: "image/jpeg" }),
+        new File([new TextEncoder().encode("definitely not an image")], "bad.jpg"),
+      ]
+    );
+    expect(ack.status).toBe(200);
+    const ackBody = (await ack.json()) as { ok: boolean; accepted: number; rejected: number };
+    expect(ackBody).toEqual({ ok: true, accepted: 1, rejected: 1 });
+
+    const events = await collectSseEvents(start as Response);
+
+    // Rejected image: per-image failed event carrying the real reason
+    const failed = events
+      .filter((e) => e.type === "image_complete")
+      .map((e) => e.data as { index: number; name: string; status: string; error?: string })
+      .filter((d) => d.status === "failed");
+    expect(failed).toEqual([
+      expect.objectContaining({
+        index: 3,
+        name: "bad.jpg",
+        error: expect.stringContaining("unsupported image format"),
+      }),
+    ]);
+
+    // A warning summarizing the rejection(s)
+    expect(events.some((e) => e.type === "warning")).toBe(true);
+
+    // Valid images completed with global indices 0-2
+    const completed = events
+      .filter((e) => e.type === "image_complete")
+      .map((e) => e.data as { index: number; status: string })
+      .filter((d) => d.status === "completed")
+      .map((d) => d.index)
+      .sort();
+    expect(completed).toEqual([0, 1, 2]);
+
+    // Clean completion: no idle-timeout error
+    expect(events.some((e) => e.type === "error")).toBe(false);
+    expect(events.some((e) => e.type === "done")).toBe(true);
+    expect(chatCalls.length).toBe(3);
+    cleanupSession(sessionId);
+  });
 });

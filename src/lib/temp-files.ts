@@ -25,7 +25,7 @@ const CLEANUP_AFTER_MS = 30 * 60 * 1000;
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 
 /** Maximum size per image (10 MB). */
-const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
+export const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
 
 /**
  * Maximum number of images per session.
@@ -171,7 +171,7 @@ export function deduplicateFileName(
 
 /**
  * Validate image buffer by checking magic bytes.
- * Supports PNG, JPEG, GIF, WEBP.
+ * Supports PNG, JPEG, GIF, WEBP, AVIF, TIFF.
  */
 export function isValidImageBuffer(data: Buffer): boolean {
   if (!data || data.length < 4) return false;
@@ -218,7 +218,64 @@ export function isValidImageBuffer(data: Buffer): boolean {
     return true;
   }
 
+  // AVIF / HEIC family: ISO BMFF container (ftyp box) with an AVIF brand.
+  // HEIC brands are deliberately NOT accepted: sharp's prebuilt libvips
+  // decodes the container but not the HEVC payload.
+  if (
+    data.length >= 12 &&
+    data[4] === 0x66 && // "ftyp"
+    data[5] === 0x74 &&
+    data[6] === 0x79 &&
+    data[7] === 0x70 &&
+    (
+      (data[8] === 0x61 && data[9] === 0x76 && data[10] === 0x69 && data[11] === 0x66) || // "avif"
+      (data[8] === 0x61 && data[9] === 0x76 && data[10] === 0x69 && data[11] === 0x73) // "avis"
+    )
+  ) {
+    return true;
+  }
+
+  // TIFF: little-endian "II*\0" or big-endian "MM\0*"
+  if (
+    (data[0] === 0x49 && data[1] === 0x49 && data[2] === 0x2a && data[3] === 0x00) ||
+    (data[0] === 0x4d && data[1] === 0x4d && data[2] === 0x00 && data[3] === 0x2a)
+  ) {
+    return true;
+  }
+
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// Rejection reasons
+// ---------------------------------------------------------------------------
+
+/** Why an image was rejected at upload time. */
+export type ImageRejectionReason = "oversized" | "invalid-format" | "session-full";
+
+const IMAGE_REJECTION_MESSAGES: Record<ImageRejectionReason, string> = {
+  oversized: `rejected at upload: exceeds the ${MAX_IMAGE_SIZE_BYTES / (1024 * 1024)} MB per-image limit`,
+  "invalid-format":
+    "rejected at upload: unsupported image format (PNG, JPEG, GIF, WEBP, AVIF, or TIFF required)",
+  "session-full": "rejected at upload: session image limit reached",
+};
+
+/** Human-readable rejection message for per-image events and warnings. */
+export function imageRejectionMessage(reason: ImageRejectionReason): string {
+  return IMAGE_REJECTION_MESSAGES[reason];
+}
+
+/**
+ * Check a single image buffer against the upload constraints (size, magic
+ * bytes). Returns the rejection reason, or null when the buffer is
+ * acceptable. Does not account for the per-session image cap.
+ */
+export function imageRejectionReason(
+  data: Buffer
+): "oversized" | "invalid-format" | null {
+  if (data.length > MAX_IMAGE_SIZE_BYTES) return "oversized";
+  if (!isValidImageBuffer(data)) return "invalid-format";
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -295,16 +352,7 @@ function validateImageForSave(
   data: Buffer,
   usedBases: Set<string>
 ): string | null {
-  // Enforce per-image size limit
-  if (data.length > MAX_IMAGE_SIZE_BYTES) {
-    return null;
-  }
-
-  // Validate image by magic bytes, not just extension
-  if (!isValidImageBuffer(data)) {
-    return null;
-  }
-
+  if (imageRejectionReason(data) !== null) return null;
   return deduplicateFileName(sanitizeFileName(originalName), usedBases);
 }
 
@@ -345,38 +393,55 @@ export interface BatchSaveItem {
 }
 
 /**
+ * One result from saveImagesBatch: the saved server name, or the rejection
+ * reason when the image was not saved.
+ */
+export interface BatchSaveResult {
+  name: string | null;
+  reason?: ImageRejectionReason;
+}
+
+/**
  * Validate and save multiple images to a session, writing in parallel.
  *
  * Preserves saveImage semantics: results map 1:1 to input order, base names
- * are deduplicated in input order, invalid/oversized items yield null, and
- * the per-session image cap rejects everything beyond the first
- * MAX_IMAGES_PER_SESSION valid images.
+ * are deduplicated in input order, rejected items report the reason
+ * ("oversized" / "invalid-format"), and the per-session image cap rejects
+ * everything beyond the first MAX_IMAGES_PER_SESSION valid images as
+ * "session-full".
  */
 export async function saveImagesBatch(
   sessionId: string,
   items: BatchSaveItem[],
   usedBases: Set<string>
-): Promise<(string | null)[]> {
+): Promise<BatchSaveResult[]> {
   const meta = sessions.get(sessionId);
-  if (!meta) return items.map(() => null);
+  if (!meta) return items.map(() => ({ name: null }));
 
   const allowed = MAX_IMAGES_PER_SESSION - meta.imageCount;
-  const results: (string | null)[] = new Array(items.length).fill(null);
+  const results: BatchSaveResult[] = new Array(items.length).fill(null as unknown as BatchSaveResult);
   const toWrite: { i: number; serverName: string; data: Buffer }[] = [];
 
   // Validate sequentially so name deduplication and the image cap keep
   // input-order semantics, then write concurrently.
   items.forEach((item, i) => {
-    if (toWrite.length >= allowed) return;
-    const serverName = validateImageForSave(item.originalName, item.data, usedBases);
-    if (!serverName) return;
+    if (toWrite.length >= allowed) {
+      results[i] = { name: null, reason: "session-full" };
+      return;
+    }
+    const bufferReason = imageRejectionReason(item.data);
+    if (bufferReason) {
+      results[i] = { name: null, reason: bufferReason };
+      return;
+    }
+    const serverName = deduplicateFileName(sanitizeFileName(item.originalName), usedBases);
     toWrite.push({ i, serverName, data: item.data });
   });
 
   await Promise.all(
     toWrite.map(async ({ i, serverName, data }) => {
       await fsp.writeFile(path.join(meta.dir, serverName), data);
-      results[i] = serverName;
+      results[i] = { name: serverName };
     })
   );
 

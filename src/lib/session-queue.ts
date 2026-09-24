@@ -23,6 +23,13 @@ export interface SessionQueue<T> {
   /** Enqueue an item (from an arriving upload chunk). Resets the idle timer. */
   enqueue(item: T): void;
   /**
+   * Record that `count` expected items were rejected before enqueue (e.g.
+   * failed upload validation), decrementing the expected total. The queue
+   * drains as soon as the remainder has arrived and been consumed, so the
+   * idle timeout cannot fire falsely. No-op once finished.
+   */
+  reject(count: number): void;
+  /**
    * Resolve the next item, or undefined once the queue is closed
    * (drained, timed out, or aborted) - workers stop pulling after that.
    */
@@ -31,7 +38,7 @@ export interface SessionQueue<T> {
   done: Promise<QueueOutcome>;
   /** Number of items enqueued so far. */
   readonly arrived: number;
-  /** Total items the client promised (expected count). */
+  /** Total items still expected (client promise minus rejections). */
   readonly expected: number;
   /** Force-terminate with the "aborted" outcome. */
   abort(): void;
@@ -54,7 +61,7 @@ export interface SessionQueueOptions {
 // ---------------------------------------------------------------------------
 
 export function createSessionQueue<T>(options: SessionQueueOptions): SessionQueue<T> {
-  const expected = options.expected;
+  let expected = options.expected;
   const idleTimeoutMs = options.idleTimeoutMs;
 
   const pending: T[] = [];
@@ -108,6 +115,11 @@ export function createSessionQueue<T>(options: SessionQueueOptions): SessionQueu
       armIdleTimer();
     }
   };
+  const reject = (count: number): void => {
+    if (finished || count <= 0) return;
+    expected = Math.max(0, expected - count);
+    checkDrained();
+  };
 
   const next = (): Promise<T | undefined> => {
     if (finished) return Promise.resolve(undefined);
@@ -121,6 +133,7 @@ export function createSessionQueue<T>(options: SessionQueueOptions): SessionQueu
 
   const queue: SessionQueue<T> = {
     enqueue,
+    reject,
     next,
     done,
     get arrived() {

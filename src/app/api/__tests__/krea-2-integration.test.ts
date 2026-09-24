@@ -253,8 +253,19 @@ describe("krea-2 route - rejected image warning", () => {
     const warning = findEvent(events, "warning");
     expect(warning).toBeDefined();
     expect(String(warning?.message)).toContain("1 of 2");
+    // Rejected image: per-image failed event carrying the real reason
+    const failed = events
+      .filter((e) => e.type === "image_complete")
+      .map((e) => e.data as { name: string; status: string; error?: string })
+      .find((d) => d.name === "bad.jpg");
+    expect(failed?.status).toBe("failed");
+    expect(failed?.error).toContain("unsupported image format");
     // The valid image still completes
-    expect(findEvent(events, "image_complete")?.status).toBe("completed");
+    const completed = events
+      .filter((e) => e.type === "image_complete")
+      .map((e) => e.data as { name: string; status: string })
+      .find((d) => d.name === "good.jpg");
+    expect(completed?.status).toBe("completed");
     expect(events.some((e) => e.type === "done")).toBe(true);
   });
 });

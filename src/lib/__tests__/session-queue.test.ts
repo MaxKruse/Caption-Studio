@@ -96,4 +96,36 @@ describe("createSessionQueue", () => {
     q.abort();
     await q.done;
   });
+
+  it("reject() decrements the expected count so the queue drains", async () => {
+    const q = createSessionQueue<number>({ expected: 5 });
+    q.enqueue(1);
+    expect(await q.next()).toBe(1);
+    // Two of the remaining four will never arrive (rejected at upload)
+    q.reject(2);
+    expect(q.expected).toBe(3);
+    q.enqueue(2);
+    expect(await q.next()).toBe(2);
+    q.enqueue(3);
+    expect(await q.next()).toBe(3);
+    expect(await q.done).toBe("drained");
+  });
+
+  it("reject() is a no-op once the queue finished", async () => {
+    const q = createSessionQueue<number>({ expected: 1 });
+    q.enqueue(1);
+    expect(await q.next()).toBe(1);
+    expect(await q.done).toBe("drained");
+    q.reject(3);
+    // State is frozen after finish: expected count unchanged
+    expect(q.expected).toBe(1);
+    expect(q.arrived).toBe(1);
+  });
+
+  it("reject() never drives the expected count below zero", async () => {
+    const q = createSessionQueue<number>({ expected: 2 });
+    q.reject(10);
+    expect(q.expected).toBe(0);
+    expect(await q.done).toBe("drained");
+  });
 });
