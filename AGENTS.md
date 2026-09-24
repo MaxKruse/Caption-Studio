@@ -190,12 +190,13 @@ The GET endpoint reads the temp directory, pairs each image with its `.txt` capt
 - Each caption session gets a unique directory (`/tmp/caption-studio/<sessionId>/`)
 - Images saved with deduplicated names (base-name collision detection)
 - Caption `.txt` files written alongside images during processing
+- Queued tasks carry only the server-side filename; workers read the image bytes from the session dir at process time (a large batch does not hold upload bytes in memory while queued)
 - Auto-cleanup: directories removed 30 minutes after last activity
 - Cleanup runs every 5 minutes. The sessions.json index is adopted on restart. The process does NOT delete session dirs on exit (a Docker rebuild must not destroy undownloaded results)
 
 ### Concurrency
 
-Worker pool pattern - configurable 1-8 parallel API requests (default 4), clamped to the server's `--parallel` discovered via /v1/models. Each worker is pinned to its own llama.cpp slot for deterministic KV cache reuse.
+Concurrency = min(8, the server's `--parallel` discovered via /v1/models). When discovery fails (3s timeout, old server without `status.args`, model-id mismatch) the route falls back to concurrency 1 and emits a `warning` SSE event - in-flight requests never exceed the server's slot count. Each worker is pinned to its own llama.cpp slot for deterministic KV cache reuse.
 
 ## Key Gotchas
 

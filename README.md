@@ -412,5 +412,5 @@ Browser                          Server (Next.js)                 llama.cpp
 - Caption `.txt` files are written alongside images during processing
 - Temp directories auto-clean 30 minutes after last activity (the session index in `sessions.json` is adopted across restarts; the process never deletes session dirs on shutdown, so a Docker rebuild cannot destroy undownloaded results)
 - Each session holds up to 5,000 images; larger batches upload in 25-image chunks and are processed as they arrive (the worker pool drains a session queue while the client is still uploading)
-- Processing uses a worker pool (up to 8 parallel API requests, clamped to the server's `--parallel`), with each worker pinned to its own llama.cpp slot for KV cache reuse
+- Processing uses a worker pool (up to 8 parallel API requests, clamped to the server's `--parallel`), with each worker pinned to its own llama.cpp slot for KV cache reuse. If the server's `--parallel` cannot be detected, the batch runs serially (concurrency 1) and a warning is shown in the UI - in-flight requests never exceed the server's slot count
 - Phase 1 has a 15-minute timeout; phases 2/3 have a 5-minute timeout each
