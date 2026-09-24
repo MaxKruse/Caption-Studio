@@ -23,6 +23,11 @@ import {
 const originalFetch = globalThis.fetch;
 let chatCalls: Array<Record<string, unknown>> = [];
 let modelDelayMs = 0;
+/** /v1/models response body for the single model (swap to simulate discovery failure). */
+let modelResponse: Record<string, unknown> = {
+  id: "test-model",
+  status: { args: ["--parallel", "4"] },
+};
 
 async function postImages(jpeg: Buffer, config: Record<string, unknown>): Promise<Response> {
   const formData = new FormData();
@@ -46,10 +51,7 @@ beforeAll(() => {
       if (modelDelayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, modelDelayMs));
       }
-      return new Response(
-        JSON.stringify({ data: [{ id: "test-model", status: { args: ["--parallel", "4"] } }] }),
-        { status: 200 }
-      );
+      return new Response(JSON.stringify({ data: [modelResponse] }), { status: 200 });
     }
 
     if (url.endsWith("/v1/chat/completions")) {
@@ -212,5 +214,56 @@ describe("for-anima route - rejected image warning", () => {
       .find((d) => d.name === "good.jpg");
     expect(completed?.status).toBe("completed");
     expect(events.some((e) => e.type === "done")).toBe(true);
+  });
+});
+
+describe("for-anima route - parallel discovery fallback", () => {
+  it("falls back to concurrency 1 with a warning when --parallel is undetectable", async () => {
+    chatCalls = [];
+    modelResponse = { id: "test-model" }; // no status.args
+    try {
+      const jpeg = await makeTinyJpeg();
+      const formData = new FormData();
+      formData.append(
+        "config",
+        JSON.stringify({ serverUrl: "http://localhost:8080", model: "test-model" })
+      );
+      formData.append(
+        "images",
+        new File([new Uint8Array(jpeg)], "img1.jpg", { type: "image/jpeg" })
+      );
+      formData.append(
+        "images",
+        new File([new Uint8Array(jpeg)], "img2.jpg", { type: "image/jpeg" })
+      );
+
+      const response = await POST(
+        new NextRequest("http://localhost/api/caption/for-anima", {
+          method: "POST",
+          body: formData,
+        })
+      );
+      expect(response.status).toBe(200);
+      const events = await collectSseEvents(response as Response);
+
+      // Warn about the serial fallback instead of silently assuming 8 workers
+      const warning = findEvent(events, "warning");
+      expect(warning).toBeDefined();
+      expect(String(warning?.message)).toContain("concurrency 1");
+      // Both images still process and the stream ends with done
+      expect(chatCalls.length).toBe(2);
+      const completed = events.filter(
+        (e) =>
+          e.type === "image_complete" &&
+          e.data !== null &&
+          typeof e.data === "object" &&
+          "status" in e.data &&
+          e.data.status === "completed"
+      );
+      expect(completed.length).toBe(2);
+      expect(events.some((e) => e.type === "done")).toBe(true);
+    } finally {
+      modelResponse = { id: "test-model", status: { args: ["--parallel", "4"] } };
+    }
   });
 });

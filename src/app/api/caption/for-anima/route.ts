@@ -55,7 +55,7 @@ import { createSessionQueue, type SessionQueue } from "@/lib/session-queue";
  */
 export const API_TIMEOUT_MS = 5 * 60 * 1000;
 
-/** Default max concurrency for parallel image processing. */
+/** Client-side ceiling for parallel image processing. */
 const MAX_CONCURRENCY = 8;
 
 /**
@@ -362,11 +362,17 @@ async function handleSingleShot(
   (async () => {
     try {
       const serverParallel = await serverParallelPromise;
+      if (serverParallel === undefined) {
+        sendEvent("warning", {
+          message: `Could not detect the server's --parallel for model "${config.model}" - processing at concurrency 1 to stay within the server's slot count.`,
+        });
+      }
       // Each worker is pinned to its own llama.cpp slot (worker index is
-      // always < server --parallel due to the getModelParallel clamp).
+      // always < server --parallel: clamped to the discovered value, with a
+      // concurrency-1 fallback when the value cannot be detected).
       await runWorkerPool(
         tasks,
-        Math.min(serverParallel ?? MAX_CONCURRENCY, MAX_CONCURRENCY),
+        Math.min(serverParallel ?? 1, MAX_CONCURRENCY),
         (task, slotId) => {
           touchSession(sessionId);
           return processImage(
@@ -475,9 +481,14 @@ async function handleChunkStart(
   (async () => {
     try {
       const serverParallel = await serverParallelPromise;
+      if (serverParallel === undefined) {
+        sendEvent("warning", {
+          message: `Could not detect the server's --parallel for model "${config.model}" - processing at concurrency 1 to stay within the server's slot count.`,
+        });
+      }
       await runWorkerPoolStreaming(
         queue,
-        Math.min(serverParallel ?? MAX_CONCURRENCY, MAX_CONCURRENCY),
+        Math.min(serverParallel ?? 1, MAX_CONCURRENCY),
         (task, slotId) => {
           touchSession(sessionId);
           return processImage(

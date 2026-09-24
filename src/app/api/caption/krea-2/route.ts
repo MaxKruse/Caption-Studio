@@ -63,7 +63,7 @@ const API_TIMEOUT_MS = 15 * 60 * 1000;
 /** Per-image per-phase timeout to avoid 15 min worst case for a batch. */
 const PER_IMAGE_PHASE_TIMEOUT_MS = 5 * 60 * 1000;
 
-/** Default max concurrency for parallel image processing. */
+/** Client-side ceiling for parallel image processing. */
 const MAX_CONCURRENCY = 8;
 
 // ---------------------------------------------------------------------------
@@ -385,12 +385,18 @@ export async function POST(request: NextRequest) {
   (async () => {
     try {
       const serverParallel = await serverParallelPromise;
+      if (serverParallel === undefined) {
+        sendEvent("warning", {
+          message: `Could not detect the server's --parallel for model "${config.model}" - processing at concurrency 1 to stay within the server's slot count.`,
+        });
+      }
       // Each worker is pinned to its own llama.cpp slot so its images and
-      // phases share the slot's KV cache (worker index < maxConcurrency
-      // which is clamped to the server's --parallel).
+      // phases share the slot's KV cache (worker index < maxConcurrency,
+      // clamped to the server's --parallel; concurrency-1 fallback when the
+      // value cannot be detected).
       await runWorkerPool(
         tasks,
-        Math.min(serverParallel ?? MAX_CONCURRENCY, MAX_CONCURRENCY),
+        Math.min(serverParallel ?? 1, MAX_CONCURRENCY),
         (task, slotId) => {
           touchSession(sessionId);
           return processImageAllPhases(
