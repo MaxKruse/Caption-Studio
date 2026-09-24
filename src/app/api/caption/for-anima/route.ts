@@ -41,6 +41,7 @@ import { registerSession, unregisterSession } from "@/lib/session-registry";
 import { createSseStream } from "@/lib/sse";
 import { runWorkerPool, runWorkerPoolStreaming } from "@/lib/worker-pool";
 import { createSessionQueue, type SessionQueue } from "@/lib/session-queue";
+import { logStructured } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -337,6 +338,14 @@ async function handleSingleShot(
     );
   }
 
+  logStructured("info", "caption session started", {
+    mode: "for-anima",
+    sessionId,
+    images: imageFiles.length,
+    accepted: tasks.length,
+    rejected: rejections.length,
+  });
+
   const normalizedUrl = normalizeServerUrl(toDockerHostUrl(config.serverUrl));
   const systemPrompt = buildAnimaSystemPrompt();
   const [stream, sendEvent, closeStream] = createSseStream();
@@ -390,11 +399,22 @@ async function handleSingleShot(
         sessionAbort.signal
       );
 
+      logStructured("info", "caption session ended", {
+        mode: "for-anima",
+        sessionId,
+        outcome: sessionAbort.signal.aborted ? "aborted" : "completed",
+        images: tasks.length,
+      });
       if (!sessionAbort.signal.aborted) {
         sendEvent("done", { allComplete: true });
       }
       closeStream();
     } catch (error) {
+      logStructured("error", "caption session crashed", {
+        mode: "for-anima",
+        sessionId,
+        error: String(error),
+      });
       if (!sessionAbort.signal.aborted) {
         sendEvent("error", { error: String(error) });
       }
@@ -463,6 +483,15 @@ async function handleChunkStart(
   });
   chunkedSessions.set(sessionId, { queue, usedBases, sendEvent });
 
+  logStructured("info", "chunked caption session opened", {
+    mode: "for-anima",
+    sessionId,
+    expectedImageCount,
+    chunkSize: config.chunkSize,
+    accepted: firstTasks.length,
+    rejected: firstRejections.length,
+  });
+
   const sessionAbort = new AbortController();
   registerSession(sessionId, sessionAbort);
 
@@ -507,6 +536,17 @@ async function handleChunkStart(
       );
 
       const outcome = await queue.done;
+      logStructured(
+        outcome === "timed-out" ? "warn" : "info",
+        "chunked caption session ended",
+        {
+          mode: "for-anima",
+          sessionId,
+          outcome: sessionAbort.signal.aborted ? "aborted" : outcome,
+          expectedImageCount: queue.expected,
+          arrived: queue.arrived,
+        }
+      );
       if (outcome === "timed-out" && !sessionAbort.signal.aborted) {
         sendEvent("error", {
           error: `Upload incomplete: expected ${queue.expected} images, received ${queue.arrived}`,
@@ -516,6 +556,11 @@ async function handleChunkStart(
       }
       closeStream();
     } catch (error) {
+      logStructured("error", "chunked caption session crashed", {
+        mode: "for-anima",
+        sessionId,
+        error: String(error),
+      });
       if (!sessionAbort.signal.aborted) {
         sendEvent("error", { error: String(error) });
       }
@@ -550,6 +595,11 @@ async function handleChunkContinuation(
 ): Promise<Response> {
   const entry = chunkedSessions.get(sessionId);
   if (!entry) {
+    logStructured("info", "chunk not applied - session already ended", {
+      mode: "for-anima",
+      sessionId,
+      chunkIndex,
+    });
     // Session finished, timed out, or was aborted - the client treats a
     // 404 as "nothing more to send".
     return Response.json({ error: "Session not found" }, { status: 404 });
@@ -575,6 +625,16 @@ async function handleChunkContinuation(
   if (rejections.length > 0) {
     emitRejectionEvents(entry.sendEvent, rejections, imageFiles.length);
   }
+
+  logStructured("info", "chunk applied", {
+    mode: "for-anima",
+    sessionId,
+    chunkIndex,
+    accepted: tasks.length,
+    rejected: imageFiles.length - tasks.length,
+    arrived: entry.queue.arrived,
+    expected: entry.queue.expected,
+  });
 
   return Response.json({
     ok: true,

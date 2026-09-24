@@ -42,6 +42,7 @@ import { registerSession, unregisterSession } from "@/lib/session-registry";
 import { createSseStream } from "@/lib/sse";
 import { runWorkerPool } from "@/lib/worker-pool";
 import { krea2ConfigSchema } from "@/lib/config-schema";
+import { logStructured } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -360,6 +361,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  logStructured("info", "caption session started", {
+    mode: "krea-2",
+    sessionId,
+    images: imageFiles.length,
+    accepted: tasks.length,
+    rejected: rejections.length,
+  });
+
   const normalizedUrl = normalizeServerUrl(toDockerHostUrl(config.serverUrl));
   const effectiveSystemPrompt = config.systemPrompt?.trim() ? config.systemPrompt : buildKrea2SystemPrompt();
   const [stream, sendEvent, closeStream] = createSseStream();
@@ -418,11 +427,22 @@ export async function POST(request: NextRequest) {
         sessionAbort.signal
       );
 
+      logStructured("info", "caption session ended", {
+        mode: "krea-2",
+        sessionId,
+        outcome: sessionAbort.signal.aborted ? "aborted" : "completed",
+        images: tasks.length,
+      });
       if (!sessionAbort.signal.aborted) {
         sendEvent("done", { allComplete: true });
       }
       closeStream();
     } catch (error) {
+      logStructured("error", "caption session crashed", {
+        mode: "krea-2",
+        sessionId,
+        error: String(error),
+      });
       if (!sessionAbort.signal.aborted) {
         sendEvent("error", { error: String(error) });
       }

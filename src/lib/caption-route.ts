@@ -13,6 +13,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { abortSession } from "@/lib/session-registry";
 import { imageRejectionMessage, type ImageRejectionReason } from "@/lib/temp-files";
+import { logStructured } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
 // Upload rejection reporting
@@ -196,6 +197,8 @@ export function handleSessionAbort(request: NextRequest): Response {
   if (!abortSession(sessionId)) {
     return Response.json({ error: "Session not found" }, { status: 404 });
   }
+
+  logStructured("info", "caption session aborted by client", { sessionId });
 
   return Response.json({ ok: true });
 }
