@@ -333,6 +333,10 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
 
     const localLlm = [...initialLlm];
     let streamError: string | null = null;
+    // Server-side failure reason (e.g. the chunk-idle watchdog's
+    // "Upload incomplete: expected N images, received M") - shown per
+    // image at finalization instead of the generic fallback.
+    let serverError: string | null = null;
 
     try {
       await consumeSseStream(body, (event) => {
@@ -393,7 +397,11 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
           case "warning":
           case "error": {
             const data = event.data as { message?: string; error?: string };
-            setServerNotice(data.message ?? data.error ?? null);
+            const message = data.message ?? data.error ?? null;
+            setServerNotice(message);
+            if (event.type === "error" && message) {
+              serverError = message;
+            }
             break;
           }
         }
@@ -414,7 +422,7 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
         result.status = "failed";
         result.error = signal?.aborted
           ? stopReasonRef.current
-          : streamError ?? "The stream ended before this image finished";
+          : streamError ?? serverError ?? "The stream ended before this image finished";
       }
     }
     setLlmResults([...localLlm]);

@@ -136,6 +136,11 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
       formData.append("images", state.imageFiles[i]);
     }
 
+    const localResults = [...initialResults];
+    // Server-side failure reason (e.g. a worker pool crash), shown per
+    // image at finalization instead of leaving rows stuck as queued.
+    let serverError: string | null = null;
+
     try {
       const response = await fetch("/api/caption/krea-2", {
         method: "POST",
@@ -159,8 +164,6 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
 
       const body = response.body;
       if (!body) return;
-
-      const localResults = [...initialResults];
 
       await consumeSseStream(body, (event) => {
         if (event.type === "session") {
@@ -302,6 +305,14 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
             }
             break;
           }
+          case "warning":
+          case "error": {
+            if (event.type === "error") {
+              const data = event.data as { message?: string; error?: string };
+              serverError = data.error ?? data.message ?? serverError;
+            }
+            break;
+          }
           case "done": {
             break;
           }
@@ -310,36 +321,37 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
         setResults([...localResults]);
       });
 
-      if (abortControllerRef.current && abortControllerRef.current.signal.aborted) {
-        for (const result of localResults) {
-          if (result.status === "queued" || result.status === "processing") {
-            result.status = "failed";
-            result.imagePhase = "failed";
-            result.error = "Stopped by user";
-          }
+      // Never leave images stuck as queued/processing: the stream ended
+      // (normal completion, user stop, or server error).
+      const aborted = abortControllerRef.current?.signal.aborted ?? false;
+      for (const result of localResults) {
+        if (result.status === "queued" || result.status === "processing") {
+          result.status = "failed";
+          result.imagePhase = "failed";
+          result.error = aborted
+            ? "Stopped by user"
+            : serverError ?? "The stream ended before this image finished";
         }
-        setResults([...localResults]);
       }
+      setResults([...localResults]);
 
       abortControllerRef.current = null;
       setIsProcessing(false);
       setPhase("results");
     } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        const localResults = initialResults.map((r) => ({
-          ...r,
-          status: r.status === "queued" || r.status === "processing"
-            ? "failed" as const
-            : r.status,
-          imagePhase: r.status === "queued" || r.status === "processing"
-            ? "failed" as const
-            : r.imagePhase,
-          error: r.status === "queued" || r.status === "processing"
+      const aborted = error instanceof DOMException && error.name === "AbortError";
+      for (const result of localResults) {
+        if (result.status === "queued" || result.status === "processing") {
+          result.status = "failed";
+          result.imagePhase = "failed";
+          result.error = aborted
             ? "Stopped by user"
-            : r.error,
-        }));
-        setResults(localResults);
+            : error instanceof Error
+              ? error.message
+              : String(error);
+        }
       }
+      setResults([...localResults]);
       abortControllerRef.current = null;
       setIsProcessing(false);
       setPhase("results");
