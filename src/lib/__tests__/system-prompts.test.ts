@@ -55,3 +55,47 @@ describe("buildAnimaSystemPrompt line of sight", () => {
     expect(result).toContain("Averted gaze");
   });
 });
+
+// ---------------------------------------------------------------------------
+// buildAnimaSystemPrompt - text in the image
+// ---------------------------------------------------------------------------
+
+describe("buildAnimaSystemPrompt text in the image", () => {
+  it("includes a dedicated Text in the Image section", () => {
+    const result = buildAnimaSystemPrompt();
+    expect(result).toContain("## Text in the Image");
+  });
+
+  it("requires verbatim transcription (wording, language, capitalization)", () => {
+    const result = buildAnimaSystemPrompt();
+    expect(result).toContain("transcribe it VERBATIM");
+    expect(result).toContain("exact wording, original language, original capitalization");
+  });
+
+  it("requires the position of each piece of text", () => {
+    const result = buildAnimaSystemPrompt();
+    expect(result).toContain("State where each piece of text sits in the image");
+  });
+
+  it("forbids guessing, completing, or translating illegible text", () => {
+    const result = buildAnimaSystemPrompt();
+    expect(result).toContain("Do not guess, complete, or translate");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildAnimaSystemPrompt - tags as grounding
+// ---------------------------------------------------------------------------
+
+describe("buildAnimaSystemPrompt tags as grounding", () => {
+  it("positions the tags as grounding, not a source to echo", () => {
+    const result = buildAnimaSystemPrompt();
+    expect(result).toContain("The tags are GROUNDING only");
+    expect(result).toContain("Never rephrase, restate, or echo the tag list");
+  });
+
+  it("requires describing the image as seen", () => {
+    const result = buildAnimaSystemPrompt();
+    expect(result).toContain("Describe the image as you actually see it");
+  });
+});
