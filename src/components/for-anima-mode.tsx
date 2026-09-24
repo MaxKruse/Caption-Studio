@@ -224,25 +224,49 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
     // flight. Small batches keep the single-shot request shape.
     const plan = planChunkedUpload(total);
     const chunkJobs: Promise<void>[] = [];
+    // Aborted when the SSE stream ends (done, error, or user stop) so an
+    // in-flight chunk upload cannot wedge the finalization wait: by then
+    // the session is already over, so unacked chunks are either already
+    // saved (the queue drained) or would get a 404 anyway.
+    const chunkAbort = new AbortController();
 
     let response: Response;
     try {
       if (plan.isChunked) {
         const uploadSessionId = crypto.randomUUID();
-        response = await fetch("/api/caption/for-anima", {
-          method: "POST",
-          body: buildChunkFormData({
-            baseConfig,
-            sessionId: uploadSessionId,
-            expectedImageCount: total,
-            chunkIndex: 0,
-            chunkSize: plan.chunkSize,
-            imageFiles: state.imageFiles,
-            imageNames: state.imageNames,
-            captionTexts,
-          }),
-          signal,
-        });
+        // The deadline only bounds the wait for the first response headers:
+        // once the SSE stream is open it must be allowed to run for the
+        // entire captioning duration, so the timer is cleared as soon as the
+        // fetch resolves.
+        const chunk0Deadline = new AbortController();
+        const deadlineTimer = setTimeout(() => {
+          chunk0Deadline.abort(
+            new DOMException(
+              "Timed out waiting for the server to accept the first chunk",
+              "TimeoutError"
+            )
+          );
+        }, CHUNK_UPLOAD_TIMEOUT_MS);
+        try {
+          response = await fetch("/api/caption/for-anima", {
+            method: "POST",
+            body: buildChunkFormData({
+              baseConfig,
+              sessionId: uploadSessionId,
+              expectedImageCount: total,
+              chunkIndex: 0,
+              chunkSize: plan.chunkSize,
+              imageFiles: state.imageFiles,
+              imageNames: state.imageNames,
+              captionTexts,
+            }),
+            signal: signal
+              ? AbortSignal.any([signal, chunk0Deadline.signal])
+              : chunk0Deadline.signal,
+          });
+        } finally {
+          clearTimeout(deadlineTimer);
+        }
 
         // Remaining chunks: JSON ack, retried on failure. A 404 means the
         // session already finished (upload slower than inference) - OK.
@@ -250,8 +274,15 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
           chunkJobs.push(
             (async () => {
               for (let attempt = 1; attempt <= 3; attempt++) {
-                if (signal?.aborted) return;
+                if (signal?.aborted || chunkAbort.signal.aborted) return;
                 try {
+                  // Per-attempt deadline: a hung body read must fail and
+                  // retry, not block finalization forever.
+                  const attemptSignal = AbortSignal.any([
+                    chunkAbort.signal,
+                    AbortSignal.timeout(CHUNK_UPLOAD_TIMEOUT_MS),
+                    ...(signal ? [signal] : []),
+                  ]);
                   const res = await fetch("/api/caption/for-anima", {
                     method: "POST",
                     body: buildChunkFormData({
@@ -264,12 +295,12 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
                       imageNames: state.imageNames,
                       captionTexts,
                     }),
-                    signal,
+                    signal: attemptSignal,
                   });
                   if (res.ok || res.status === 404) return;
                   throw new Error(`chunk rejected (HTTP ${res.status})`);
                 } catch (error) {
-                  if (signal?.aborted) return;
+                  if (signal?.aborted || chunkAbort.signal.aborted) return;
                   if (attempt === 3) {
                     stopReasonRef.current = `A batch chunk failed to upload: ${
                       error instanceof Error ? error.message : String(error)
@@ -412,7 +443,10 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
       streamError = error instanceof Error ? error.message : String(error);
     }
 
-    // Wait for in-flight chunk uploads to settle before finalizing
+    // Wait for in-flight chunk uploads to settle before finalizing. The
+    // stream has ended, so stop them first: otherwise a hung body read
+    // would block finalization indefinitely.
+    chunkAbort.abort();
     await Promise.all(chunkJobs);
 
     // Never leave images stuck as queued/processing: the stream ended
