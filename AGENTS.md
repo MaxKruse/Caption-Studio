@@ -210,7 +210,7 @@ In-memory store — multi-replica deployments will not work correctly.
 
 ### Image Format Handling
 
-Accepted upload formats: PNG, JPEG, GIF, WEBP, AVIF, TIFF (10 MB per image; `MAX_IMAGE_SIZE_BYTES`), validated by magic bytes in `temp-files.ts`. OpenAI-compatible APIs only accept PNG/JPEG, so non-compatible formats are converted to JPEG (quality 90) via `sharp` before API calls. Rejected uploads (oversized / invalid format / session cap) are reported per-image with a reason - never silently dropped. Max dimension: 1536px default (`API_MAX_DIMENSION`, sized to llama.cpp's default 8192 vision-token budget), overridable per request via the `maxImageDimension` config field (256-4096).
+Accepted upload formats: PNG, JPEG, GIF, WEBP, AVIF, TIFF, validated by magic bytes in `temp-files.ts`. Oversized uploads (over 10 MB, `MAX_IMAGE_SIZE_BYTES`) are NOT rejected: at save time the intermediate session file is downscaled to a JPEG at or below the limit (`downscaleToJpegWithinLimit`, renamed to a `.jpg` name) and the route emits a `warning` SSE event naming the downscaled images (`emitDownscaleNotice`). OpenAI-compatible APIs only accept PNG/JPEG, so non-compatible formats are converted to JPEG (quality 90) via `sharp` before API calls. Rejected uploads (undecodable data / session cap) are reported per-image with a reason - never silently dropped. Max dimension: 1536px default (`API_MAX_DIMENSION`, sized to llama.cpp's default 8192 vision-token budget), overridable per request via the `maxImageDimension` config field (256-4096).
 
 ### Before Writing Code
 
