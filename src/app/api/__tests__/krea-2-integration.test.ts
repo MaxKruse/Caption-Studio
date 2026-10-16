@@ -16,6 +16,7 @@ import {
   makeChatSseResponse,
   makeTinyJpeg,
   findEvent,
+  makeOversizedPng,
   type SseEvent,
 } from "@/lib/__tests__/test-helpers";
 
@@ -259,13 +260,55 @@ describe("krea-2 route - rejected image warning", () => {
       .map((e) => e.data as { name: string; status: string; error?: string })
       .find((d) => d.name === "bad.jpg");
     expect(failed?.status).toBe("failed");
-    expect(failed?.error).toContain("unsupported image format");
+    expect(failed?.error).toContain("could not be decoded");
     // The valid image still completes
     const completed = events
       .filter((e) => e.type === "image_complete")
       .map((e) => e.data as { name: string; status: string })
       .find((d) => d.name === "good.jpg");
     expect(completed?.status).toBe("completed");
+    expect(events.some((e) => e.type === "done")).toBe(true);
+  });
+});
+
+describe("krea-2 route - oversized image downscale notice", () => {
+  it("accepts an oversized image and warns that its intermediate file was downscaled", async () => {
+    chatCalls = [];
+    const big = await makeOversizedPng();
+    const jpeg = await makeTinyJpeg();
+    const formData = new FormData();
+    formData.append(
+      "config",
+      JSON.stringify({
+        serverUrl: "http://localhost:8080",
+        model: "test-model",
+        userPrompt: "Describe this image.",
+        characterDescription: "A red-haired woman",
+      })
+    );
+    formData.append("images", new File([new Uint8Array(jpeg)], "good.jpg", { type: "image/jpeg" }));
+    formData.append(
+      "images",
+      new File([new Uint8Array(big)], "big.png", { type: "image/png" })
+    );
+
+    const response = await POST(
+      new NextRequest("http://localhost/api/caption/krea-2", { method: "POST", body: formData })
+    );
+    expect(response.status).toBe(200);
+    const events = await collectSseEvents(response as Response);
+
+    const warning = findEvent(events, "warning");
+    expect(warning).toBeDefined();
+    expect(String(warning?.message)).toContain("downscaled");
+    expect(String(warning?.message)).toContain('"big.png"');
+    // Both images are processed; the oversized one completes from the
+    // downscaled intermediate file.
+    const statuses = events
+      .filter((e) => e.type === "image_complete")
+      .map((e) => e.data as { name: string; status: string });
+    expect(statuses.find((d) => d.name === "good.jpg")?.status).toBe("completed");
+    expect(statuses.find((d) => d.name === "big.png")?.status).toBe("completed");
     expect(events.some((e) => e.type === "done")).toBe(true);
   });
 });

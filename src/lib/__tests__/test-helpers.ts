@@ -7,6 +7,7 @@
  */
 
 import sharp from "sharp";
+import { randomBytes } from "node:crypto";
 import { consumeSseStream, type SseEvent } from "@/lib/sse-client";
 
 export type { SseEvent };
@@ -132,5 +133,26 @@ export async function makeTinyJpeg(
     create: { width, height, channels: 3, background: color },
   })
     .jpeg({ quality: 90 })
+    .toBuffer();
+}
+
+export interface OversizedPngOptions {
+  width?: number;
+  height?: number;
+}
+
+/**
+ * Create a random-noise PNG (default 2000x2000, ~12 MB). Noise is nearly
+ * incompressible, so the encoded file exceeds the 10 MB intermediate-file
+ * limit - used to exercise save-time downscaling.
+ */
+export async function makeOversizedPng(
+  options: OversizedPngOptions = {}
+): Promise<Buffer> {
+  const { width = 2000, height = 2000 } = options;
+  return sharp(randomBytes(width * height * 3), {
+    raw: { width, height, channels: 3 },
+  })
+    .png()
     .toBuffer();
 }

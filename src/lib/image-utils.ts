@@ -92,3 +92,47 @@ export async function prepareForApi(
 
   return { buffer: resized, mimeType: "image/jpeg" };
 }
+
+/**
+ * Re-encode an oversized image as a JPEG of at most `maxBytes` bytes.
+ *
+ * Used at save time for uploads that exceed the per-image size limit:
+ * the intermediate file in the session directory must fit the limit, so
+ * the image is downscaled instead of rejected.
+ *
+ * First tries a full-size quality-90 re-encode - lossy recompression
+ * alone often gets a large PNG under the limit - then shrinks the
+ * dimensions in proportion to the byte overrun (with a safety margin)
+ * until the encode fits. Returns the best (smallest) encode when even
+ * the minimum dimensions cannot get under the limit.
+ *
+ * Throws when sharp cannot decode the input at all; callers treat that
+ * as an invalid-format rejection.
+ */
+export async function downscaleToJpegWithinLimit(
+  imageBuffer: Buffer,
+  maxBytes: number
+): Promise<Buffer> {
+  const MAX_ITERATIONS = 8;
+  const MIN_DIMENSION = 128;
+  /** Safety margin for encoder variance when scaling to the byte budget. */
+  const MARGIN = 0.95;
+
+  let candidate = imageBuffer;
+  for (let attempt = 0; attempt < MAX_ITERATIONS; attempt++) {
+    const encoded = await sharp(candidate).jpeg({ quality: 90 }).toBuffer();
+    if (encoded.length <= maxBytes) return encoded;
+
+    const metadata = await sharp(encoded).metadata();
+    const scale = Math.sqrt(maxBytes / encoded.length) * MARGIN;
+    const targetW = Math.round((metadata.width ?? 0) * scale);
+    const targetH = Math.round((metadata.height ?? 0) * scale);
+    if (targetW < MIN_DIMENSION || targetH < MIN_DIMENSION) return encoded;
+
+    candidate = await sharp(encoded)
+      .resize(targetW, targetH, { fit: "inside" })
+      .jpeg({ quality: 90 })
+      .toBuffer();
+  }
+  return sharp(candidate).jpeg({ quality: 90 }).toBuffer();
+}

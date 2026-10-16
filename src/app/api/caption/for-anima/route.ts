@@ -34,6 +34,7 @@ import {
   parseCaptionRequest,
   handleSessionAbort,
   emitRejectionEvents,
+  emitDownscaleNotice,
   summarizeRejections,
   type RejectedImage,
 } from "@/lib/caption-route";
@@ -218,8 +219,9 @@ async function processImage(
 /**
  * Read a chunk's images + caption texts, validate/save them into the
  * session directory, and return the accepted processing tasks (with GLOBAL
- * image indices: indexOffset + local position) and the rejected images
- * (with reasons).
+ * image indices: indexOffset + local position), the rejected images (with
+ * reasons), and the original names of images whose intermediate files were
+ * downscaled to fit the 10 MB limit.
  */
 async function saveChunkToSession(
   sessionId: string,
@@ -228,7 +230,7 @@ async function saveChunkToSession(
   captionFiles: File[],
   usedBases: Set<string>,
   indexOffset: number
-): Promise<{ tasks: ImageTask[]; rejections: RejectedImage[] }> {
+): Promise<{ tasks: ImageTask[]; rejections: RejectedImage[]; downscaledNames: string[] }> {
   const readItems = await Promise.all(
     imageFiles.map(async (file, i) => {
       const [imageBuffer, booruTags] = await Promise.all([
@@ -255,10 +257,12 @@ async function saveChunkToSession(
 
   const tasks: ImageTask[] = [];
   const rejections: RejectedImage[] = [];
+  const downscaledNames: string[] = [];
   readItems.forEach(({ i, booruTags, originalName }, idx) => {
     const result = results[idx];
     if (result.name) {
       tasks.push({ index: indexOffset + i, serverName: result.name, originalName, booruTags });
+      if (result.downscaled) downscaledNames.push(originalName);
     } else {
       rejections.push({
         index: indexOffset + i,
@@ -267,7 +271,7 @@ async function saveChunkToSession(
       });
     }
   });
-  return { tasks, rejections };
+  return { tasks, rejections, downscaledNames };
 }
 
 
@@ -323,7 +327,7 @@ async function handleSingleShot(
   const session = await createSession();
   const sessionId = session.id;
   const usedBases = new Set<string>();
-  const { tasks, rejections } = await saveChunkToSession(
+  const { tasks, rejections, downscaledNames } = await saveChunkToSession(
     sessionId,
     imageFiles,
     imageNames,
@@ -368,6 +372,7 @@ async function handleSingleShot(
   // each affected row shows its reason instead of a vague timeout.
   sendEvent("session", { sessionId });
   emitRejectionEvents(sendEvent, rejections, imageFiles.length);
+  emitDownscaleNotice(sendEvent, downscaledNames);
 
   // Process images in parallel
   (async () => {
@@ -455,7 +460,7 @@ async function handleChunkStart(
   }
 
   const usedBases = new Set<string>();
-  const { tasks: firstTasks, rejections: firstRejections } = await saveChunkToSession(
+  const { tasks: firstTasks, rejections: firstRejections, downscaledNames: firstDownscaled } = await saveChunkToSession(
     sessionId,
     imageFiles,
     imageNames,
@@ -510,6 +515,7 @@ async function handleChunkStart(
   // draining chunk 0 while the remaining chunks are still uploading.
   sendEvent("session", { sessionId });
   emitRejectionEvents(sendEvent, firstRejections, imageFiles.length);
+  emitDownscaleNotice(sendEvent, firstDownscaled);
   for (const task of firstTasks) {
     queue.enqueue(task);
   }
@@ -613,7 +619,7 @@ async function handleChunkContinuation(
   }
 
   const indexOffset = chunkIndex * chunkSize;
-  const { tasks, rejections } = await saveChunkToSession(
+  const { tasks, rejections, downscaledNames } = await saveChunkToSession(
     sessionId,
     imageFiles,
     imageNames,
@@ -632,6 +638,7 @@ async function handleChunkContinuation(
   if (rejections.length > 0) {
     emitRejectionEvents(entry.sendEvent, rejections, imageFiles.length);
   }
+  emitDownscaleNotice(entry.sendEvent, downscaledNames);
 
   logStructured("info", "chunk applied", {
     mode: "for-anima",

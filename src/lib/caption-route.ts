@@ -12,7 +12,11 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { abortSession } from "@/lib/session-registry";
-import { imageRejectionMessage, type ImageRejectionReason } from "@/lib/temp-files";
+import {
+  imageRejectionMessage,
+  MAX_IMAGE_SIZE_BYTES,
+  type ImageRejectionReason,
+} from "@/lib/temp-files";
 import { logStructured } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
@@ -58,6 +62,32 @@ export function emitRejectionEvents(
     });
   }
   sendEvent("warning", { message: summarizeRejections(rejections, total) });
+}
+
+// ---------------------------------------------------------------------------
+// Downscale notice reporting
+// ---------------------------------------------------------------------------
+
+/**
+ * Warning text for uploads that were accepted but had to be downscaled:
+ * after the upload step, the intermediate session file for each named image
+ * was re-encoded to a JPEG at or below the 10 MB limit (name list capped at
+ * 5).
+ */
+export function summarizeDownscaled(names: string[]): string {
+  const listed = names.slice(0, 5).map((n) => `"${n}"`);
+  if (names.length > 5) listed.push(`and ${names.length - 5} more`);
+  const n = names.length;
+  return `Upload succeeded - ${n} intermediate file${n === 1 ? "" : "s"} (${listed.join(", ")}) ${n === 1 ? "was" : "were"} downscaled after the upload step to fit the ${MAX_IMAGE_SIZE_BYTES / (1024 * 1024)} MB JPEG limit`;
+}
+
+/** Emit a warning listing the images whose intermediate files were downscaled. */
+export function emitDownscaleNotice(
+  sendEvent: (type: string, data: unknown) => void,
+  names: string[]
+): void {
+  if (names.length === 0) return;
+  sendEvent("warning", { message: summarizeDownscaled(names) });
 }
 
 // ---------------------------------------------------------------------------

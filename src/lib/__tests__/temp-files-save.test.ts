@@ -143,9 +143,10 @@ describe("temp-files saveImagesBatch", () => {
     expect(results).toEqual([{ name: null }]);
   });
 
-  it("reports oversized and invalid-format reasons per item", async () => {
+  it("reports invalid-format reasons per item (incl. undecodable oversized)", async () => {
     const session = await createSession();
-    // 10 MB + 1 byte with a valid PNG header: oversized wins over format
+    // 10 MB + 1 byte with only the PNG magic: passes the magic-byte check,
+    // but sharp cannot decode it at the downscale step -> invalid-format.
     const big = Buffer.alloc(MAX_IMAGE_SIZE_BYTES + 1);
     big[0] = 0x89;
     big[1] = 0x50;
@@ -160,7 +161,7 @@ describe("temp-files saveImagesBatch", () => {
       new Set<string>()
     );
     expect(results).toEqual([
-      { name: null, reason: "oversized" },
+      { name: null, reason: "invalid-format" },
       { name: null, reason: "invalid-format" },
     ]);
     await deleteSession(session.id);

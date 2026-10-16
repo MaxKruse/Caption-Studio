@@ -311,7 +311,7 @@ describe("for-anima route - chunked upload", () => {
       expect.objectContaining({
         index: 3,
         name: "bad.jpg",
-        error: expect.stringContaining("unsupported image format"),
+        error: expect.stringContaining("could not be decoded"),
       }),
     ]);
 

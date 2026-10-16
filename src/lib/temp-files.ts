@@ -7,6 +7,7 @@
 import fsp from "fs/promises";
 import path from "path";
 import { baseAndExt } from "./string-utils";
+import { downscaleToJpegWithinLimit } from "./image-utils";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -24,7 +25,11 @@ const CLEANUP_AFTER_MS = 30 * 60 * 1000;
 /** Cleanup check interval (every 5 minutes). */
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 
-/** Maximum size per image (10 MB). */
+/**
+ * Maximum size of an intermediate (session-dir) image file (10 MB).
+ * Uploads above this are NOT rejected: they are downscaled at save time
+ * to a JPEG at or below this size so every intermediate file fits.
+ */
 export const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
 
 /**
@@ -251,12 +256,11 @@ export function isValidImageBuffer(data: Buffer): boolean {
 // ---------------------------------------------------------------------------
 
 /** Why an image was rejected at upload time. */
-export type ImageRejectionReason = "oversized" | "invalid-format" | "session-full";
+export type ImageRejectionReason = "invalid-format" | "session-full";
 
 const IMAGE_REJECTION_MESSAGES: Record<ImageRejectionReason, string> = {
-  oversized: `rejected at upload: exceeds the ${MAX_IMAGE_SIZE_BYTES / (1024 * 1024)} MB per-image limit`,
   "invalid-format":
-    "rejected at upload: unsupported image format (PNG, JPEG, GIF, WEBP, AVIF, or TIFF required)",
+    "rejected at upload: image could not be decoded (PNG, JPEG, GIF, WEBP, AVIF, or TIFF required)",
   "session-full": "rejected at upload: session image limit reached",
 };
 
@@ -266,14 +270,13 @@ export function imageRejectionMessage(reason: ImageRejectionReason): string {
 }
 
 /**
- * Check a single image buffer against the upload constraints (size, magic
- * bytes). Returns the rejection reason, or null when the buffer is
- * acceptable. Does not account for the per-session image cap.
+ * Check a single image buffer against the upload constraints (magic
+ * bytes). Oversized buffers are NOT rejected here: they are downscaled
+ * at save time to fit MAX_IMAGE_SIZE_BYTES. Returns the rejection reason,
+ * or null when the buffer is acceptable. Does not account for the
+ * per-session image cap.
  */
-export function imageRejectionReason(
-  data: Buffer
-): "oversized" | "invalid-format" | null {
-  if (data.length > MAX_IMAGE_SIZE_BYTES) return "oversized";
+export function imageRejectionReason(data: Buffer): "invalid-format" | null {
   if (!isValidImageBuffer(data)) return "invalid-format";
   return null;
 }
@@ -344,8 +347,8 @@ export async function createSession(clientId?: string): Promise<SessionMeta> {
 /**
  * Validate a single image for saving and reserve its deduplicated name.
  * Returns the server-assigned filename, or null if the image is rejected
- * (oversized or not a valid image). Side effect: reserves the name in
- * usedBases when returning a name.
+ * (not a decodable image). Side effect: reserves the name in usedBases
+ * when returning a name.
  */
 function validateImageForSave(
   originalName: string,
@@ -359,6 +362,11 @@ function validateImageForSave(
 /**
  * Save an image buffer to the session directory.
  * Returns the server-assigned filename (may be deduplicated).
+ *
+ * Uploads above MAX_IMAGE_SIZE_BYTES are accepted: the intermediate file
+ * is downscaled at save time to a JPEG at or below the limit and stored
+ * under a .jpg name. An oversized buffer that sharp cannot decode is
+ * rejected as invalid-format.
  */
 export async function saveImage(
   sessionId: string,
@@ -377,13 +385,22 @@ export async function saveImage(
   const serverName = validateImageForSave(originalName, data, usedBases);
   if (!serverName) return null;
 
-  const filePath = path.join(meta.dir, serverName);
+  let name = serverName;
+  let bytes = data;
+  if (data.length > MAX_IMAGE_SIZE_BYTES) {
+    try {
+      bytes = await downscaleToJpegWithinLimit(data, MAX_IMAGE_SIZE_BYTES);
+      name = `${baseAndExt(serverName).base}.jpg`;
+    } catch {
+      return null;
+    }
+  }
 
-  await fsp.writeFile(filePath, data);
+  await fsp.writeFile(path.join(meta.dir, name), bytes);
   meta.lastActivityAt = Date.now();
   meta.imageCount++;
 
-  return serverName;
+  return name;
 }
 
 /** One item for saveImagesBatch. */
@@ -394,21 +411,27 @@ export interface BatchSaveItem {
 
 /**
  * One result from saveImagesBatch: the saved server name, or the rejection
- * reason when the image was not saved.
+ * reason when the image was not saved. `downscaled` is set when the upload
+ * exceeded MAX_IMAGE_SIZE_BYTES and the intermediate file was re-encoded to
+ * a JPEG at or below the limit (stored under a .jpg name).
  */
 export interface BatchSaveResult {
   name: string | null;
   reason?: ImageRejectionReason;
+  downscaled?: boolean;
 }
 
 /**
- * Validate and save multiple images to a session, writing in parallel.
+ * Validate and save multiple images to a session, writing concurrently.
  *
  * Preserves saveImage semantics: results map 1:1 to input order, base names
- * are deduplicated in input order, rejected items report the reason
- * ("oversized" / "invalid-format"), and the per-session image cap rejects
- * everything beyond the first MAX_IMAGES_PER_SESSION valid images as
- * "session-full".
+ * are deduplicated in input order, undecodable items report
+ * "invalid-format", and the per-session image cap rejects everything
+ * beyond the first MAX_IMAGES_PER_SESSION valid images as "session-full".
+ *
+ * Oversized uploads are downscaled at write time (sharp decodes the full
+ * image, which is the memory-heavy step), so at most WRITE_CONCURRENCY
+ * downscale+write jobs run in flight at once.
  */
 export async function saveImagesBatch(
   sessionId: string,
@@ -420,7 +443,7 @@ export async function saveImagesBatch(
 
   const allowed = MAX_IMAGES_PER_SESSION - meta.imageCount;
   const results: BatchSaveResult[] = new Array(items.length).fill(null as unknown as BatchSaveResult);
-  const toWrite: { i: number; serverName: string; data: Buffer }[] = [];
+  const toWrite: { i: number; serverName: string; data: Buffer; needsDownscale: boolean }[] = [];
 
   // Validate sequentially so name deduplication and the image cap keep
   // input-order semantics, then write concurrently.
@@ -435,18 +458,47 @@ export async function saveImagesBatch(
       return;
     }
     const serverName = deduplicateFileName(sanitizeFileName(item.originalName), usedBases);
-    toWrite.push({ i, serverName, data: item.data });
+    toWrite.push({
+      i,
+      serverName,
+      data: item.data,
+      needsDownscale: item.data.length > MAX_IMAGE_SIZE_BYTES,
+    });
   });
 
+  // Bounded fan-out: a full-size sharp decode is the memory-heavy step, so
+  // only a few oversized images re-encode at once on a 5,000-image batch.
+  // Small images write as fast as disk allows within the same pool.
+  const WRITE_CONCURRENCY = 4;
+  let cursor = 0;
+  let saved = 0;
   await Promise.all(
-    toWrite.map(async ({ i, serverName, data }) => {
-      await fsp.writeFile(path.join(meta.dir, serverName), data);
-      results[i] = { name: serverName };
+    Array.from({ length: Math.min(WRITE_CONCURRENCY, toWrite.length) }, async () => {
+      for (;;) {
+        const idx = cursor++;
+        if (idx >= toWrite.length) return;
+        const { i, serverName, data, needsDownscale } = toWrite[idx];
+        let name = serverName;
+        let bytes = data;
+        if (needsDownscale) {
+          try {
+            bytes = await downscaleToJpegWithinLimit(data, MAX_IMAGE_SIZE_BYTES);
+            name = `${baseAndExt(serverName).base}.jpg`;
+          } catch {
+            // Oversized buffer sharp cannot decode: invalid-format.
+            results[i] = { name: null, reason: "invalid-format" };
+            continue;
+          }
+        }
+        await fsp.writeFile(path.join(meta.dir, name), bytes);
+        results[i] = needsDownscale ? { name, downscaled: true } : { name };
+        saved++;
+      }
     })
   );
 
-  if (toWrite.length > 0) {
-    meta.imageCount += toWrite.length;
+  if (saved > 0) {
+    meta.imageCount += saved;
     meta.lastActivityAt = Date.now();
   }
 

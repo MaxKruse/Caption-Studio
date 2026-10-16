@@ -30,14 +30,15 @@ import {
   buildDistillUserPrompt,
 } from "@/lib/krea2-prompts";
 import { buildKrea2SystemPrompt } from "@/lib/krea2-system-prompt";
-import { readFileBuffer, chatComplete, streamResponse } from "@/lib/caption-helpers";
 import {
   parseCaptionRequest,
   handleSessionAbort,
   emitRejectionEvents,
+  emitDownscaleNotice,
   summarizeRejections,
   type RejectedImage,
 } from "@/lib/caption-route";
+import { readFileBuffer, chatComplete, streamResponse } from "@/lib/caption-helpers";
 import { registerSession, unregisterSession } from "@/lib/session-registry";
 import { createSseStream } from "@/lib/sse";
 import { runWorkerPool } from "@/lib/worker-pool";
@@ -340,10 +341,12 @@ export async function POST(request: NextRequest) {
 
   const tasks: ImageTask[] = [];
   const rejections: RejectedImage[] = [];
+  const downscaledNames: string[] = [];
   readItems.forEach(({ i, originalName }, idx) => {
     const result = results[idx];
     if (result.name) {
       tasks.push({ index: i, serverName: result.name, originalName });
+      if (result.downscaled) downscaledNames.push(originalName);
     } else {
       rejections.push({
         index: i,
@@ -386,9 +389,11 @@ export async function POST(request: NextRequest) {
   });
 
   // Send sessionId as first event, then report any upload rejections so
-  // each affected row shows its reason instead of a vague timeout.
+  // each affected row shows its reason instead of a vague timeout, then
+  // tell the user which images had their intermediate files downscaled.
   sendEvent("session", { sessionId });
   emitRejectionEvents(sendEvent, rejections, imageFiles.length);
+  emitDownscaleNotice(sendEvent, downscaledNames);
 
   // Process all images (each image goes through all 3 phases sequentially)
   (async () => {
