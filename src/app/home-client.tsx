@@ -3,7 +3,7 @@
  *
  * Flow:
  * 1. Server check (auto-polls every 3s until server found)
- * 2. Mode selection (For Anima or Krea 2)
+ * 2. Mode selection (For Anima, Krea 2, or MOSS-Image)
  * 3. Mode-specific workflow (upload -> configure -> process -> results)
  */
 
@@ -14,6 +14,7 @@ import { ServerCheck } from "@/components/server-check";
 import { ModeSelector } from "@/components/mode-selector";
 import { ForAnimaMode } from "@/components/for-anima-mode";
 import { Krea2Mode } from "@/components/krea2-mode";
+import { MossMode } from "@/components/moss-mode";
 import { SessionProvider } from "@/hooks/use-session";
 import type { AppMode } from "@/hooks/use-session";
 
@@ -96,6 +97,10 @@ export function HomeClient({ defaultServerUrl }: HomeClientProps) {
 
         {appPhase === "working" && selectedMode === "krea-2" && (
           <Krea2Mode serverUrl={serverUrl} onBack={handleBackToModes} />
+        )}
+
+        {appPhase === "working" && selectedMode === "moss" && (
+          <MossMode serverUrl={serverUrl} onBack={handleBackToModes} />
         )}
       </main>
 

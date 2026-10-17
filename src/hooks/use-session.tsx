@@ -11,7 +11,7 @@ import { useState, useCallback, useRef, createContext, useContext } from "react"
 // Types
 // ---------------------------------------------------------------------------
 
-export type AppMode = "for-anima" | "krea-2";
+export type AppMode = "for-anima" | "krea-2" | "moss";
 
 /** One image being added to the session (batch add entry). */
 export interface ImageEntry {

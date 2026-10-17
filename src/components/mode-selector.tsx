@@ -1,5 +1,5 @@
 /**
- * Mode selection screen - lets the user choose between For Anima and Krea 2 modes.
+ * Mode selection screen - lets the user choose between For Anima, Krea 2, and MOSS-Image modes.
  */
 
 "use client";
@@ -11,13 +11,13 @@ import { Input } from "@/components/ui/input";
 
 interface ModeSelectorProps {
   serverUrl: string;
-  onModeSelected: (mode: "for-anima" | "krea-2") => void;
+  onModeSelected: (mode: "for-anima" | "krea-2" | "moss") => void;
 }
 
 export function ModeSelector({ onModeSelected }: ModeSelectorProps) {
   const { state, setMode, setSessionTimeoutMinutes } = useSession();
 
-  const handleSelect = (mode: "for-anima" | "krea-2") => {
+  const handleSelect = (mode: "for-anima" | "krea-2" | "moss") => {
     setMode(mode);
     onModeSelected(mode);
   };
@@ -103,6 +103,34 @@ export function ModeSelector({ onModeSelected }: ModeSelectorProps) {
                 <li>Requires character description for refinement</li>
               </ul>
               <Button className="w-full mt-2">Start Krea 2 Mode</Button>
+            </div>
+          </button>
+        </Card>
+
+        {/* MOSS-Image Mode */}
+        <Card variant="elevated" className="cursor-pointer hover:border-indigo-500 transition-colors">
+          <button
+            onClick={() => handleSelect("moss")}
+            className="w-full text-left"
+          >
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">M</span>
+                <h3 className="text-lg font-semibold text-slate-100">MOSS-Image Mode</h3>
+              </div>
+              <p className="text-sm text-slate-400">
+                Recaption each image with the MOSS-Image guide&apos;s recaptioner prompt.
+                The model answers with a strict JSON caption object (long/medium/short
+                captions plus watermark boxes and borders) - the exact data format used
+                to post-train MOSS-Image-Base.
+              </p>
+              <ul className="text-xs text-slate-500 space-y-1 list-disc list-inside">
+                <li>Upload images + optional reference captions (.txt)</li>
+                <li>One non-streaming call per image, thinking mode optional</li>
+                <li>Captions saved as the normalized JSON object</li>
+                <li>Optimized for post-training data collection</li>
+              </ul>
+              <Button className="w-full mt-2">Start MOSS-Image Mode</Button>
             </div>
           </button>
         </Card>
