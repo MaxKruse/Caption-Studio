@@ -13,7 +13,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { buildChatRequest } from "@/lib/llama-request";
+import { buildChatRequest, buildMossChatRequest } from "@/lib/llama-request";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -84,4 +84,53 @@ describe("buildChatRequest", () => {
     expect(body.n_cache_reuse).toBe(256);
   });
 
+});
+
+describe("buildMossChatRequest", () => {
+  it("uses the MOSS-Image guide request format (non-streaming)", () => {
+    const body = buildMossChatRequest({
+      model: "qwen3.5-27b",
+      messages: sampleMessages(),
+      slotId: 0,
+      maxTokens: 16384,
+      enableThinking: true,
+    });
+
+    expect(body.stream).toBe(false);
+    expect(body.n).toBe(1);
+    expect(body.max_tokens).toBe(16384);
+    expect(body.temperature).toBe(1);
+    expect(body.top_p).toBe(0.95);
+    expect(body.chat_template_kwargs).toEqual({ enable_thinking: true });
+  });
+
+  it("reflects the enableThinking setting and maxTokens", () => {
+    const body = buildMossChatRequest({
+      model: "qwen3.5-27b",
+      messages: sampleMessages(),
+      slotId: 0,
+      maxTokens: 8192,
+      enableThinking: false,
+    });
+
+    expect(body.chat_template_kwargs).toEqual({ enable_thinking: false });
+    expect(body.max_tokens).toBe(8192);
+  });
+
+  it("keeps the slot-pinning fields for KV cache reuse", () => {
+    const messages = sampleMessages();
+    const body = buildMossChatRequest({
+      model: "qwen3.5-27b",
+      messages,
+      slotId: 2,
+      maxTokens: 16384,
+      enableThinking: true,
+    });
+
+    expect(body.model).toBe("qwen3.5-27b");
+    expect(body.messages).toBe(messages);
+    expect(body.id_slot).toBe(2);
+    expect(body.cache_prompt).toBe(true);
+    expect(body.n_cache_reuse).toBe(256);
+  });
 });

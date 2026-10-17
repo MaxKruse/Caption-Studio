@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { krea2ConfigSchema, forAnimaConfigSchema } from "@/lib/config-schema";
+import { krea2ConfigSchema, forAnimaConfigSchema, mossConfigSchema } from "@/lib/config-schema";
 
 describe("config schema validation", () => {
   describe("krea2ConfigSchema", () => {
@@ -59,6 +59,49 @@ describe("config schema validation", () => {
     });
   });
 
+
+  describe("mossConfigSchema", () => {
+    it("accepts a minimal config with guide defaults", () => {
+      const result = mossConfigSchema.safeParse({
+        serverUrl: "http://localhost:8080",
+        model: "qwen3.5-27b",
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.enableThinking).toBe(true);
+        expect(result.data.maxTokens).toBe(16384);
+      }
+    });
+
+    it("honors explicit enableThinking and maxTokens", () => {
+      const result = mossConfigSchema.safeParse({
+        serverUrl: "http://localhost:8080",
+        model: "qwen3.5-27b",
+        enableThinking: false,
+        maxTokens: 8192,
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.enableThinking).toBe(false);
+        expect(result.data.maxTokens).toBe(8192);
+      }
+    });
+
+    it("rejects maxTokens outside the 512-32768 range", () => {
+      const base = { serverUrl: "http://localhost:8080", model: "qwen3.5-27b" };
+      expect(mossConfigSchema.safeParse({ ...base, maxTokens: 256 }).success).toBe(false);
+      expect(mossConfigSchema.safeParse({ ...base, maxTokens: 65536 }).success).toBe(false);
+    });
+
+    it("rejects non-integer maxTokens", () => {
+      const result = mossConfigSchema.safeParse({
+        serverUrl: "http://localhost:8080",
+        model: "qwen3.5-27b",
+        maxTokens: 8192.5,
+      });
+      expect(result.success).toBe(false);
+    });
+  });
   describe("maxImageDimension", () => {
     it("is optional in both schemas (defaults to the 1536 lib default)", () => {
       const krea2 = krea2ConfigSchema.safeParse({

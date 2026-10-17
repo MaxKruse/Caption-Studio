@@ -60,3 +60,37 @@ export function buildChatRequest(options: ChatRequestOptions): Record<string, un
     n_cache_reuse: CACHE_REUSE_TOKENS,
   };
 }
+
+// ---------------------------------------------------------------------------
+// MOSS-Image (non-streaming) request
+// ---------------------------------------------------------------------------
+
+export interface MossChatRequestOptions extends ChatRequestOptions {
+  /** Generation budget (guide default 16384 - long JSON plus thinking). */
+  maxTokens: number;
+  /** Qwen3-style thinking mode; the guide recommends it for accuracy. */
+  enableThinking: boolean;
+}
+
+/**
+ * Build the non-streaming chat completion request body for the
+ * MOSS-Image recaptioner, following the MOSS-Image user guide exactly
+ * (n=1, stream=false, temperature=1, top_p=0.95, enable_thinking) and
+ * adding the app's slot-pinning fields for deterministic KV cache reuse.
+ * Older servers ignore the unknown fields.
+ */
+export function buildMossChatRequest(options: MossChatRequestOptions): Record<string, unknown> {
+  return {
+    model: options.model,
+    messages: options.messages,
+    n: 1,
+    stream: false,
+    max_tokens: options.maxTokens,
+    temperature: 1,
+    top_p: 0.95,
+    chat_template_kwargs: { enable_thinking: options.enableThinking },
+    id_slot: options.slotId,
+    cache_prompt: true,
+    n_cache_reuse: CACHE_REUSE_TOKENS,
+  };
+}
