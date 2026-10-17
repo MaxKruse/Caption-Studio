@@ -7,7 +7,7 @@
 
 ## What This Project Is
 
-A batch captioning tool for llama.cpp vision models: web UI (Next.js App Router + React) plus the **llama.cpp server connectivity** layer (API routes + lib utilities). Two caption modes: Krea 2 (three-phase pipeline) and For Anima (booru-tag enhancement with built-in WD Tagger tagging).
+A batch captioning tool for llama.cpp vision models: web UI (Next.js App Router + React) plus the **llama.cpp server connectivity** layer (API routes + lib utilities). Three caption modes: Krea 2 (three-phase pipeline), For Anima (booru-tag enhancement with built-in WD Tagger tagging), and MOSS-Image (strict JSON recaptioning per the MOSS-Image user guide).
 
 ## Tech Stack
 
@@ -36,6 +36,7 @@ src/
     api/
       caption/for-anima/route.ts — POST FormData (images + captions + config) → SSE stream
       caption/krea-2/route.ts    — POST FormData (images + config) → SSE stream
+      caption/moss/route.ts     — POST FormData (images + captions + config) → SSE stream (non-streaming recaptioning)
       download/route.ts          — GET ?sessionId=<id> streams zip of temp dir
       health/route.ts            — GET health check (temp dir writable, cleanup status)
       models/route.ts            — Model discovery proxy to /v1/models
@@ -43,19 +44,22 @@ src/
       tag/route.ts               — WD Tagger proxy (For Anima workflow)
     home-client.tsx        — App shell (mode switching)
     page.tsx / layout.tsx  — Root page + layout
-  components/              — krea2-mode, for-anima-mode, caption-viewer, kv-cache-stats,
+  components/              — krea2-mode, for-anima-mode, moss-mode, caption-viewer, kv-cache-stats,
                              image-uploader, model-selector, prompt-editor, server-check,
                              tag-stats, ui/*
   hooks/                   — use-session (in-memory UI state), use-server-check (polling)
   lib/
-    llama-request.ts        — buildChatRequest(): id_slot pinning + cache_prompt + n_cache_reuse
+    llama-request.ts        — buildChatRequest(): id_slot pinning + cache_prompt + n_cache_reuse;
+                              buildMossChatRequest(): non-streaming guide params (moss mode)
     token-accumulate.ts     — applyTokenDelta(): client-side accumulation of delta token events
     caption-helpers.ts      — readFileBuffer, fetchWithTimeout, fetchWithRetry, streamResponse,
-                              chatComplete (slot-pinned call + timeout + error mapping), sleep
+                              chatComplete (slot-pinned call + timeout + error mapping; optional
+                              `body` override sent verbatim), readChatCompletion (non-streaming
+                              JSON response reader), sleep
     caption-route.ts        — parseCaptionRequest (multipart + Zod + images preamble),
                               handleSessionAbort (shared DELETE ?sessionId= handler)
     caption-result.ts       — shared client CaptionResult type, formatTokens, stopCaptionSession
-    config-schema.ts        — Zod schemas (krea2ConfigSchema, forAnimaConfigSchema)
+    config-schema.ts        — Zod schemas (krea2ConfigSchema, forAnimaConfigSchema, mossConfigSchema)
     worker-pool.ts          — runWorkerPool(): shared parallel task pool (slot-pinned)
     session-registry.ts     — Active SSE session registry (abort controllers)
     temp-files.ts           — Session temp dirs under /tmp/caption-studio (30-min stale TTL only)
@@ -69,6 +73,8 @@ src/
     krea2-prompts.ts        — Phase 2/3 prompt builders
     krea2-system-prompt.ts  — Krea 2 system prompt
     anima-prompt.ts         — For Anima system + user prompts, assembleFinalCaption
+    moss-prompt.ts          — MOSS-Image recaptioner prompt (buildMossCaptionPrompt, {{reference}}
+                              substitution) + parseMossCaption (JSON validation/normalization)
     prompt-utils.ts         — Prompt text helpers
     string-utils.ts         — getExtension(), baseAndExt() (filename base/ext splitting)
     types.ts                — ModelInfo
@@ -141,7 +147,7 @@ Each worker fetches `<serverUrl>/v1/chat/completions` via `buildChatRequest()` w
 - `id_slot: <workerIndex>` - pins the request to one llama.cpp slot for KV cache reuse
 - `cache_prompt: true`, `n_cache_reuse: 256` - chunk-wise prompt KV reuse
 - Messages array with `image_url` (data URL) + `text` content parts
-- Timeouts: krea-2 phase 1 15 min, phases 2/3 5 min each; for-anima 5 min per image (short enhancement output); 5xx/429 retried via `fetchWithRetry`
+- Timeouts: krea-2 phase 1 15 min, phases 2/3 5 min each; for-anima 5 min per image (short enhancement output); moss 15 min per image (long JSON output); 5xx/429 retried via `fetchWithRetry`
 
 Streaming response parsed for `delta.reasoning_content` and `delta.content` (plus the final usage chunk for `cachedTokens`/`promptTokens` stats). Completion events carry the stats; the UI shows the batch-wide KV cache reuse percentage.
 
@@ -172,6 +178,17 @@ Each image is processed through all 3 phases as a **single multi-turn conversati
 Each phase overwrites the same `<image>.txt` in the session dir (`writeCaption`), so the caption file in a downloaded ZIP is always the **Phase 3 distilled prompt**.
 
 Parallel workers (up to 8 concurrent, clamped to the server's `--parallel`) each process one image through all 3 turns, pinned to their own slot (slotId = worker index) so the 3 phases reuse the same slot's KV cache. Config requires `characterDescription`.
+
+### MOSS-Image Mode (strict JSON recaptioning)
+
+```
+POST /api/caption/moss → FormData (images + caption files + JSON config), returns SSE stream
+DELETE ?sessionId=<id>   → aborts session
+```
+
+Implements the "Image Captioning" recipe from the [MOSS-Image user guide](https://github.com/OpenMOSS/MOSS-Image/blob/main/USERGUIDE.md#post-training) (post-training data format). Shares the base flow above (temp dir, dedup, session events, worker pool, download) but with ONE non-streaming call per image: one `user` message (text part first with the guide's recaptioner prompt, then the `image_url` data URL; no system message), body = guide params (`stream: false`, `n: 1`, `max_tokens` default 16384, `temperature: 1`, `top_p: 0.95`, `chat_template_kwargs: { enable_thinking }`) plus the slot-pinning fields. `chatComplete` takes a `body` override (skips `buildChatRequest`); the response is read by `readChatCompletion` (no SSE parsing).
+
+Reference captions: a `captions` file part per image (1:1 index-paired) grounds the model on the original caption; the prompt substitutes `(none)` when an image has no reference. The written `.txt` is the **normalized JSON caption object** (pretty-printed); unparseable output falls back to the trimmed raw text. `image_complete` carries `{index, name, status, caption, reasoningContent, cachedTokens, promptTokens}` - there are NO `token`/`phase` events (rows stay "processing" until completion). Config: `enableThinking` (default true) + `maxTokens` (default 16384, 512-32768) on top of the base schema.
 
 ### Download
 

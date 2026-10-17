@@ -8,7 +8,7 @@ Batch captioning tool for llama.cpp vision models. Web UI (Next.js/React) plus a
 - Auto-discover loaded vision models
 - Upload images in bulk (drag-and-drop or file picker)
 - Generate detailed captions with streaming token feedback
-- Two prompt modes: **Krea 2** (three-phase captioning with character description), and **For Anima** (whole-image description grounded in booru tags, with built-in WD Tagger tagging)
+- Three prompt modes: **Krea 2** (three-phase captioning with character description), **For Anima** (whole-image description grounded in booru tags, with built-in WD Tagger tagging), and **MOSS-Image** (strict JSON recaptioning per the MOSS-Image user guide)
 - Optional trigger word injection for character/subject naming
 - llama.cpp **KV cache reuse**: workers are pinned to server slots so Krea 2's three phases (and image batches) reuse cached image encodings; the UI shows the prompt-token reuse percentage per batch
 - Transient server errors (5xx/429) are retried automatically with exponential backoff
@@ -128,6 +128,7 @@ Click **Next** when the server is available.
 |------|----------|
 | **Krea 2** | Dataset captioning with character-aware de-duplication - three-phase pipeline removes repetitive character traits and distills to a concise prompt |
 | **For Anima** | Dataset captioning with booru tags - tags images with the built-in WD Tagger (or bring your own tag files), then describes the whole image as seen (tags as grounding) and transcribes any visible text verbatim |
+| **MOSS-Image** | Post-training data collection - recaptions each image as a strict JSON caption object (long/medium/short + watermark boxes + borders) following the MOSS-Image user guide |
 
 Before picking a mode you can set the **session timeout** (minutes): how long the server waits for a large batch to finish uploading before closing the session. 30 min by default, up to 3h (180 min) for very large or slow batches.
 
@@ -329,7 +330,50 @@ POST /api/caption/krea-2
 | `warning` | `{ message }` | Non-fatal problem (e.g. batch truncated at the 5,000-image cap) |
 | `error` | `{ error }` | Error occurred |
 
-Both caption routes also support an optional `maxImageDimension` config field (integer 256-4096) to override the 1536px client-side downscale default. Transient `5xx`/`429` responses from the model server are retried with exponential backoff (3 retries).
+All caption routes also support an optional `maxImageDimension` config field (integer 256-4096) to override the 1536px client-side downscale default. Transient `5xx`/`429` responses from the model server are retried with exponential backoff (3 retries).
+
+## MOSS-Image Mode
+
+This mode implements the image-captioning recipe from the [MOSS-Image user guide](https://github.com/OpenMOSS/MOSS-Image/blob/main/USERGUIDE.md#post-training) (Post-Training, "Image Captioning"). Each image gets the guide's recaptioner prompt and the model answers with a strict JSON caption object - the data format used to post-train MOSS-Image-Base:
+
+```json
+{
+  "caption": { "long": "...", "medium": "...", "short": "..." },
+  "watermark": [{ "box_2d": [x1, y1, x2, y2], "label": "visible text" }],
+  "borders": ["none"]
+}
+```
+
+**Reference captions:** upload a `.txt` file next to an image (same filename stem) and its content grounds the model on the original caption - it is substituted for the `{{reference}}` placeholder in the prompt. Images without a reference caption use `(none)`.
+
+**Request parameters:** the request follows the guide exactly - one `user` message (text part first, then the image; no system message), non-streaming, `temperature: 1`, `top_p: 0.95`, `max_tokens` default 16384 (512-32768, configurable in the UI), and `chat_template_kwargs: { "enable_thinking": true }` (thinking mode is recommended by the guide for more accurate captions and on by default; toggleable in the UI). Slot pinning (`id_slot`, `cache_prompt: true`, `n_cache_reuse: 256`) is added like the other modes. Each image has a 15-minute timeout.
+
+### API Endpoint
+
+```
+POST /api/caption/moss
+DELETE /api/caption/moss?sessionId=<id>   (abort a running session)
+```
+
+**FormData fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `config` | string (JSON) | `{"serverUrl": "...", "model": "...", "enableThinking": true, "maxTokens": 16384}` plus optional `maxImageDimension` |
+| `images` | File[] | Image files to process |
+| `captions` | File[] | Optional reference captions, index-paired with images (one part per image, even when empty, so the pairing holds) |
+| `imageNames` | string (JSON) | Optional: `string[]` of display names for images |
+
+**SSE events:** `session`, `image_start`, `image_complete`, `warning`, `error`, `done`. There are no `token`/`phase` events - each image is a single non-streaming call, so a row stays "processing" until its `image_complete` arrives. `warning` is used for upload rejections, downscale notices, and the concurrency-1 fallback when the server's `--parallel` cannot be detected (rejected uploads arrive as failed `image_complete` events naming the reason).
+
+The `image_complete` event includes:
+- `caption`: the normalized JSON caption object (pretty-printed string)
+- `reasoningContent`: the model's thinking output (when thinking mode is on)
+- `cachedTokens` / `promptTokens`: KV cache reuse stats from the llama.cpp usage report
+
+### Downloaded Captions
+
+The `.txt` in the downloaded ZIP is the **normalized JSON caption object**. If the model's output does not parse as the guide's schema, the trimmed raw output is saved instead - surfaced, not lost.
 
 ## Prompt Variables
 
