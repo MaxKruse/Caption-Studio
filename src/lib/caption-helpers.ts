@@ -42,6 +42,8 @@ export interface ChatCompleteParams {
   signal?: AbortSignal;
   /** Max retries on 5xx/429 (default 3). */
   maxRetries?: number;
+  /** Full request body override (sent verbatim, skipping buildChatRequest). */
+  body?: Record<string, unknown>;
 }
 
 /**
@@ -64,7 +66,7 @@ export async function chatComplete(
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildChatRequest({ model, messages, slotId })),
+      body: JSON.stringify(params.body ?? buildChatRequest({ model, messages, slotId })),
       cache: "no-store",
     },
     timeoutMs,
@@ -244,5 +246,81 @@ export async function streamResponse(
     reasoningContent: reasoningContent.trim(),
     cachedTokens,
     promptTokens,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Non-streaming chat completion
+// ---------------------------------------------------------------------------
+
+/**
+ * Read a non-streaming (stream=false) chat completion response into the
+ * same result shape as streamResponse.
+ *
+ * llama.cpp returns a single JSON body: the finished message content
+ * (plus reasoning_content on thinking models) and usage stats. Cached
+ * token stats come from usage.prompt_tokens_details.cached_tokens, with
+ * a fallback to the top-level timings.cache_n (same sources as
+ * streamResponse).
+ *
+ * @returns null when the session was aborted before the body was read.
+ * @throws Error "Invalid JSON..." when the body is not parseable JSON.
+ */
+export async function readChatCompletion(
+  response: Response,
+  signal?: AbortSignal
+): Promise<{
+  caption: string;
+  reasoningContent: string;
+  cachedTokens: number;
+  promptTokens: number;
+} | null> {
+  if (signal?.aborted) return null;
+
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error("Invalid JSON in chat completion response");
+  }
+
+  const obj = (typeof data === "object" && data !== null ? data : {}) as Record<
+    string,
+    unknown
+  >;
+  const choices = Array.isArray(obj.choices) ? obj.choices : [];
+  const message = (
+    typeof choices[0] === "object" && choices[0] !== null ? choices[0] : {}
+  ) as Record<string, unknown>;
+  const msg = (
+    typeof message.message === "object" && message.message !== null
+      ? message.message
+      : {}
+  ) as Record<string, unknown>;
+
+  const usage = (typeof obj.usage === "object" && obj.usage !== null ? obj.usage : {}) as Record<
+    string,
+    unknown
+  >;
+  const details = (
+    typeof usage.prompt_tokens_details === "object" &&
+    usage.prompt_tokens_details !== null
+      ? usage.prompt_tokens_details
+      : {}
+  ) as Record<string, unknown>;
+  const timings = (
+    typeof obj.timings === "object" && obj.timings !== null ? obj.timings : {}
+  ) as Record<string, unknown>;
+
+  return {
+    caption: typeof msg.content === "string" ? msg.content.trim() : "",
+    reasoningContent: typeof msg.reasoning_content === "string" ? msg.reasoning_content.trim() : "",
+    cachedTokens:
+      typeof details.cached_tokens === "number"
+        ? details.cached_tokens
+        : typeof timings.cache_n === "number"
+          ? timings.cache_n
+          : 0,
+    promptTokens: typeof usage.prompt_tokens === "number" ? usage.prompt_tokens : 0,
   };
 }

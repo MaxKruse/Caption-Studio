@@ -113,6 +113,44 @@ export function makeChatSseResponse(
   return new Response(stream, { status: 200 });
 }
 
+/**
+ * Build a non-streaming chat completion stub response (stream=false)
+ * returning a finished message with usage stats.
+ */
+export function makeChatJsonResponse(
+  caption: string | object,
+  options: {
+    reasoningContent?: string;
+    promptTokens?: number;
+    cachedTokens?: number;
+  } = {}
+): Response {
+  const { promptTokens = 1000, cachedTokens = 750, reasoningContent = "" } = options;
+  return new Response(
+    JSON.stringify({
+      id: "stub",
+      choices: [
+        {
+          index: 0,
+          message: {
+            role: "assistant",
+            content: typeof caption === "string" ? caption : JSON.stringify(caption),
+            ...(reasoningContent ? { reasoning_content: reasoningContent } : {}),
+          },
+          finish_reason: "stop",
+        },
+      ],
+      usage: {
+        prompt_tokens: promptTokens,
+        completion_tokens: 10,
+        total_tokens: promptTokens + 10,
+        prompt_tokens_details: { cached_tokens: cachedTokens },
+      },
+    }),
+    { status: 200, headers: { "Content-Type": "application/json" } }
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Image fixtures
 // ---------------------------------------------------------------------------

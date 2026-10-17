@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { readFileBuffer, sleep, chatComplete } from "@/lib/caption-helpers";
+import { readFileBuffer, sleep, chatComplete, readChatCompletion } from "@/lib/caption-helpers";
 
 // ---------------------------------------------------------------------------
 // chatComplete tests
@@ -92,6 +92,108 @@ describe("chatComplete", () => {
     } finally {
       globalThis.fetch = realFetch;
     }
+  });
+});
+
+describe("chatComplete body override", () => {
+  const realFetch = globalThis.fetch;
+
+  it("sends the provided body verbatim instead of the streaming default", async () => {
+    let seenBody: Record<string, unknown> | undefined;
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      seenBody = JSON.parse(init?.body as string) as Record<string, unknown>;
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+
+    try {
+      const body = {
+        model: "test-model",
+        messages: [{ role: "user", content: "hi" }],
+        stream: false,
+        max_tokens: 8192,
+      };
+      const response = await chatComplete("http://localhost:8080", {
+        model: "test-model",
+        messages: [{ role: "user", content: "hi" }],
+        slotId: 0,
+        timeoutMs: 1000,
+        body,
+      });
+      expect(response.status).toBe(200);
+      expect(seenBody).toEqual(body);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+});
+
+describe("readChatCompletion", () => {
+  it("extracts caption, reasoning, and KV cache stats from a non-streaming response", async () => {
+    const response = new Response(
+      JSON.stringify({
+        choices: [
+          { message: { content: "  caption text ", reasoning_content: " thought " } },
+        ],
+        usage: {
+          prompt_tokens: 1200,
+          completion_tokens: 50,
+          total_tokens: 1250,
+          prompt_tokens_details: { cached_tokens: 900 },
+        },
+      }),
+      { status: 200 }
+    );
+
+    const result = await readChatCompletion(response);
+    expect(result).not.toBeNull();
+    expect(result!.caption).toBe("caption text");
+    expect(result!.reasoningContent).toBe("thought");
+    expect(result!.cachedTokens).toBe(900);
+    expect(result!.promptTokens).toBe(1200);
+  });
+
+  it("falls back to timings.cache_n when prompt_tokens_details is absent", async () => {
+    const response = new Response(
+      JSON.stringify({
+        choices: [{ message: { content: "c" } }],
+        usage: { prompt_tokens: 100 },
+        timings: { cache_n: 42 },
+      }),
+      { status: 200 }
+    );
+
+    const result = await readChatCompletion(response);
+    expect(result).not.toBeNull();
+    expect(result!.cachedTokens).toBe(42);
+    expect(result!.reasoningContent).toBe("");
+  });
+
+  it("returns zeroed stats and empty caption for a bare message", async () => {
+    const response = new Response(
+      JSON.stringify({ choices: [{ message: {} }], usage: {} }),
+      { status: 200 }
+    );
+
+    const result = await readChatCompletion(response);
+    expect(result).not.toBeNull();
+    expect(result!.caption).toBe("");
+    expect(result!.cachedTokens).toBe(0);
+    expect(result!.promptTokens).toBe(0);
+  });
+
+  it("returns null when the signal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const response = new Response(JSON.stringify({ choices: [] }), { status: 200 });
+
+    const result = await readChatCompletion(response, controller.signal);
+    expect(result).toBeNull();
+  });
+
+  it("throws on a non-JSON response body", async () => {
+    const response = new Response("<html>oops</html>", { status: 200 });
+
+    await expect(readChatCompletion(response)).rejects.toThrow("Invalid JSON");
   });
 });
 
