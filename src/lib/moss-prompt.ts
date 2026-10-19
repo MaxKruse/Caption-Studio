@@ -13,9 +13,11 @@
 // ---------------------------------------------------------------------------
 
 /**
- * The recaptioner prompt, verbatim from the MOSS-Image user guide.
- * `{{reference}}` is replaced per image with the original caption
- * (or `(none)` when the image has no reference caption).
+ * The recaptioner prompt from the MOSS-Image user guide, minus its
+ * reference-caption section: grounding (subject description and/or the
+ * per-image reference caption) is appended by `buildMossCaptionPrompt`
+ * only when present, so the prompt never carries a dangling "reference:
+ * (none)" line.
  */
 export const MOSS_CAPTION_PROMPT = `You are an image recaptioner. Return exactly one JSON object with this schema:
 {
@@ -46,20 +48,31 @@ Rules:
     - Record evident borders or margins using one or more of "left", "right", "up", and "down".
     - Use ["none"] if there are no evident borders or margins. Do not combine "none" with other directions.
 - All three caption fields must be non-empty strings.
-- Treat the original caption as a reference. Correct any claims that are not supported by the image.
-- Return only the JSON object, without Markdown or explanations.
-
-Here is the original caption reference:
-{{reference}}`;
+- Return only the JSON object, without Markdown or explanations.`;
 
 /**
- * Build the per-image caption prompt by substituting the reference
- * caption for the `{{reference}}` placeholder. An empty reference
- * becomes `(none)` so the prompt always states what it is grounding on.
+ * Build the per-image caption prompt: the base recaptioner prompt plus
+ * optional grounding sections, appended only when present:
+ *
+ * - `subjectDescription` (batch-level): what the subject in the images
+ *   is, so the model can name and describe it consistently.
+ * - `reference` (per-image original caption): the guide's "treat it as
+ *   a reference, correct unsupported claims" instruction travels with it.
  */
-export function buildMossCaptionPrompt(reference: string): string {
-  const trimmed = reference.trim();
-  return MOSS_CAPTION_PROMPT.replace("{{reference}}", () => trimmed || "(none)");
+export function buildMossCaptionPrompt(
+  subjectDescription: string,
+  reference: string
+): string {
+  let prompt = MOSS_CAPTION_PROMPT;
+  const subject = subjectDescription.trim();
+  if (subject) {
+    prompt += `\n\nThe subject in the image is: ${subject}`;
+  }
+  const ref = reference.trim();
+  if (ref) {
+    prompt += `\n\nHere is the original caption for this image:\n${ref}\nTreat the original caption as a reference. Correct any claims that are not supported by the image.`;
+  }
+  return prompt;
 }
 
 // ---------------------------------------------------------------------------

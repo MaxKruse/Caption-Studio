@@ -1,11 +1,12 @@
 /**
  * Tests for the MOSS-Image caption prompt builder and output parser.
  *
- * The prompt is the exact recaptioning prompt from the MOSS-Image user
+ * The base prompt is the recaptioning prompt from the MOSS-Image user
  * guide (post-training section): it asks the VLM for a JSON object with
- * long/medium/short captions, watermark boxes, and borders. The parser
- * normalizes the model output (markdown fences, surrounding prose) and
- * validates the structure.
+ * long/medium/short captions, watermark boxes, and borders. Grounding
+ * (subject description, per-image reference caption) is appended
+ * conditionally. The parser normalizes the model output (markdown
+ * fences, surrounding prose) and validates the structure.
  */
 
 import { describe, it, expect } from "bun:test";
@@ -23,7 +24,6 @@ describe("MOSS_CAPTION_PROMPT", () => {
     expect(MOSS_CAPTION_PROMPT).toContain('"short"');
     expect(MOSS_CAPTION_PROMPT).toContain('"watermark"');
     expect(MOSS_CAPTION_PROMPT).toContain('"borders"');
-    expect(MOSS_CAPTION_PROMPT).toContain("{{reference}}");
   });
 
   it("carries the guide's rules for visible text and watermarks", () => {
@@ -37,25 +37,34 @@ describe("MOSS_CAPTION_PROMPT", () => {
 });
 
 describe("buildMossCaptionPrompt", () => {
-  it("substitutes the reference caption verbatim", () => {
-    const prompt = buildMossCaptionPrompt("1girl, blue hair, forest");
-    expect(prompt).not.toContain("{{reference}}");
-    expect(prompt.trim().endsWith("1girl, blue hair, forest")).toBe(true);
+  it("appends the subject description when provided", () => {
+    const prompt = buildMossCaptionPrompt("a silver-haired woman in a red cloak", "");
+    expect(prompt).toContain("The subject in the image is: a silver-haired woman in a red cloak");
   });
 
-  it("trims the reference caption", () => {
-    const prompt = buildMossCaptionPrompt("  some tags  ");
-    expect(prompt.trim().endsWith("some tags")).toBe(true);
+  it("appends the reference caption with the guide's reference rule", () => {
+    const prompt = buildMossCaptionPrompt("", "1girl, blue hair, forest");
+    expect(prompt).toContain(
+      "Here is the original caption for this image:\n1girl, blue hair, forest"
+    );
+    expect(prompt).toContain(
+      "Treat the original caption as a reference. Correct any claims that are not supported by the image."
+    );
   });
 
-  it("uses (none) for an empty reference", () => {
-    const prompt = buildMossCaptionPrompt("");
-    expect(prompt.trim().endsWith("(none)")).toBe(true);
+  it("omits both sections when subject and reference are empty", () => {
+    const prompt = buildMossCaptionPrompt("", "   \n  ");
+    expect(prompt).toBe(MOSS_CAPTION_PROMPT);
+    expect(prompt).not.toContain("original caption");
+    expect(prompt).not.toContain("(none)");
   });
 
-  it("uses (none) for a whitespace-only reference", () => {
-    const prompt = buildMossCaptionPrompt("   \n  ");
-    expect(prompt.trim().endsWith("(none)")).toBe(true);
+  it("appends subject before reference when both are provided", () => {
+    const prompt = buildMossCaptionPrompt("  a red cloak  ", "1girl, blue hair");
+    const subjectIdx = prompt.indexOf("The subject in the image is: a red cloak");
+    const refIdx = prompt.indexOf("1girl, blue hair");
+    expect(subjectIdx).toBeGreaterThan(-1);
+    expect(refIdx).toBeGreaterThan(subjectIdx);
   });
 });
 

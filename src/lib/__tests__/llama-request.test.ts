@@ -87,34 +87,33 @@ describe("buildChatRequest", () => {
 });
 
 describe("buildMossChatRequest", () => {
-  it("uses the MOSS-Image guide request format (non-streaming)", () => {
+  it("sends a non-streaming body without sampling or length overrides", () => {
     const body = buildMossChatRequest({
       model: "qwen3.5-27b",
       messages: sampleMessages(),
       slotId: 0,
-      maxTokens: 16384,
       enableThinking: true,
     });
 
     expect(body.stream).toBe(false);
-    expect(body.n).toBe(1);
-    expect(body.max_tokens).toBe(16384);
-    expect(body.temperature).toBe(1);
-    expect(body.top_p).toBe(0.95);
+    // Sampling and the output budget are the server's pre-configured
+    // defaults - the app must not override them per request.
+    expect(body.max_tokens).toBeUndefined();
+    expect(body.temperature).toBeUndefined();
+    expect(body.top_p).toBeUndefined();
+    expect(body.n).toBeUndefined();
     expect(body.chat_template_kwargs).toEqual({ enable_thinking: true });
   });
 
-  it("reflects the enableThinking setting and maxTokens", () => {
+  it("reflects the enableThinking setting", () => {
     const body = buildMossChatRequest({
       model: "qwen3.5-27b",
       messages: sampleMessages(),
       slotId: 0,
-      maxTokens: 8192,
       enableThinking: false,
     });
 
     expect(body.chat_template_kwargs).toEqual({ enable_thinking: false });
-    expect(body.max_tokens).toBe(8192);
   });
 
   it("keeps the slot-pinning fields for KV cache reuse", () => {
@@ -123,7 +122,7 @@ describe("buildMossChatRequest", () => {
       model: "qwen3.5-27b",
       messages,
       slotId: 2,
-      maxTokens: 16384,
+
       enableThinking: true,
     });
 

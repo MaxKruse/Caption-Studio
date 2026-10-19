@@ -4,7 +4,7 @@
  * Stubs the llama.cpp server with a non-streaming chat completion
  * returning the MOSS-Image JSON caption format (long/medium/short +
  * watermark boxes + borders), and exercises the full POST flow:
- * config validation, guide request format, reference substitution,
+ * config validation, request format, subject/reference grounding,
  * caption normalization, disk artifact, and abort.
  */
 
@@ -133,8 +133,8 @@ describe("moss route - config validation", () => {
 // Guide request format
 // ---------------------------------------------------------------------------
 
-describe("moss route - guide request format", () => {
-  it("sends the MOSS-Image guide body plus slot pinning", async () => {
+describe("moss route - request format", () => {
+  it("sends a non-streaming body with the thinking toggle and slot pinning, no sampling overrides", async () => {
     const response = await postMoss({ serverUrl: "http://localhost:8080", model: "test-model" });
     expect(response.status).toBe(200);
     const events = await collectSseEvents(response);
@@ -144,10 +144,12 @@ describe("moss route - guide request format", () => {
     const body = chatCalls[0];
     expect(body.model).toBe("test-model");
     expect(body.stream).toBe(false);
-    expect(body.n).toBe(1);
-    expect(body.max_tokens).toBe(16384);
-    expect(body.temperature).toBe(1);
-    expect(body.top_p).toBe(0.95);
+    // Sampling and the output budget are the server's pre-configured
+    // defaults - the route must not override them per request.
+    expect(body.max_tokens).toBeUndefined();
+    expect(body.temperature).toBeUndefined();
+    expect(body.top_p).toBeUndefined();
+    expect(body.n).toBeUndefined();
     expect(body.chat_template_kwargs).toEqual({ enable_thinking: true });
     expect(body.id_slot).toBe(0);
     expect(body.cache_prompt).toBe(true);
@@ -171,13 +173,14 @@ describe("moss route - guide request format", () => {
     expect(imagePartUrl(content[1])).toContain("data:image/jpeg;base64,");
   });
 
-  it("uses (none) as the reference when no caption file is provided", async () => {
+  it("omits the reference section when no caption file is provided", async () => {
     const response = await postMoss({ serverUrl: "http://localhost:8080", model: "test-model" });
     await collectSseEvents(response);
 
     const text = String(contentParts(chatCalls[0])[0].text);
     expect(text).not.toContain("{{reference}}");
-    expect(text.trim().endsWith("(none)")).toBe(true);
+    expect(text).not.toContain("original caption");
+    expect(text).not.toContain("(none)");
   });
 
   it("substitutes the paired caption file as the reference", async () => {
@@ -188,8 +191,22 @@ describe("moss route - guide request format", () => {
     await collectSseEvents(response);
 
     const text = String(contentParts(chatCalls[0])[0].text);
-    expect(text).toContain("1girl, silver hair, neon street");
+    expect(text).toContain(
+      "Here is the original caption for this image:\n1girl, silver hair, neon street"
+    );
     expect(text).not.toContain("(none)");
+  });
+
+  it("appends the config subjectDescription to the prompt", async () => {
+    const response = await postMoss({
+      serverUrl: "http://localhost:8080",
+      model: "test-model",
+      subjectDescription: "a silver-haired woman in a red cloak",
+    });
+    await collectSseEvents(response);
+
+    const text = String(contentParts(chatCalls[0])[0].text);
+    expect(text).toContain("The subject in the image is: a silver-haired woman in a red cloak");
   });
 
   it("honors enableThinking: false", async () => {
@@ -201,17 +218,6 @@ describe("moss route - guide request format", () => {
     await collectSseEvents(response);
 
     expect(chatCalls[0].chat_template_kwargs).toEqual({ enable_thinking: false });
-  });
-
-  it("honors a maxTokens override", async () => {
-    const response = await postMoss({
-      serverUrl: "http://localhost:8080",
-      model: "test-model",
-      maxTokens: 8192,
-    });
-    await collectSseEvents(response);
-
-    expect(chatCalls[0].max_tokens).toBe(8192);
   });
 });
 

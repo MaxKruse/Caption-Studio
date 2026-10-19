@@ -69,35 +69,29 @@ describe("config schema validation", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.enableThinking).toBe(true);
-        expect(result.data.maxTokens).toBe(16384);
+        expect(result.data.subjectDescription).toBe("");
       }
     });
 
-    it("honors explicit enableThinking and maxTokens", () => {
+    it("honors explicit enableThinking and subjectDescription", () => {
       const result = mossConfigSchema.safeParse({
         serverUrl: "http://localhost:8080",
         model: "qwen3.5-27b",
         enableThinking: false,
-        maxTokens: 8192,
+        subjectDescription: "a silver-haired woman in a red cloak",
       });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.enableThinking).toBe(false);
-        expect(result.data.maxTokens).toBe(8192);
+        expect(result.data.subjectDescription).toBe("a silver-haired woman in a red cloak");
       }
     });
 
-    it("rejects maxTokens outside the 512-32768 range", () => {
-      const base = { serverUrl: "http://localhost:8080", model: "qwen3.5-27b" };
-      expect(mossConfigSchema.safeParse({ ...base, maxTokens: 256 }).success).toBe(false);
-      expect(mossConfigSchema.safeParse({ ...base, maxTokens: 65536 }).success).toBe(false);
-    });
-
-    it("rejects non-integer maxTokens", () => {
+    it("rejects a non-boolean enableThinking", () => {
       const result = mossConfigSchema.safeParse({
         serverUrl: "http://localhost:8080",
         model: "qwen3.5-27b",
-        maxTokens: 8192.5,
+        enableThinking: "yes",
       });
       expect(result.success).toBe(false);
     });

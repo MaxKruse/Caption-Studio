@@ -6,10 +6,10 @@
  * object (long/medium/short captions + watermark boxes + borders), the
  * data format used to post-train MOSS-Image-Base.
  *
- * Phases: upload -> configure -> processing -> results. Optional
- * reference captions (.txt per image, stem-paired by the uploader)
- * ground the model on the original caption; images without one use
- * `(none)`.
+ * Phases: upload -> configure -> processing -> results. Grounding for
+ * the recaptioner (both optional, applied only when present): a
+ * batch-level subject description, and per-image reference captions
+ * (.txt per image, stem-paired by the uploader).
  */
 
 "use client";
@@ -27,6 +27,7 @@ import { KvCacheStats } from "@/components/kv-cache-stats";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -47,13 +48,10 @@ export function MossMode({ serverUrl, onBack }: MossModeProps) {
   const { state } = useSession();
   const [phase, setPhase] = useState<Phase>("upload");
   const [imageCount, setImageCount] = useState(0);
-  /** Guide knobs: thinking mode (recommended) and the output token budget. */
+  /** Guide knob: thinking mode (recommended; adds a reasoning pass). */
   const [enableThinking, setEnableThinking] = useState(true);
-  const [maxTokens, setMaxTokens] = useState("16384");
-  const tokensValue = maxTokens.trim() === "" ? null : Number(maxTokens);
-  const tokensInvalid =
-    tokensValue !== null &&
-    (!Number.isInteger(tokensValue) || tokensValue < 512 || tokensValue > 32768);
+  /** Optional batch-level subject description (grounding for the recaptioner). */
+  const [subjectDescription, setSubjectDescription] = useState("");
   /** Optional max image dimension override ("" = lib default 1536px). */
   const [maxImageDimension, setMaxImageDimension] = useState("");
   const dimValue = maxImageDimension.trim() === "" ? null : Number(maxImageDimension);
@@ -97,9 +95,10 @@ export function MossMode({ serverUrl, onBack }: MossModeProps) {
       serverUrl,
       model: state.model,
       enableThinking,
-      // The user never clears the field to an invalid value (Start is
-      // disabled then) - fall back to the guide default when blank.
-      maxTokens: tokensValue ?? 16384,
+      // Omit when empty so the prompt has no subject section
+      ...(subjectDescription.trim() !== ""
+        ? { subjectDescription: subjectDescription.trim() }
+        : {}),
       // Omit when unset so the server applies the 1536px default
       ...(dimValue !== null && Number.isInteger(dimValue)
         ? { maxImageDimension: dimValue }
@@ -234,7 +233,7 @@ export function MossMode({ serverUrl, onBack }: MossModeProps) {
       setIsProcessing(false);
       setPhase("results");
     }
-  }, [state, serverUrl, enableThinking, tokensValue, dimValue]);
+  }, [state, serverUrl, enableThinking, subjectDescription, dimValue]);
 
   const handleNewBatch = useCallback(() => {
     setPhase("upload");
@@ -318,27 +317,22 @@ export function MossMode({ serverUrl, onBack }: MossModeProps) {
               </p>
             </div>
 
-            {/* Max tokens (guide default 16384) */}
-            <div className="space-y-1">
-              <Input
-                label="Max output tokens"
-                type="number"
-                min={512}
-                max={32768}
-                step={1024}
-                value={maxTokens}
-                onChange={(e) => setMaxTokens(e.target.value)}
-                placeholder="16384 (default)"
-              />
+            {/* Subject description (optional grounding for the recaptioner) */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-300">
+                Subject Description
+              </label>
               <p className="text-xs text-slate-500">
-                Output budget for the JSON caption object. Raise it for very
-                detailed scenes; the guide default is 16384.
+                Optional. Describe the subject that appears in the images (a
+                character, product, or scene). The model uses it to name and
+                describe the subject consistently across all captions.
               </p>
-              {tokensInvalid && (
-                <p className="text-xs text-red-400">
-                  Must be a whole number between 512 and 32768.
-                </p>
-              )}
+              <Textarea
+                value={subjectDescription}
+                onChange={(e) => setSubjectDescription(e.target.value)}
+                rows={3}
+                placeholder="e.g. A young woman with long silver hair and a red hooded cloak..."
+              />
             </div>
 
             {/* Optional image resolution override */}
@@ -373,7 +367,7 @@ export function MossMode({ serverUrl, onBack }: MossModeProps) {
                   abortControllerRef.current = new AbortController();
                   await handleStart();
                 }}
-                disabled={!state.model || tokensInvalid || dimInvalid || isProcessing}
+                disabled={!state.model || dimInvalid || isProcessing}
               >
                 Start Captioning
               </Button>

@@ -6,13 +6,16 @@
  * exactly one JSON object (long/medium/short captions + watermark boxes +
  * borders) - the caption format used to post-train MOSS-Image-Base.
  *
- * The request follows the guide exactly (non-streaming, n=1,
- * temperature=1, top_p=0.95, chat_template_kwargs.enable_thinking) plus
- * this app's slot-pinning fields for deterministic KV cache reuse.
+ * The request body is non-streaming (the shape the app reads) plus the
+ * thinking toggle (`chat_template_kwargs.enable_thinking`) and this
+ * app's slot-pinning fields for deterministic KV cache reuse. Sampling
+ * (temperature, top_p) and the output budget are NOT sent - the
+ * llama-server has them pre-configured.
  *
- * Optional reference captions: a `captions` file per image (index-paired)
- * grounds the model on the original caption; the prompt substitutes
- * `(none)` when an image has none.
+ * Optional grounding, appended to the prompt only when present:
+ * - `subjectDescription` (config): what the subject in the images is.
+ * - Reference captions: a `captions` file per image (index-paired)
+ *   grounds the model on the original caption.
  *
  * The `.txt` caption file written to the session dir (and therefore the
  * downloaded ZIP) contains the normalized JSON caption object.
@@ -65,7 +68,7 @@ interface ImageTask {
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Per-image timeout: thinking mode plus up to 16k output tokens is slow. */
+/** Per-image timeout: thinking mode plus a long JSON caption is slow. */
 const API_TIMEOUT_MS = 15 * 60 * 1000;
 
 /** Client-side ceiling for parallel image processing. */
@@ -87,7 +90,7 @@ async function processImage(
   model: string,
   slotId: number,
   enableThinking: boolean,
-  maxTokens: number,
+  subjectDescription: string,
   maxImageDimension: number | undefined,
   sendEvent: (type: string, data: unknown) => void,
   abortSignal: AbortSignal
@@ -121,7 +124,7 @@ async function processImage(
       {
         role: "user",
         content: [
-          { type: "text", text: buildMossCaptionPrompt(task.reference) },
+          { type: "text", text: buildMossCaptionPrompt(subjectDescription, task.reference) },
           { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } },
         ],
       },
@@ -133,7 +136,7 @@ async function processImage(
       slotId,
       timeoutMs: API_TIMEOUT_MS,
       signal: abortSignal,
-      body: buildMossChatRequest({ model, messages, slotId, maxTokens, enableThinking }),
+      body: buildMossChatRequest({ model, messages, slotId, enableThinking }),
     });
 
     const result = await readChatCompletion(response, abortSignal);
@@ -294,7 +297,7 @@ export async function POST(request: NextRequest) {
             config.model,
             slotId,
             config.enableThinking,
-            config.maxTokens,
+            config.subjectDescription,
             config.maxImageDimension,
             sendEvent,
             sessionAbort.signal

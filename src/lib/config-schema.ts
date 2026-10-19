@@ -60,14 +60,15 @@ export const krea2ConfigSchema = baseConfig.extend({
 export const forAnimaConfigSchema = baseConfig;
 
 /**
- * MOSS-Image mode config. Sampling parameters follow the MOSS-Image user
- * guide (temperature=1, top_p=0.95 are fixed server-side); the only
- * guide knobs exposed are the Qwen3 thinking mode and the generation
- * budget (the JSON caption plus thinking can be long).
+ * MOSS-Image mode config. The only knobs exposed are the Qwen3
+ * thinking mode and the optional batch-level subject description
+ * (grounding for the recaptioner). Sampling (temperature, top_p) and
+ * the output budget are the llama-server's pre-configured defaults -
+ * the route does not override them per request.
  */
 export const mossConfigSchema = baseConfig.extend({
   enableThinking: z.boolean().optional().default(true),
-  maxTokens: z.number().int().min(512).max(32768).optional().default(16384),
+  subjectDescription: z.string().optional().default(""),
 });
 
 export type Krea2Config = z.infer<typeof krea2ConfigSchema>;

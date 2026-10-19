@@ -66,28 +66,25 @@ export function buildChatRequest(options: ChatRequestOptions): Record<string, un
 // ---------------------------------------------------------------------------
 
 export interface MossChatRequestOptions extends ChatRequestOptions {
-  /** Generation budget (guide default 16384 - long JSON plus thinking). */
-  maxTokens: number;
   /** Qwen3-style thinking mode; the guide recommends it for accuracy. */
   enableThinking: boolean;
 }
 
 /**
  * Build the non-streaming chat completion request body for the
- * MOSS-Image recaptioner, following the MOSS-Image user guide exactly
- * (n=1, stream=false, temperature=1, top_p=0.95, enable_thinking) and
- * adding the app's slot-pinning fields for deterministic KV cache reuse.
- * Older servers ignore the unknown fields.
+ * MOSS-Image recaptioner: the response shape the app reads
+ * (`stream: false`), the user-facing thinking toggle, and the app's
+ * slot-pinning fields for deterministic KV cache reuse. Sampling
+ * (temperature, top_p), the response count, and the output budget are
+ * deliberately NOT sent - the llama-server has them pre-configured
+ * (--default-n-predict, --temp, --top-p). Older servers ignore the
+ * unknown fields.
  */
 export function buildMossChatRequest(options: MossChatRequestOptions): Record<string, unknown> {
   return {
     model: options.model,
     messages: options.messages,
-    n: 1,
     stream: false,
-    max_tokens: options.maxTokens,
-    temperature: 1,
-    top_p: 0.95,
     chat_template_kwargs: { enable_thinking: options.enableThinking },
     id_slot: options.slotId,
     cache_prompt: true,
