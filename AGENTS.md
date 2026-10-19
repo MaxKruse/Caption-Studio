@@ -44,10 +44,12 @@ src/
       tag/route.ts               — WD Tagger proxy (For Anima workflow)
     home-client.tsx        — App shell (mode switching)
     page.tsx / layout.tsx  — Root page + layout
-  components/              — krea2-mode, for-anima-mode, moss-mode, caption-viewer, kv-cache-stats,
-                             image-uploader, model-selector, prompt-editor, server-check,
-                             tag-stats, ui/*
-  hooks/                   — use-session (in-memory UI state), use-server-check (polling)
+  components/              — mode-selector, krea2-mode, for-anima-mode, moss-mode, caption-viewer,
+                             kv-cache-stats, image-uploader, model-selector, prompt-editor,
+                             server-check, tag-stats, ui/* (button, input, textarea, card)
+  hooks/                   — use-session (in-memory UI state), use-server-check (polling);
+                             tests: src/app/api/__tests__ (route integration, stubbed llama.cpp
+                             server) and src/lib/__tests__ (unit) - run with `bun test`
   lib/
     llama-request.ts        — buildChatRequest(): id_slot pinning + cache_prompt + n_cache_reuse;
                               buildMossChatRequest(): non-streaming guide params (moss mode)
@@ -59,6 +61,20 @@ src/
     caption-route.ts        — parseCaptionRequest (multipart + Zod + images preamble),
                               handleSessionAbort (shared DELETE ?sessionId= handler)
     caption-result.ts       — shared client CaptionResult type, formatTokens, stopCaptionSession
+    upload-chunking.ts      — Client-side chunked upload protocol: planChunkedUpload,
+                              chunkSizeForParallel (2x the model's --parallel, fallback
+                              UPLOAD_CHUNK_SIZE = 25), buildChunkFormData /
+                              buildSingleShotFormData, per-chunk POST deadline
+    session-queue.ts        — SessionQueue: producer/consumer bridge between chunked uploads
+                              and the worker pool (enqueue / reject / next / done:
+                              "drained" | "timed-out" | "aborted"; idle timer re-arms only
+                              while images are still outstanding)
+    sse-client.ts           — Browser-side SSE parsing (event/data blocks; keepalive
+                              comments ignored)
+    download.ts             — Client-side ZIP download trigger (fetch + object URL + anchor
+                              click) - browser-only, not for route handlers
+    file-utils.ts           — Client-side file helpers (bare base64 encoding for the WD
+                              Tagger payload)
     config-schema.ts        — Zod schemas (krea2ConfigSchema, forAnimaConfigSchema, mossConfigSchema)
     worker-pool.ts          — runWorkerPool(): shared parallel task pool (slot-pinned)
     session-registry.ts     — Active SSE session registry (abort controllers)
@@ -73,8 +89,9 @@ src/
     krea2-prompts.ts        — Phase 2/3 prompt builders
     krea2-system-prompt.ts  — Krea 2 system prompt
     anima-prompt.ts         — For Anima system + user prompts, assembleFinalCaption
-    moss-prompt.ts          — MOSS-Image recaptioner prompt (buildMossCaptionPrompt, {{reference}}
-                              substitution) + parseMossCaption (JSON validation/normalization)
+    moss-prompt.ts          — MOSS-Image recaptioner prompt (buildMossCaptionPrompt: base prompt
+                              + optional subject/reference grounding sections) + parseMossCaption
+                              (JSON validation/normalization)
     prompt-utils.ts         — Prompt text helpers
     string-utils.ts         — getExtension(), baseAndExt() (filename base/ext splitting)
     types.ts                — ModelInfo
@@ -130,9 +147,9 @@ GET /api/models?serverUrl=http://localhost:8080
   → return { models: [...] }
 ```
 
-### Caption Job (shared flow for For Anima and Krea 2 modes)
+### Caption Job (shared base flow - all three modes)
 
-Both modes share the same base flow:
+All three modes share the same base flow:
 
 1. Frontend sends `FormData` with `config` (JSON string), `imageNames` (JSON string), and `images` (File objects)
 2. Server creates temp directory under `/tmp/caption-studio/<sessionId>/`
@@ -150,6 +167,14 @@ Each worker fetches `<serverUrl>/v1/chat/completions` via `buildChatRequest()` w
 - Timeouts: krea-2 phase 1 15 min, phases 2/3 5 min each; for-anima 5 min per image (short enhancement output); moss 15 min per image (long JSON output); 5xx/429 retried via `fetchWithRetry`
 
 Streaming response parsed for `delta.reasoning_content` and `delta.content` (plus the final usage chunk for `cachedTokens`/`promptTokens` stats). Completion events carry the stats; the UI shows the batch-wide KV cache reuse percentage.
+
+### Chunked Uploads (For Anima only)
+
+The base Zod config includes five chunk fields for all modes, but only the for-anima route implements the protocol (krea-2/moss are single-shot and ignore them - see gotchas):
+
+- **Client** (`upload-chunking.ts`): batches larger than one chunk are split; chunk size = 2x the model's `--parallel` (`chunkSizeForParallel`, fallback `UPLOAD_CHUNK_SIZE` = 25). Chunk 0 carries `config.sessionId` (client-generated UUIDv4) + `chunkIndex: 0` and opens the SSE stream; chunks 1..n POST to the same route and get a JSON ack `{ok, accepted, rejected}` (404 once the session has finished; a chunk larger than `chunkSize` gets 400).
+- **Server** (for-anima/route.ts): module-level `chunkedSessions` Map holds in-flight chunked uploads (SessionQueue + shared base-name dedup set + sendEvent). Each chunk's images are validated/saved (`saveImagesBatch`) and enqueued; rejected images are counted via `queue.reject()` so they never trigger a false timeout and are emitted as failed `image_complete` events + a `warning` on the open stream.
+- **SessionQueue** (`session-queue.ts`): workers pull `next()` while the client is still uploading. The idle timer (`sessionTimeoutMs`, default 30 min, max 3h) re-arms on every chunk while images are still outstanding and is cleared once the expected count is reached - a fully uploaded batch always drains to completion, no matter how slow the last image is. `done` resolves `"drained"` (all arrived + consumed), `"timed-out"` (route emits an `error` "Upload incomplete: expected N, received M"), or `"aborted"`.
 
 ### For Anima Mode
 
@@ -186,9 +211,44 @@ POST /api/caption/moss → FormData (images + caption files + JSON config), retu
 DELETE ?sessionId=<id>   → aborts session
 ```
 
-Implements the "Image Captioning" recipe from the [MOSS-Image user guide](https://github.com/OpenMOSS/MOSS-Image/blob/main/USERGUIDE.md#post-training) (post-training data format). Shares the base flow above (temp dir, dedup, session events, worker pool, download) but with ONE non-streaming call per image: one `user` message (text part first with the guide's recaptioner prompt, then the `image_url` data URL; no system message), body = guide params (`stream: false`, `n: 1`, `max_tokens` default 16384, `temperature: 1`, `top_p: 0.95`, `chat_template_kwargs: { enable_thinking }`) plus the slot-pinning fields. `chatComplete` takes a `body` override (skips `buildChatRequest`); the response is read by `readChatCompletion` (no SSE parsing).
+Implements the "Image Captioning" recipe from the [MOSS-Image user guide](https://github.com/OpenMOSS/MOSS-Image/blob/main/USERGUIDE.md#post-training) (post-training data format). Shares the base flow above (temp dir, dedup, session events, worker pool, download) but with ONE non-streaming call per image: one `user` message (text part first with the guide's recaptioner prompt, then the `image_url` data URL; no system message), body = `stream: false` + `chat_template_kwargs: { enable_thinking }` plus the slot-pinning fields (sampling - temperature, top_p - and the output budget are NOT sent; the llama-server has them pre-configured). `chatComplete` takes a `body` override (skips `buildChatRequest`); the response is read by `readChatCompletion` (no SSE parsing).
 
-Reference captions: a `captions` file part per image (1:1 index-paired) grounds the model on the original caption; the prompt substitutes `(none)` when an image has no reference. The written `.txt` is the **normalized JSON caption object** (pretty-printed); unparseable output falls back to the trimmed raw text. `image_complete` carries `{index, name, status, caption, reasoningContent, cachedTokens, promptTokens}` - there are NO `token`/`phase` events (rows stay "processing" until completion). Config: `enableThinking` (default true) + `maxTokens` (default 16384, 512-32768) on top of the base schema.
+Grounding, appended to the prompt only when present: an optional batch-level `subjectDescription` (config) states what the subject in the images is, and a `captions` file part per image (1:1 index-paired) grounds the model on the original caption; when an image has no reference the prompt omits the reference section entirely. The written `.txt` is the **normalized JSON caption object** (pretty-printed); unparseable output falls back to the trimmed raw text. `image_complete` carries `{index, name, status, caption, reasoningContent, cachedTokens, promptTokens}` - there are NO `token`/`phase` events (rows stay "processing" until completion). Config: `enableThinking` (default true) + `subjectDescription` (default "") on top of the base schema.
+
+### API Reference
+
+All caption routes: `POST` with `FormData`, `DELETE ?sessionId=<id>` aborts. Config is a JSON string parsed by `parseCaptionRequest` (multipart + Zod; invalid configs return 400 with flattened field details). Base config fields: `serverUrl`, `model`, optional `systemPrompt`/`userPrompt`/`triggerWordPerson`/`triggerWordOther` (only consumed by krea-2 - see gotchas), optional `maxImageDimension` (int 256-4096; 1536px default), plus the five chunk fields (for-anima only, above).
+
+**For Anima** (`POST /api/caption/for-anima`): `images` (File[]), `captions` (File[] booru tags, 1:1 index-paired with images - one part per image even when empty), `imageNames` (optional JSON `string[]`).
+
+| Event | Data |
+|-------|------|
+| `session` | `{ sessionId }` - first event, sent immediately before `--parallel` discovery |
+| `image_start` | `{ index, name }` |
+| `token` | `{ type: "caption" \| "reasoning", phase, index, content }` - delta; clients accumulate via `applyTokenDelta` |
+| `image_complete` | success: `{ index, name, status: "completed", caption, booruTags, llmAddition, reasoningContent, cachedTokens, promptTokens }`; failure: `{ index, name, status: "failed", error }` |
+| `warning` | `{ message }` - concurrency-1 fallback, downscale notices, upload rejections |
+| `error` | `{ error }` |
+| `done` | `{ allComplete: true }` |
+
+**Krea 2** (`POST /api/caption/krea-2`): `images`, `imageNames`; config additionally requires `characterDescription`.
+
+| Event | Data |
+|-------|------|
+| `session` / `image_start` / `token` / `warning` / `error` / `done` | as above |
+| `phase` | `{ phase: "captioning" \| "refining" \| "distilling", index }` |
+| `image_complete` | Phase 1: `{ index, name, phase: "captioning", status, caption, reasoningContent, cachedTokens, promptTokens }`; also the failure shape above |
+| `refine_image_complete` | Phase 2: `{ index, name, status, caption, reasoningContent, cachedTokens, promptTokens }` |
+| `distill_image_complete` | Phase 3 (final caption): same shape as refine |
+
+**MOSS-Image** (`POST /api/caption/moss`): `images`, `captions` (reference captions, 1:1 index-paired), `imageNames`; config adds `enableThinking` (default true) + `subjectDescription` (default "").
+
+| Event | Data |
+|-------|------|
+| `session` / `image_start` / `warning` / `error` / `done` | as above |
+| `image_complete` | success: `{ index, name, status: "completed", caption (normalized JSON), reasoningContent, cachedTokens, promptTokens }`; failure: `{ index, name, status: "failed", error }` - NO `token`/`phase` events (one non-streaming call per image) |
+
+Transient 5xx/429 from the model server are retried with exponential backoff (3 retries, `fetchWithRetry`).
 
 ### Download
 
@@ -196,11 +256,13 @@ Reference captions: a `captions` file part per image (1:1 index-paired) grounds 
 GET /api/download?sessionId=<id>  → zips temp dir (img/ folder), streams as application/zip
 ```
 
-The GET endpoint reads the temp directory, pairs each image with its `.txt` caption file, places them inside an `img/` folder in the ZIP, and streams the result. Touches the session's last-activity timestamp (extends the 30-minute cleanup window).
+The GET endpoint streams the entire session directory into an `img/` folder in the ZIP (images, `.txt` captions, and For Anima's `.tags` files). Touches the session's last-activity timestamp (extends the 30-minute cleanup window).
 
 ### In-Memory Stores
 
 - `temp-files.ts` — `Map<string, SessionMeta>` (temp image sessions, 30min stale cleanup)
+- `session-registry.ts` — active SSE sessions (abort controller per sessionId; the DELETE handler aborts and closes the stream)
+- for-anima/route.ts — module-level `chunkedSessions` Map (in-flight chunked uploads: SessionQueue + usedBases + sendEvent)
 
 ### Temp File System (`/tmp/caption-studio/`)
 
@@ -208,6 +270,7 @@ The GET endpoint reads the temp directory, pairs each image with its `.txt` capt
 - Images saved with deduplicated names (base-name collision detection)
 - Caption `.txt` files written alongside images during processing
 - Queued tasks carry only the server-side filename; workers read the image bytes from the session dir at process time (a large batch does not hold upload bytes in memory while queued)
+- For Anima mode also writes `<base>.tags` (booru tags only, for clean LoRA metadata embedding) via `writeTags`
 - Auto-cleanup: directories removed 30 minutes after last activity
 - Cleanup runs every 5 minutes. The sessions.json index is adopted on restart. The process does NOT delete session dirs on exit (a Docker rebuild must not destroy undownloaded results)
 
@@ -224,6 +287,14 @@ The app does NOT send an `Authorization` header to the remote API. Auth must be 
 ### Single-Instance Only
 
 In-memory store — multi-replica deployments will not work correctly.
+
+### Chunked Uploads Are For Anima Only
+
+The shared base Zod config carries the five chunk fields (`sessionId`, `expectedImageCount`, `chunkIndex`, `chunkSize`, `sessionTimeoutMs`) for every mode, but only the for-anima route implements the chunk protocol. The krea-2 and moss routes are always single-shot: chunk fields in their config are silently ignored.
+
+### Prompt Fields Are Mode-Specific
+
+`systemPrompt`/`userPrompt`/`triggerWord*` are only consumed by the krea-2 route: `buildUserPrompt` replaces the `{trigger}` placeholder and appends the trigger context sentences. for-anima always uses the built-in Anima prompts (`buildAnimaSystemPrompt` + `buildAnimaUserPrompt`, which embeds the booru tags and image name) and moss uses the guide's recaptioner prompt - their config prompt fields are accepted by the schema but ignored by the routes.
 
 ### Image Format Handling
 

@@ -1,6 +1,6 @@
 # Caption Studio
 
-Batch captioning tool for llama.cpp vision models. Web UI (Next.js/React) plus a connectivity layer (API routes + lib utilities) that talks to a llama.cpp server's OpenAI-compatible API.
+Batch captioning tool for llama.cpp vision models. A web UI (Next.js/React) that talks to a llama.cpp server's OpenAI-compatible API: upload a batch of images, pick a caption mode, and get the captions back as a ZIP file.
 
 ## What It Does
 
@@ -9,10 +9,20 @@ Batch captioning tool for llama.cpp vision models. Web UI (Next.js/React) plus a
 - Upload images in bulk (drag-and-drop or file picker)
 - Generate detailed captions with streaming token feedback
 - Three prompt modes: **Krea 2** (three-phase captioning with character description), **For Anima** (whole-image description grounded in booru tags, with built-in WD Tagger tagging), and **MOSS-Image** (strict JSON recaptioning per the MOSS-Image user guide)
-- Optional trigger word injection for character/subject naming
+- Optional trigger word injection for character/subject naming (Krea 2 mode)
 - llama.cpp **KV cache reuse**: workers are pinned to server slots so Krea 2's three phases (and image batches) reuse cached image encodings; the UI shows the prompt-token reuse percentage per batch
 - Transient server errors (5xx/429) are retried automatically with exponential backoff
 - Download all images + captions as a ZIP file
+
+## What It Can't Do
+
+- It does not manage models: at least one vision-capable model must already be loaded in a running `llama-server`
+- It does NOT send an `Authorization` header to the llama.cpp server. If your server requires an API key, handle it in front of the server (e.g. a reverse proxy)
+- One server and one model per batch
+- Batches are limited to 5,000 images per session
+- Results live in the server's temp area for **30 minutes after last activity** - download the ZIP before then (each download extends the window)
+- For Anima's built-in tagging needs the tag-service microservice (included in the Docker setup, below). Krea 2 and MOSS-Image need no extra service
+- The web app is single-instance: running multiple replicas of the container does not work
 
 ## Prerequisites
 
@@ -91,6 +101,10 @@ You should see a JSON response listing your loaded model(s). Caption Studio filt
 
 Caption Studio runs as a Docker container. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows/Mac) or Docker Engine (Linux).
 
+### 3. tag-service (optional - For Anima built-in tagging only)
+
+For Anima's built-in tagging calls a small WD Tagger microservice that ships in `tag-service/`. The Docker setup below runs it for you. To run it yourself (e.g. for local development), see `tag-service/README.md`.
+
 ## Running the App
 
 ### Option A: Docker (recommended)
@@ -99,9 +113,11 @@ Caption Studio runs as a Docker container. Install [Docker Desktop](https://www.
 docker compose up -d --build
 ```
 
-The app starts at `http://localhost:8800`.
+This builds and starts **both** services: Caption Studio at `http://localhost:8800` and the tag-service on port 8801 inside the Docker network (used by For Anima's built-in tagging).
 
 The Docker config sets `DEFAULT_SERVER_URL=http://host.docker.internal:8080` so it can reach a llama.cpp server running on your host machine.
+
+The compose file mounts a Hugging Face cache directory read-only for tag-service; the ≈ 600 MB WD Tagger model is downloaded on first use. Adjust the mount path for your machine - see `tag-service/README.md`.
 
 ### Option B: Local Development
 
@@ -110,7 +126,7 @@ bun install
 bun run dev
 ```
 
-The app starts at `http://localhost:3000`. Make sure your llama.cpp server is running on `localhost:8080` (the default).
+The app starts at `http://localhost:3000`. Make sure your llama.cpp server is running on `localhost:8080` (the default). For Anima's built-in tagging additionally needs tag-service running locally (see `tag-service/README.md`).
 
 ## How to Use
 
@@ -136,130 +152,57 @@ Before picking a mode you can set the **session timeout** (minutes): how long th
 
 Drag and drop images or click to browse. Accepted formats: PNG, JPEG, GIF, WebP, AVIF, and TIFF. Oversized uploads (over 10 MB) are also accepted: after the upload step the intermediate file is downscaled to a JPEG at or below the 10 MB limit, and a warning event names the downscaled images. Non-PNG/JPEG images are automatically converted to JPEG before sending to the API. Images that fail validation (undecodable data, or the 5,000-image per-session cap reached) are not silently dropped: each affected row shows its rejection reason, and a warning event summarizes the rejections.
 
-Large batches are fully supported (up to 5,000 images per session). Batches larger than one chunk upload in chunks sized to the server's parallelism (twice the `--parallel` slot count, so the worker pool stays fed): captioning starts from the first chunk while the rest of the batch is still uploading, so you do not wait for the whole upload before the first tokens appear.
+Large batches are supported (up to 5,000 images per session). In **For Anima mode**, batches larger than one chunk upload in chunks sized to the server's parallelism (twice the `--parallel` slot count, so the worker pool stays fed): captioning starts from the first chunk while the rest of the batch is still uploading, so you do not wait for the whole upload before the first tokens appear. Krea 2 and MOSS-Image modes send the whole batch in a single request, so with very large batches in those modes you wait for the full upload before the first caption starts.
 
 ### Step 4: Configure
 
 **Model selector:** Auto-populated with vision models from your server. Pick the one you want.
 
-**System message:** Sets the overall instructions for the model. The default is optimized for generating detailed, reusable image generation prompts and includes strict NSFW-enabling policies that require explicit description of all visible content without censorship.
+**Max image dimension** (optional, Krea 2 and MOSS-Image): images are downscaled to 1536px by default. Raise the value (256-4096, alongside a matching `--image-max-tokens` on the server) for more detail.
 
-**Trigger words (optional):** If you use consistent character or subject names in your images, enter them here:
-- **Person:** Character name - injected as "The Character in question is called 'Alice'."
-- **Other:** Object, style, or concept name - injected with context about what it refers to
+**Krea 2 mode** adds the prompt configuration:
 
-**User message:** Single prompt applied to each image (used as Phase 1 in Krea 2 mode).
+- **System message:** Sets the overall instructions for the model. The default is optimized for generating detailed, reusable image generation prompts and includes strict NSFW-enabling policies that require explicit description of all visible content without censorship.
+- **Trigger words (optional):** If you use consistent character or subject names in your images, enter them here:
+  - **Person:** Character name - injected as "The Character in question is called 'Alice'."
+  - **Other:** Object, style, or concept name - injected with context about what it refers to
+- **User message:** The prompt applied to each image (used as Phase 1 of the pipeline).
+- **Character description (required):** A natural language description of what defines the character across all images (see [Krea 2 Mode](#krea-2-mode)).
+
+**For Anima mode** uses its own built-in prompts - there is no editable system/user message (see [For Anima Mode](#for-anima-mode)).
+
+**MOSS-Image mode** uses the MOSS-Image guide's recaptioner prompt. You can toggle **thinking mode** (on by default - the guide recommends it for more accurate captions) and optionally give a **subject description** of what is being captioned, so the model names and describes it consistently.
 
 ### Step 5: Start Captioning
 
 Click **Start Captioning**. You'll see:
+
 - A thumbnail strip showing all images and their status
 - The selected image with its streaming caption (tokens appear in real-time)
 - Reasoning output (collapsible) if the model supports it
 - Progress: completed / failed / processing / queued counts
 
+In Krea 2 and For Anima mode captions stream in live. MOSS-Image runs one non-streaming call per image, so a row stays "processing" until its full JSON caption arrives.
+
 You can **Stop** processing mid-batch if needed.
 
 ### Step 6: Download Results
 
-When all images are processed, click **Download ZIP**. The ZIP contains an `img/` folder with all original images plus matching `.txt` caption files.
+When all images are processed, click **Download ZIP**. The ZIP contains an `img/` folder with all images plus matching `.txt` caption files. For Anima mode additionally includes a `.tags` file per image (booru tags only, for embedding clean metadata into LoRA files).
 
-## For Anima Mode
-
-This mode is designed for creating high-quality dataset captions for the [Anima](https://github.com/CircleStone-Labs/Anima) text-to-image model. It combines automated booru tagging with LLM-generated natural language descriptions.
-
-The system prompt enforces strict NSFW-enabling policies, requiring explicit description of all visible content without censorship. The addition must always state each character's line of sight - direct eye contact is described as "looking at the viewer" (booru convention, space-separated), averted gaze names the direction. Readable text in the image (speech bubbles, captions, signs, titles, overlays) is transcribed verbatim - exact wording, original language, original capitalization - in double quotes, with its position in the image stated. The booru tags are grounding only: the description stays consistent with them but never rephrases or echoes them.
-
-### Workflow
-
-1. **Tag the images:** In For Anima mode, upload your images and start the built-in tagging step. The app calls the [tag-service](tag-service/README.md) (WD Tagger, `SmilingWolf/wd-convnext-tagger-v3`) image by image so you can watch per-image progress, then review/adjust the generated tags. If you already have tags (e.g. from [taggui](https://github.com/jhc13/taggui)), you can upload your images together with matching `.txt` caption files instead and skip the tagging step.
-2. **LLM enhancement:** The vision model describes the whole image as seen - spatial relationships, mood, atmosphere, action, expressions - using the booru tags as grounding (consistent with them, never rephrasing or echoing them). Any readable text in the image is transcribed verbatim in double quotes, with its position in the image.
-3. **Final caption:** The output caption combines the original booru tags with the LLM-generated addition.
-
-### Example
-
-**Input booru tags:**
-```
-1girl, long hair, blue eyes, forest, sunlight, standing
-```
-
-**LLM addition:**
-```
-a girl with flowing blue hair stands in a sunlit forest clearing, dappled light filtering through the canopy above her, tall trees framing the scene on both sides
-```
-
-**Final caption:**
-```
-1girl, long hair, blue eyes, forest, sunlight, standing a girl with flowing blue hair stands in a sunlit forest clearing, dappled light filtering through the canopy above her, tall trees framing the scene on both sides
-```
-
-### API Endpoint
-
-```
-POST /api/caption/for-anima
-```
-
-**FormData fields:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `config` | string (JSON) | `{"serverUrl": "...", "model": "..."}` plus optional chunk fields below |
-| `images` | File[] | Image files to process |
-| `captions` | File[] | Caption files (booru tags), paired by index with images (one part per image, even when empty, so the index pairing holds) |
-| `imageNames` | string (JSON) | Optional: `string[]` of display names for images |
-
-**Chunked uploads** (large batches): the config JSON may carry five extra fields:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `sessionId` | string (UUIDv4) | Client-provided session id (chunk 0) |
-| `expectedImageCount` | number | Total images the batch will contain (chunk 0) |
-| `chunkIndex` | number | `0` opens the SSE stream; `> 0` appends to that session and gets a JSON ack `{ok, accepted, rejected}` (404 once the session has finished) |
-| `chunkSize` | number | Images per chunk. Set client-side to twice the selected model's `--parallel` (so the worker pool stays fed); falls back to 25 when the server does not report it |
-| `sessionTimeoutMs` | number | Optional: how long (ms) the server keeps the session open waiting for the rest of the upload before closing it. Defaults to 30 min (1800000 ms); max 3h (10800000 ms) |
-
-Chunked batches are processed as they arrive: a worker pool drains the session's image queue while the client is still uploading. If the client goes silent while images are still outstanding, the session closes after the session timeout (30 min by default, up to 3h via `sessionTimeoutMs`) and reports an "upload incomplete" error naming the expected vs received counts. The timeout never fires once every expected image has arrived - a fully uploaded batch always drains to completion, no matter how long the slowest image takes. Images rejected at upload (undecodable data, or over the 5,000-image per-session cap) are accounted for in the queue, so they never trigger a false timeout: each gets an `image_complete` event with `status: "failed"` and the reason, plus a `warning` event summarizing the rejections. Oversized images are never rejected - they are downscaled after the upload step and named in a `warning` event.
-
-**SSE events:** `session`, `image_start`, `token`, `image_complete`, `warning`, `error`, `done`.
-
-The `image_complete` event includes additional fields:
-- `booruTags`: The original booru tags from the caption file
-- `llmAddition`: The LLM-generated natural language addition
-- `cachedTokens` / `promptTokens`: KV cache reuse stats from the llama.cpp usage report
-
-The config is validated with Zod (`forAnimaConfigSchema`); invalid configs return 400 with flattened field details.
+Results are auto-cleaned 30 minutes after last activity - downloading a session extends that window.
 
 ## Krea 2 Mode
 
-This mode is designed for creating high-quality dataset captions optimized for the Krea 2 text-to-image model. It works in three phases, all within a **single multi-turn conversation** per image:
+This mode is designed for creating high-quality dataset captions optimized for the Krea 2 text-to-image model. It works in three phases, all within a single conversation per image:
+
+1. **Phase 1 - Initial captioning:** the vision model captions the image using your configured prompt.
+2. **Phase 2 - Per-image refinement:** the LLM produces a caption that **excludes features consistent with your character description** (hair color, eye color, body type, etc.) and **focuses on what is unique** in each image (pose, expression, background, lighting, accessories, etc.).
+3. **Phase 3 - Krea 2 prompt distillation:** the LLM distills the refined caption into a tight, flowing prose paragraph (60-150 words) that preserves all essential visual information while removing redundancy, verbose phrasing, and hedging language. This is the **inverse of prompt expansion**.
+
+The image is only sent in Phase 1; Phases 2 and 3 reuse the cached image encoding, which significantly reduces latency compared to three separate API calls.
 
 The default system prompt enforces strict NSFW-enabling policies, requiring explicit description of all visible content without censorship. Captions always anchor the subject's line of sight to the camera (e.g. "looking directly at the camera", "gazing off to the left of the camera") - never relative to the viewer.
-
-### Multi-turn Conversation (KV Cache Reuse)
-
-Each image is processed through all 3 phases as one continuous conversation:
-
-1. **Phase 1 message:** Image + user prompt -> initial caption (assistant responds)
-2. **Phase 2 message:** Refine instructions + character description -> refined caption (assistant responds)
-3. **Phase 3 message:** Distill instructions -> distilled prompt (assistant responds)
-
-The image is only sent in the first message. Phases 2 and 3 reuse the conversation context, so the **image encoding is cached by the KV cache** and only the new text tokens need processing. This significantly reduces latency compared to separate API calls per phase.
-
-**How the cache is actually reused (slot pinning):** llama.cpp keeps the KV cache per slot. Caption Studio pins every worker to a specific slot (`id_slot` = worker index, always below the server's `--parallel`) and sends `cache_prompt: true` + `n_cache_reuse: 256` with each request. That means all three phases of an image land on the same slot, so the server reuses the image encoding from Phase 1 and the Phase 1/2 conversation from Phase 2/3 instead of re-prefilling. The completion events report `cachedTokens`/`promptTokens`, and the UI shows the batch-wide reuse percentage - use it to verify your server is configured correctly (a low percentage usually means `--parallel` is lower than the worker count or the server is too old to support `id_slot`/`n_cache_reuse` - those fields are ignored by old builds, degrading to no cache reuse).
-
-### Phase 1: Initial Captioning
-
-Identical to Simple mode - the vision model captions the image using the configured prompt.
-
-### Phase 2: Per-image Refinement
-
-The conversation continues with refinement instructions. The LLM produces a caption that **excludes features consistent with the character description** (hair color, eye color, body type, etc.) and **focuses on what is unique** in each image (pose, expression, background, lighting, accessories, etc.).
-
-### Phase 3: Krea 2 Prompt Distillation
-
-The conversation continues with distillation instructions. The LLM produces a **simplified prompt** that preserves all essential visual information while removing redundancy, verbose phrasing, and hedging language. The output is a tight, flowing prose paragraph (60-150 words) optimized for Krea 2's text-to-image model.
-
-This phase is the **inverse of prompt expansion**: instead of taking a simple prompt and enriching it with style, lighting, and composition details, it takes a verbose caption and distills it down to a practical T2I prompt.
 
 ### Character Description
 
@@ -297,40 +240,42 @@ The distilled prompt removes redundancy ("casting warm tones across the scene", 
 
 ### Downloaded Captions
 
-Each phase overwrites the image's `.txt` caption file in the session's temp directory as it completes. The file that ends up in the downloaded ZIP is therefore the **Phase 3 distilled prompt** - not the Phase 1 raw caption. The per-phase captions remain visible in the UI during processing.
+The `.txt` file in the downloaded ZIP is the **Phase 3 distilled prompt** - not the Phase 1 raw caption. The per-phase captions remain visible in the UI during processing.
 
-### API Endpoint
+Phase 1 has a 15-minute timeout; phases 2/3 have a 5-minute timeout each.
 
+## For Anima Mode
+
+This mode is designed for creating high-quality dataset captions for the [Anima](https://github.com/CircleStone-Labs/Anima) text-to-image model. It combines automated booru tagging with LLM-generated natural language descriptions.
+
+The system prompt enforces strict NSFW-enabling policies, requiring explicit description of all visible content without censorship. The addition must always state each character's line of sight - direct eye contact is described as "looking at the viewer" (booru convention, space-separated), averted gaze names the direction. Readable text in the image (speech bubbles, captions, signs, titles, overlays) is transcribed verbatim - exact wording, original language, original capitalization - in double quotes, with its position in the image stated. The booru tags are grounding only: the description stays consistent with them but never rephrases or echoes them.
+
+### Workflow
+
+1. **Tag the images:** In For Anima mode, upload your images and start the built-in tagging step. The app calls the [tag-service](tag-service/README.md) (WD Tagger, `SmilingWolf/wd-convnext-tagger-v3`) image by image so you can watch per-image progress, then review/adjust the generated tags. If you already have tags (e.g. from [taggui](https://github.com/jhc13/taggui)), you can upload your images together with matching `.txt` caption files instead and skip the tagging step.
+2. **LLM enhancement:** The vision model describes the whole image as seen - spatial relationships, mood, atmosphere, action, expressions - using the booru tags as grounding (consistent with them, never rephrasing or echoing them). Any readable text in the image is transcribed verbatim in double quotes, with its position in the image.
+3. **Final caption:** The output caption combines the original booru tags with the LLM-generated addition.
+
+### Example
+
+**Input booru tags:**
 ```
-POST /api/caption/krea-2
+1girl, long hair, blue eyes, forest, sunlight, standing
 ```
 
-**FormData fields:**
+**LLM addition:**
+```
+a girl with flowing blue hair stands in a sunlit forest clearing, dappled light filtering through the canopy above her, tall trees framing the scene on both sides
+```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `config` | string (JSON) | `{"serverUrl": "...", "model": "...", "systemPrompt": "...", "userPrompt": "...", "characterDescription": "...", "triggerWordPerson": "...", "triggerWordOther": "..."}` |
-| `images` | File[] | Image files to process |
-| `imageNames` | string (JSON) | Optional: `string[]` of display names for images |
+**Final caption:**
+```
+1girl, long hair, blue eyes, forest, sunlight, standing a girl with flowing blue hair stands in a sunlit forest clearing, dappled light filtering through the canopy above her, tall trees framing the scene on both sides
+```
 
-**Required config fields:** `serverUrl`, `model`, `characterDescription`
+### Downloaded Files
 
-**SSE events:**
-
-| Event | Data | Description |
-|-------|------|-------------|
-| `session` | `{ sessionId }` | Session started (sent immediately, before model discovery) |
-| `image_start` | `{ index, name }` | Image processing started |
-| `phase` | `{ phase: "captioning" \| "refining" \| "distilling", index }` | Current phase for an image |
-| `token` | `{ type, phase, index, content }` | Streaming token delta (caption/reasoning) - client accumulates |
-| `image_complete` | `{ index, name, phase, status, caption, reasoningContent, cachedTokens, promptTokens }` | Phase 1 complete |
-| `refine_image_complete` | `{ index, name, status, caption, reasoningContent, cachedTokens, promptTokens }` | Phase 2 complete |
-| `distill_image_complete` | `{ index, name, status, caption, reasoningContent, cachedTokens, promptTokens }` | Phase 3 complete (final caption) |
-| `done` | `{ allComplete: true }` | All processing complete |
-| `warning` | `{ message }` | Non-fatal problem (e.g. batch truncated at the 5,000-image cap) |
-| `error` | `{ error }` | Error occurred |
-
-All caption routes also support an optional `maxImageDimension` config field (integer 256-4096) to override the 1536px client-side downscale default. Transient `5xx`/`429` responses from the model server are retried with exponential backoff (3 retries).
+The ZIP contains, per image: the image itself, a `.txt` with the final caption (tags + LLM addition), and a `.tags` file with the booru tags only (for embedding clean metadata into LoRA files).
 
 ## MOSS-Image Mode
 
@@ -344,32 +289,11 @@ This mode implements the image-captioning recipe from the [MOSS-Image user guide
 }
 ```
 
-**Reference captions:** upload a `.txt` file next to an image (same filename stem) and its content grounds the model on the original caption - it is substituted for the `{{reference}}` placeholder in the prompt. Images without a reference caption use `(none)`.
+**Reference captions:** upload a `.txt` file next to an image (same filename stem) and its content grounds the model on the original caption. Images without a reference caption are recaptioned without one.
 
-**Request parameters:** the request follows the guide exactly - one `user` message (text part first, then the image; no system message), non-streaming, `temperature: 1`, `top_p: 0.95`, `max_tokens` default 16384 (512-32768, configurable in the UI), and `chat_template_kwargs: { "enable_thinking": true }` (thinking mode is recommended by the guide for more accurate captions and on by default; toggleable in the UI). Slot pinning (`id_slot`, `cache_prompt: true`, `n_cache_reuse: 256`) is added like the other modes. Each image has a 15-minute timeout.
+**Subject description (optional):** in the config phase, describe the subject that appears in the images (a character, product, or scene). The model uses it to name and describe the subject consistently across all captions.
 
-### API Endpoint
-
-```
-POST /api/caption/moss
-DELETE /api/caption/moss?sessionId=<id>   (abort a running session)
-```
-
-**FormData fields:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `config` | string (JSON) | `{"serverUrl": "...", "model": "...", "enableThinking": true, "maxTokens": 16384}` plus optional `maxImageDimension` |
-| `images` | File[] | Image files to process |
-| `captions` | File[] | Optional reference captions, index-paired with images (one part per image, even when empty, so the pairing holds) |
-| `imageNames` | string (JSON) | Optional: `string[]` of display names for images |
-
-**SSE events:** `session`, `image_start`, `image_complete`, `warning`, `error`, `done`. There are no `token`/`phase` events - each image is a single non-streaming call, so a row stays "processing" until its `image_complete` arrives. `warning` is used for upload rejections, downscale notices, and the concurrency-1 fallback when the server's `--parallel` cannot be detected (rejected uploads arrive as failed `image_complete` events naming the reason).
-
-The `image_complete` event includes:
-- `caption`: the normalized JSON caption object (pretty-printed string)
-- `reasoningContent`: the model's thinking output (when thinking mode is on)
-- `cachedTokens` / `promptTokens`: KV cache reuse stats from the llama.cpp usage report
+**Options:** thinking mode is on by default (the guide recommends it for more accurate captions; it adds the model's reasoning to the collapsible reasoning panel). Sampling and the output length are the llama-server's pre-configured defaults - the app does not override them per request. Each image has a 15-minute timeout.
 
 ### Downloaded Captions
 
@@ -377,14 +301,13 @@ The `.txt` in the downloaded ZIP is the **normalized JSON caption object**. If t
 
 ## Prompt Variables
 
-Krea 2 mode supports these placeholders that are replaced per-image:
+Krea 2 mode's user message supports one placeholder:
 
 | Variable | Replaced With |
 |----------|--------------|
-| `{image_name}` | The filename of the current image |
-| `{index}` | 1-based index of the current image |
-| `{total}` | Total number of images in the batch |
-| `{trigger}` | Combined trigger words (person + other) |
+| `{trigger}` | The combined trigger words (person + other) |
+
+Trigger words are additionally appended to the user message as context sentences (one per non-empty field), regardless of the placeholder.
 
 ## Environment Variables
 
@@ -395,18 +318,6 @@ All variables are optional (defaults shown). See `.env.example`.
 | `DEFAULT_SERVER_URL` | `http://localhost:8080` | Pre-filled server URL in the UI |
 | `DOCKER_HOST_INTERNAL` | *(unset)* | Host override for server-side calls from Docker. The compose file sets it to `host.docker.internal` so browser-supplied `localhost` URLs reach your host's llama.cpp server |
 | `TAG_SERVICE_URL` | `http://localhost:8801` | Base URL of the [WD Tagger microservice](tag-service/README.md) (For Anima built-in tagging) |
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Framework | Next.js 16.2.6 (App Router) |
-| UI | React 19.2.4 |
-| Styling | Tailwind CSS v4 |
-| Package Manager | Bun |
-| Runtime | Bun 1.3 (dev and Docker image); Next.js standalone server (node) inside the container |
-| Image Processing | sharp |
-| Tagging | tag-service: Flask + ONNX Runtime (WD Tagger) |
 
 ## Development
 
@@ -424,40 +335,9 @@ bun run docker:up     # docker compose up -d --build
 
 The `bun test` suite stubs the llama.cpp server, so it runs anywhere. Run `bun run typecheck`, `bun run lint`, and `bun test` before pushing. Copy `.env.example` to `.env` only if you need non-default values.
 
-## Architecture Overview
+## Getting Help
 
-```
-Browser                          Server (Next.js)                 llama.cpp
-   |                                  |                               |
-   |-- GET /api/ping ---------------> | -- GET /v1/models ---------> |
-   |<-- { ok: true } --------------- | <-- model list ------------- |
-   |                                  |                               |
-   |-- GET /api/models ------------> | -- GET /v1/models ---------> |
-   |<-- { models: [...] } ---------- | <-- model list ------------- |
-   |                                  |                               |
-   |-- POST /api/caption/for-anima-> | (saves images to /tmp)       |
-   |    (FormData: images + captions)|                               |
-   |<-- SSE stream ----------------- | -- POST /v1/chat/completions -> |
-   |    image_start / token /        |    (stream: true)             |
-   |    image_complete / done        | <-- streaming tokens -------- |
-   |                                  |                               |
-   |-- POST /api/caption/krea-2 ---> | (saves images to /tmp)       |
-   |    (FormData: images + config)  |                               |
-   |<-- SSE stream ----------------- | -- POST /v1/chat/completions -> |
-   |    image_start / phase /        |    (turn 1: image + prompt)   |
-   |    token / image_complete /     |                               |
-   |    refine_* / distill_* / done  | -- POST /v1/chat/completions -> |
-   |                                  |    (turn 2: refine, reuse ctx) |
-   |                                  |                               |
-   |                                  | -- POST /v1/chat/completions -> |
-   |                                  |    (turn 3: distill, reuse ctx)|
-   |-- GET /api/download?sessionId -> | (zips /tmp/session/)         |
-   |<-- .zip file ------------------ |                               |
-```
-
-- Images are saved to `/tmp/caption-studio/<sessionId>/` on the server
-- Caption `.txt` files are written alongside images during processing
-- Temp directories auto-clean 30 minutes after last activity (the session index in `sessions.json` is adopted across restarts; the process never deletes session dirs on shutdown, so a Docker rebuild cannot destroy undownloaded results)
-- Each session holds up to 5,000 images; larger batches upload in chunks sized to the server's `--parallel` (twice the slot count) and are processed as they arrive (the worker pool drains a session queue while the client is still uploading)
-- Processing uses a worker pool (up to 8 parallel API requests, clamped to the server's `--parallel`), with each worker pinned to its own llama.cpp slot for KV cache reuse. If the server's `--parallel` cannot be detected, the batch runs serially (concurrency 1) and a warning is shown in the UI - in-flight requests never exceed the server's slot count
-- Phase 1 has a 15-minute timeout; phases 2/3 have a 5-minute timeout each
+- **Server not discovered?** Make sure the server is running and `curl <serverUrl>/v1/models` returns a JSON model list. The app only shows models that report both `text` and `image` input modalities.
+- **Built-in tagging not working?** Check that tag-service is running (Docker: it is part of the same compose stack; local: see `tag-service/README.md`) and that `TAG_SERVICE_URL` points at it. Its `/health` endpoint reports whether the model is loaded.
+- **App not working?** The app exposes a `/api/health` endpoint that reports whether the temp area is writable and the state of the session cleanup job.
+- **Something else broken?** Report bugs and request features on GitHub: <https://github.com/MaxKruse/Caption-Studio/issues>. Include the mode you were using, the llama.cpp version, and the relevant browser/server logs.
