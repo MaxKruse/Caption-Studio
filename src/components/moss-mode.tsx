@@ -1,10 +1,11 @@
 /**
  * MOSS-Image mode orchestrator.
  *
- * Recaptions images with the MOSS-Image guide's recaptioner prompt:
- * one non-streaming call per image that returns a strict JSON caption
- * object (long/medium/short captions + watermark boxes + borders), the
- * data format used to post-train MOSS-Image-Base.
+ * Recaptions images with an editable recaptioner prompt (the
+ * MOSS-Image guide's prompt is the default; the prompt editor mirrors
+ * the Krea 2 workflow): one non-streaming call per image that returns
+ * a strict JSON caption object (long/medium/short captions + watermark
+ * boxes + borders), the data format used to post-train MOSS-Image-Base.
  *
  * Phases: upload -> configure -> processing -> results. Grounding for
  * the recaptioner (both optional, applied only when present): a
@@ -22,11 +23,11 @@ import { CaptionResult, stopCaptionSession } from "@/lib/caption-result";
 import { buildSingleShotFormData } from "@/lib/upload-chunking";
 import { ImageUploader } from "@/components/image-uploader";
 import { ModelSelector } from "@/components/model-selector";
+import { PromptEditor } from "@/components/prompt-editor";
 import { CaptionViewer } from "@/components/caption-viewer";
 import { KvCacheStats } from "@/components/kv-cache-stats";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
 // ---------------------------------------------------------------------------
@@ -48,15 +49,8 @@ export function MossMode({ serverUrl, onBack }: MossModeProps) {
   const { state } = useSession();
   const [phase, setPhase] = useState<Phase>("upload");
   const [imageCount, setImageCount] = useState(0);
-  /** Guide knob: thinking mode (recommended; adds a reasoning pass). */
-  const [enableThinking, setEnableThinking] = useState(true);
   /** Optional batch-level subject description (grounding for the recaptioner). */
   const [subjectDescription, setSubjectDescription] = useState("");
-  /** Optional max image dimension override ("" = lib default 1536px). */
-  const [maxImageDimension, setMaxImageDimension] = useState("");
-  const dimValue = maxImageDimension.trim() === "" ? null : Number(maxImageDimension);
-  const dimInvalid =
-    dimValue !== null && (!Number.isInteger(dimValue) || dimValue < 256 || dimValue > 4096);
   const [results, setResults] = useState<CaptionResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -94,14 +88,11 @@ export function MossMode({ serverUrl, onBack }: MossModeProps) {
     const config = {
       serverUrl,
       model: state.model,
-      enableThinking,
+      systemPrompt: state.mossSystemPrompt,
+      userPrompt: state.mossUserPrompt,
       // Omit when empty so the prompt has no subject section
       ...(subjectDescription.trim() !== ""
         ? { subjectDescription: subjectDescription.trim() }
-        : {}),
-      // Omit when unset so the server applies the 1536px default
-      ...(dimValue !== null && Number.isInteger(dimValue)
-        ? { maxImageDimension: dimValue }
         : {}),
     };
     // Caption parts stay 1:1 index-aligned with the images ("" = none).
@@ -233,7 +224,7 @@ export function MossMode({ serverUrl, onBack }: MossModeProps) {
       setIsProcessing(false);
       setPhase("results");
     }
-  }, [state, serverUrl, enableThinking, subjectDescription, dimValue]);
+  }, [state, serverUrl, subjectDescription]);
 
   const handleNewBatch = useCallback(() => {
     setPhase("upload");
@@ -299,23 +290,7 @@ export function MossMode({ serverUrl, onBack }: MossModeProps) {
           <div className="space-y-4">
             <ModelSelector serverUrl={serverUrl} />
 
-            {/* Thinking mode (guide: recommended for more accurate captions) */}
-            <div className="space-y-1">
-              <label className="flex items-center gap-2 text-sm font-medium text-slate-300">
-                <input
-                  type="checkbox"
-                  checked={enableThinking}
-                  onChange={(e) => setEnableThinking(e.target.checked)}
-                  className="w-4 h-4 accent-indigo-600"
-                />
-                Thinking mode
-              </label>
-              <p className="text-xs text-slate-500">
-                Recommended for more accurate captions (the guide suggests keeping it
-                on). Adds a reasoning pass before the JSON answer, so each image
-                takes longer.
-              </p>
-            </div>
+            <PromptEditor mode="moss" />
 
             {/* Subject description (optional grounding for the recaptioner) */}
             <div className="space-y-2">
@@ -335,29 +310,6 @@ export function MossMode({ serverUrl, onBack }: MossModeProps) {
               />
             </div>
 
-            {/* Optional image resolution override */}
-            <div className="space-y-1">
-              <Input
-                label="Max image dimension (px)"
-                type="number"
-                min={256}
-                max={4096}
-                step={64}
-                value={maxImageDimension}
-                onChange={(e) => setMaxImageDimension(e.target.value)}
-                placeholder="1536 (default)"
-              />
-              <p className="text-xs text-slate-500">
-                Optional. Downscale images to this size before captioning. Raise it
-                (with a matching --image-max-tokens on the server) for more detail.
-              </p>
-              {dimInvalid && (
-                <p className="text-xs text-red-400">
-                  Must be a whole number between 256 and 4096.
-                </p>
-              )}
-            </div>
-
             <div className="flex justify-between">
               <Button variant="secondary" onClick={() => setPhase("upload")}>
                 Back
@@ -367,7 +319,7 @@ export function MossMode({ serverUrl, onBack }: MossModeProps) {
                   abortControllerRef.current = new AbortController();
                   await handleStart();
                 }}
-                disabled={!state.model || dimInvalid || isProcessing}
+                disabled={!state.model || !state.mossUserPrompt.trim() || isProcessing}
               >
                 Start Captioning
               </Button>

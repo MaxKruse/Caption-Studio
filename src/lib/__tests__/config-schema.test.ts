@@ -1,5 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { krea2ConfigSchema, forAnimaConfigSchema, mossConfigSchema } from "@/lib/config-schema";
+import { MOSS_CAPTION_PROMPT } from "@/lib/moss-prompt";
 
 describe("config schema validation", () => {
   describe("krea2ConfigSchema", () => {
@@ -61,37 +62,39 @@ describe("config schema validation", () => {
 
 
   describe("mossConfigSchema", () => {
-    it("accepts a minimal config with guide defaults", () => {
+    it("accepts a minimal config with the guide's prompt as default", () => {
       const result = mossConfigSchema.safeParse({
         serverUrl: "http://localhost:8080",
         model: "qwen3.5-27b",
       });
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.enableThinking).toBe(true);
+        // The MOSS-Image guide's recaptioner prompt is the default
+        // user prompt (the base schema's userPrompt default is "").
+        expect(result.data.userPrompt).toBe(MOSS_CAPTION_PROMPT);
         expect(result.data.subjectDescription).toBe("");
       }
     });
 
-    it("honors explicit enableThinking and subjectDescription", () => {
+    it("honors an explicit userPrompt and subjectDescription", () => {
       const result = mossConfigSchema.safeParse({
         serverUrl: "http://localhost:8080",
         model: "qwen3.5-27b",
-        enableThinking: false,
+        userPrompt: "Describe the image in haiku form.",
         subjectDescription: "a silver-haired woman in a red cloak",
       });
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.enableThinking).toBe(false);
+        expect(result.data.userPrompt).toBe("Describe the image in haiku form.");
         expect(result.data.subjectDescription).toBe("a silver-haired woman in a red cloak");
       }
     });
 
-    it("rejects a non-boolean enableThinking", () => {
+    it("rejects an empty userPrompt (the recaptioner prompt is the core of the mode)", () => {
       const result = mossConfigSchema.safeParse({
         serverUrl: "http://localhost:8080",
         model: "qwen3.5-27b",
-        enableThinking: "yes",
+        userPrompt: "",
       });
       expect(result.success).toBe(false);
     });

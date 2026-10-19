@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MOSS_CAPTION_PROMPT } from "./moss-prompt";
 
 /** Strict UUIDv4 - same shape temp-files requires for session ids. */
 const UUID_V4 =
@@ -60,14 +61,20 @@ export const krea2ConfigSchema = baseConfig.extend({
 export const forAnimaConfigSchema = baseConfig;
 
 /**
- * MOSS-Image mode config. The only knobs exposed are the Qwen3
- * thinking mode and the optional batch-level subject description
- * (grounding for the recaptioner). Sampling (temperature, top_p) and
- * the output budget are the llama-server's pre-configured defaults -
- * the route does not override them per request.
+ * MOSS-Image mode config. The recaptioner prompt defaults to the
+ * MOSS-Image guide's prompt but is fully editable (UI prompt editor);
+ * an optional `systemPrompt` (base field) is added as a system message
+ * when non-empty. `subjectDescription` is optional batch-level
+ * grounding. Sampling (temperature, top_p) and the output budget are
+ * the llama-server's pre-configured defaults - the route does not
+ * override them per request.
  */
 export const mossConfigSchema = baseConfig.extend({
-  enableThinking: z.boolean().optional().default(true),
+  userPrompt: z
+    .string()
+    .min(1, "userPrompt is required for MOSS-Image mode")
+    .optional()
+    .default(MOSS_CAPTION_PROMPT),
   subjectDescription: z.string().optional().default(""),
 });
 

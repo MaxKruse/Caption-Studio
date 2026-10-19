@@ -52,11 +52,11 @@ src/
                              server) and src/lib/__tests__ (unit) - run with `bun test`
   lib/
     llama-request.ts        — buildChatRequest(): id_slot pinning + cache_prompt + n_cache_reuse;
-                              buildMossChatRequest(): non-streaming guide params (moss mode)
+                              `stream` option (default true; moss mode sends `stream: false`)
     token-accumulate.ts     — applyTokenDelta(): client-side accumulation of delta token events
     caption-helpers.ts      — readFileBuffer, fetchWithTimeout, fetchWithRetry, streamResponse,
                               chatComplete (slot-pinned call + timeout + error mapping; optional
-                              `body` override sent verbatim), readChatCompletion (non-streaming
+                              `stream` pass-through), readChatCompletion (non-streaming
                               JSON response reader), sleep
     caption-route.ts        — parseCaptionRequest (multipart + Zod + images preamble),
                               handleSessionAbort (shared DELETE ?sessionId= handler)
@@ -89,9 +89,10 @@ src/
     krea2-prompts.ts        — Phase 2/3 prompt builders
     krea2-system-prompt.ts  — Krea 2 system prompt
     anima-prompt.ts         — For Anima system + user prompts, assembleFinalCaption
-    moss-prompt.ts          — MOSS-Image recaptioner prompt (buildMossCaptionPrompt: base prompt
-                              + optional subject/reference grounding sections) + parseMossCaption
-                              (JSON validation/normalization)
+    moss-prompt.ts          — MOSS-Image recaptioner prompt (MOSS_CAPTION_PROMPT = default for the
+                              editable config `userPrompt`; buildMossCaptionPrompt(basePrompt,
+                              subject, reference) appends grounding) + parseMossCaption (JSON
+                              validation/normalization)
     prompt-utils.ts         — Prompt text helpers
     string-utils.ts         — getExtension(), baseAndExt() (filename base/ext splitting)
     types.ts                — ModelInfo
@@ -211,9 +212,9 @@ POST /api/caption/moss → FormData (images + caption files + JSON config), retu
 DELETE ?sessionId=<id>   → aborts session
 ```
 
-Implements the "Image Captioning" recipe from the [MOSS-Image user guide](https://github.com/OpenMOSS/MOSS-Image/blob/main/USERGUIDE.md#post-training) (post-training data format). Shares the base flow above (temp dir, dedup, session events, worker pool, download) but with ONE non-streaming call per image: one `user` message (text part first with the guide's recaptioner prompt, then the `image_url` data URL; no system message), body = `stream: false` + `chat_template_kwargs: { enable_thinking }` plus the slot-pinning fields (sampling - temperature, top_p - and the output budget are NOT sent; the llama-server has them pre-configured). `chatComplete` takes a `body` override (skips `buildChatRequest`); the response is read by `readChatCompletion` (no SSE parsing).
+Implements the "Image Captioning" recipe from the [MOSS-Image user guide](https://github.com/OpenMOSS/MOSS-Image/blob/main/USERGUIDE.md#post-training) (post-training data format). Shares the base flow above (temp dir, dedup, session events, worker pool, download) but with ONE non-streaming call per image: an optional `system` message (only when config `systemPrompt` is non-empty), then a `user` message (text part first with the recaptioner prompt - config `userPrompt`, defaulting to the guide's prompt - then the `image_url` data URL). The body is `buildChatRequest` with `stream: false` plus the slot-pinning fields (sampling - temperature, top_p - and the output budget are NOT sent; the llama-server has them pre-configured). The response is read by `readChatCompletion` (no SSE parsing).
 
-Grounding, appended to the prompt only when present: an optional batch-level `subjectDescription` (config) states what the subject in the images is, and a `captions` file part per image (1:1 index-paired) grounds the model on the original caption; when an image has no reference the prompt omits the reference section entirely. The written `.txt` is the **normalized JSON caption object** (pretty-printed); unparseable output falls back to the trimmed raw text. `image_complete` carries `{index, name, status, caption, reasoningContent, cachedTokens, promptTokens}` - there are NO `token`/`phase` events (rows stay "processing" until completion). Config: `enableThinking` (default true) + `subjectDescription` (default "") on top of the base schema.
+Grounding, appended to the prompt only when present: an optional batch-level `subjectDescription` (config) states what the subject in the images is, and a `captions` file part per image (1:1 index-paired) grounds the model on the original caption; when an image has no reference the prompt omits the reference section entirely. The written `.txt` is the **normalized JSON caption object** (pretty-printed); unparseable output falls back to the trimmed raw text. `image_complete` carries `{index, name, status, caption, reasoningContent, cachedTokens, promptTokens}` - there are NO `token`/`phase` events (rows stay "processing" until completion). Config: `userPrompt` (recaptioner prompt; default `MOSS_CAPTION_PROMPT`) + `subjectDescription` (default "") on top of the base schema.
 
 ### API Reference
 
@@ -241,7 +242,7 @@ All caption routes: `POST` with `FormData`, `DELETE ?sessionId=<id>` aborts. Con
 | `refine_image_complete` | Phase 2: `{ index, name, status, caption, reasoningContent, cachedTokens, promptTokens }` |
 | `distill_image_complete` | Phase 3 (final caption): same shape as refine |
 
-**MOSS-Image** (`POST /api/caption/moss`): `images`, `captions` (reference captions, 1:1 index-paired), `imageNames`; config adds `enableThinking` (default true) + `subjectDescription` (default "").
+**MOSS-Image** (`POST /api/caption/moss`): `images`, `captions` (reference captions, 1:1 index-paired), `imageNames`; config adds `userPrompt` (recaptioner prompt, default the guide's `MOSS_CAPTION_PROMPT`), `systemPrompt` (optional; sent as a system message when non-empty) + `subjectDescription` (default "").
 
 | Event | Data |
 |-------|------|
@@ -294,7 +295,7 @@ The shared base Zod config carries the five chunk fields (`sessionId`, `expected
 
 ### Prompt Fields Are Mode-Specific
 
-`systemPrompt`/`userPrompt`/`triggerWord*` are only consumed by the krea-2 route: `buildUserPrompt` replaces the `{trigger}` placeholder and appends the trigger context sentences. for-anima always uses the built-in Anima prompts (`buildAnimaSystemPrompt` + `buildAnimaUserPrompt`, which embeds the booru tags and image name) and moss uses the guide's recaptioner prompt - their config prompt fields are accepted by the schema but ignored by the routes.
+`systemPrompt`/`userPrompt`/`triggerWord*` are only consumed by the krea-2 route: `buildUserPrompt` replaces the `{trigger}` placeholder and appends the trigger context sentences; trigger words are Krea 2 only. for-anima always uses the built-in Anima prompts (`buildAnimaSystemPrompt` + `buildAnimaUserPrompt`, which embed the booru tags and image name). moss consumes `userPrompt` (the recaptioner prompt, default the guide's prompt) and the optional `systemPrompt`, but the UI keeps them in mode-scoped session fields (`mossSystemPrompt`/`mossUserPrompt`) so switching modes never clobbers the Krea 2 prompts.
 
 ### Image Format Handling
 

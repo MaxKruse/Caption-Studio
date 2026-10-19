@@ -39,6 +39,11 @@ export interface ChatRequestOptions {
   messages: Array<Record<string, unknown>>;
   /** llama.cpp slot id to pin this request to (worker index). */
   slotId: number;
+  /**
+   * Whether the response is streamed (default true). MOSS-Image mode
+   * reads a single non-streaming JSON body, so it sends stream: false.
+   */
+  stream?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -46,46 +51,19 @@ export interface ChatRequestOptions {
 // ---------------------------------------------------------------------------
 
 /**
- * Build a streaming chat completion request body for llama.cpp
- * with slot pinning and KV cache reuse enabled.
+ * Build a chat completion request body for llama.cpp with slot pinning
+ * and KV cache reuse. Streaming by default; pass stream: false for a
+ * single JSON body (MOSS-Image mode).
  */
 export function buildChatRequest(options: ChatRequestOptions): Record<string, unknown> {
+  const stream = options.stream ?? true;
   return {
     model: options.model,
     messages: options.messages,
-    stream: true,
-    stream_options: { include_usage: true },
-    id_slot: options.slotId,
-    cache_prompt: true,
-    n_cache_reuse: CACHE_REUSE_TOKENS,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// MOSS-Image (non-streaming) request
-// ---------------------------------------------------------------------------
-
-export interface MossChatRequestOptions extends ChatRequestOptions {
-  /** Qwen3-style thinking mode; the guide recommends it for accuracy. */
-  enableThinking: boolean;
-}
-
-/**
- * Build the non-streaming chat completion request body for the
- * MOSS-Image recaptioner: the response shape the app reads
- * (`stream: false`), the user-facing thinking toggle, and the app's
- * slot-pinning fields for deterministic KV cache reuse. Sampling
- * (temperature, top_p), the response count, and the output budget are
- * deliberately NOT sent - the llama-server has them pre-configured
- * (--default-n-predict, --temp, --top-p). Older servers ignore the
- * unknown fields.
- */
-export function buildMossChatRequest(options: MossChatRequestOptions): Record<string, unknown> {
-  return {
-    model: options.model,
-    messages: options.messages,
-    stream: false,
-    chat_template_kwargs: { enable_thinking: options.enableThinking },
+    stream,
+    // include_usage only makes sense for SSE streams (usage arrives in
+    // the final chunk of the stream).
+    ...(stream ? { stream_options: { include_usage: true } } : {}),
     id_slot: options.slotId,
     cache_prompt: true,
     n_cache_reuse: CACHE_REUSE_TOKENS,

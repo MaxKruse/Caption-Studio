@@ -134,7 +134,7 @@ describe("moss route - config validation", () => {
 // ---------------------------------------------------------------------------
 
 describe("moss route - request format", () => {
-  it("sends a non-streaming body with the thinking toggle and slot pinning, no sampling overrides", async () => {
+  it("sends a non-streaming body with slot pinning, no sampling or thinking overrides", async () => {
     const response = await postMoss({ serverUrl: "http://localhost:8080", model: "test-model" });
     expect(response.status).toBe(200);
     const events = await collectSseEvents(response);
@@ -144,13 +144,14 @@ describe("moss route - request format", () => {
     const body = chatCalls[0];
     expect(body.model).toBe("test-model");
     expect(body.stream).toBe(false);
+    expect(body.stream_options).toBeUndefined();
     // Sampling and the output budget are the server's pre-configured
     // defaults - the route must not override them per request.
     expect(body.max_tokens).toBeUndefined();
     expect(body.temperature).toBeUndefined();
     expect(body.top_p).toBeUndefined();
     expect(body.n).toBeUndefined();
-    expect(body.chat_template_kwargs).toEqual({ enable_thinking: true });
+    expect(body.chat_template_kwargs).toBeUndefined();
     expect(body.id_slot).toBe(0);
     expect(body.cache_prompt).toBe(true);
     expect(body.n_cache_reuse).toBe(256);
@@ -171,6 +172,27 @@ describe("moss route - request format", () => {
     expect(String(content[0].text)).toContain("You are an image recaptioner.");
     expect(content[1].type).toBe("image_url");
     expect(imagePartUrl(content[1])).toContain("data:image/jpeg;base64,");
+  });
+
+  it("sends the custom user prompt, and the optional system prompt when set", async () => {
+    const response = await postMoss({
+      serverUrl: "http://localhost:8080",
+      model: "test-model",
+      systemPrompt: "  Stay in Japanese.  ",
+      userPrompt: "Describe the image in one sentence.",
+    });
+    await collectSseEvents(response);
+
+    const body = chatCalls[0];
+    const messages = body.messages as Array<Record<string, unknown>>;
+    expect(messages.length).toBe(2);
+    expect(messages[0].role).toBe("system");
+    expect(messages[0].content).toBe("Stay in Japanese.");
+    expect(messages[1].role).toBe("user");
+    const userContent = messages[1].content as Array<Record<string, unknown>>;
+    expect(userContent[0].type).toBe("text");
+    expect(String(userContent[0].text)).toContain("Describe the image in one sentence.");
+    expect(userContent[1].type).toBe("image_url");
   });
 
   it("omits the reference section when no caption file is provided", async () => {
@@ -207,17 +229,6 @@ describe("moss route - request format", () => {
 
     const text = String(contentParts(chatCalls[0])[0].text);
     expect(text).toContain("The subject in the image is: a silver-haired woman in a red cloak");
-  });
-
-  it("honors enableThinking: false", async () => {
-    const response = await postMoss({
-      serverUrl: "http://localhost:8080",
-      model: "test-model",
-      enableThinking: false,
-    });
-    await collectSseEvents(response);
-
-    expect(chatCalls[0].chat_template_kwargs).toEqual({ enable_thinking: false });
   });
 });
 

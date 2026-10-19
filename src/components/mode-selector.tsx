@@ -126,7 +126,7 @@ export function ModeSelector({ onModeSelected }: ModeSelectorProps) {
               </p>
               <ul className="text-xs text-slate-500 space-y-1 list-disc list-inside">
                 <li>Upload images + optional reference captions (.txt)</li>
-                <li>One non-streaming call per image, thinking mode optional</li>
+                <li>One non-streaming call per image, editable recaptioner prompt</li>
                 <li>Captions saved as the normalized JSON object</li>
                 <li>Optimized for post-training data collection</li>
               </ul>

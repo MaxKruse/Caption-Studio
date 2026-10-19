@@ -95,38 +95,6 @@ describe("chatComplete", () => {
   });
 });
 
-describe("chatComplete body override", () => {
-  const realFetch = globalThis.fetch;
-
-  it("sends the provided body verbatim instead of the streaming default", async () => {
-    let seenBody: Record<string, unknown> | undefined;
-    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
-      seenBody = JSON.parse(init?.body as string) as Record<string, unknown>;
-      return new Response("{}", { status: 200 });
-    }) as unknown as typeof fetch;
-
-    try {
-      const body = {
-        model: "test-model",
-        messages: [{ role: "user", content: "hi" }],
-        stream: false,
-        max_tokens: 8192,
-      };
-      const response = await chatComplete("http://localhost:8080", {
-        model: "test-model",
-        messages: [{ role: "user", content: "hi" }],
-        slotId: 0,
-        timeoutMs: 1000,
-        body,
-      });
-      expect(response.status).toBe(200);
-      expect(seenBody).toEqual(body);
-    } finally {
-      globalThis.fetch = realFetch;
-    }
-  });
-});
-
 describe("readChatCompletion", () => {
   it("extracts caption, reasoning, and KV cache stats from a non-streaming response", async () => {
     const response = new Response(

@@ -4,8 +4,9 @@
  */
 
 "use client";
-
 import { useState, useCallback, useRef, createContext, useContext } from "react";
+
+import { MOSS_CAPTION_PROMPT } from "@/lib/moss-prompt";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -36,9 +37,12 @@ export interface SessionState {
   triggerWordOther: string;
   // Krea 2 mode
   characterDescription: string;
-  // Shared prompts (used by Krea 2 phase 1)
+  // Krea 2 mode prompts (phase 1)
   systemPrompt: string;
   userPrompt: string;
+  // MOSS-Image mode prompts (recaptioner; system message optional)
+  mossSystemPrompt: string;
+  mossUserPrompt: string;
   // WD Tagger (For Anima auto-tagging)
   tagMinProbability: number;
   tagMaxTags: number;
@@ -104,6 +108,8 @@ const DEFAULT_STATE: SessionState = {
     + `weave patterns, and trim details (braiding, embroidery, frayed edges, piping, buttons, buckles, belts). `
     + `Transcribe any visible text verbatim in double quotes. `
     + `Include positive constraints where relevant (sharp focus, clean background, correct anatomy, no watermark, no logos).`,
+  mossSystemPrompt: "",
+  mossUserPrompt: MOSS_CAPTION_PROMPT,
   tagMinProbability: 0.35,
   tagMaxTags: 50,
   tagEncourage: "",
@@ -132,6 +138,8 @@ interface SessionContextValue {
   clearImages: () => void;
   setSystemPrompt: (systemPrompt: string) => void;
   setUserPrompt: (userPrompt: string) => void;
+  setMossSystemPrompt: (mossSystemPrompt: string) => void;
+  setMossUserPrompt: (mossUserPrompt: string) => void;
   setTriggerWordPerson: (triggerWordPerson: string) => void;
   setTriggerWordOther: (triggerWordOther: string) => void;
   setCharacterDescription: (characterDescription: string) => void;
@@ -261,6 +269,14 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => ({ ...prev, userPrompt }));
   }, []);
 
+  const setMossSystemPrompt = useCallback((mossSystemPrompt: string) => {
+    setState((prev) => ({ ...prev, mossSystemPrompt }));
+  }, []);
+
+  const setMossUserPrompt = useCallback((mossUserPrompt: string) => {
+    setState((prev) => ({ ...prev, mossUserPrompt }));
+  }, []);
+
   const reset = useCallback(() => {
     imageUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
     imageUrlsRef.current = [];
@@ -279,6 +295,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     clearImages,
     setSystemPrompt,
     setUserPrompt,
+    setMossSystemPrompt,
+    setMossUserPrompt,
     setTriggerWordPerson,
     setTriggerWordOther,
     setCharacterDescription,

@@ -13,7 +13,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { buildChatRequest, buildMossChatRequest } from "@/lib/llama-request";
+import { buildChatRequest } from "@/lib/llama-request";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -86,44 +86,33 @@ describe("buildChatRequest", () => {
 
 });
 
-describe("buildMossChatRequest", () => {
-  it("sends a non-streaming body without sampling or length overrides", () => {
-    const body = buildMossChatRequest({
+describe("buildChatRequest (non-streaming / MOSS-Image)", () => {
+  it("sends a non-streaming body without sampling, length, or thinking overrides", () => {
+    const body = buildChatRequest({
       model: "qwen3.5-27b",
       messages: sampleMessages(),
       slotId: 0,
-      enableThinking: true,
+      stream: false,
     });
 
     expect(body.stream).toBe(false);
+    expect(body.stream_options).toBeUndefined();
     // Sampling and the output budget are the server's pre-configured
     // defaults - the app must not override them per request.
     expect(body.max_tokens).toBeUndefined();
     expect(body.temperature).toBeUndefined();
     expect(body.top_p).toBeUndefined();
     expect(body.n).toBeUndefined();
-    expect(body.chat_template_kwargs).toEqual({ enable_thinking: true });
-  });
-
-  it("reflects the enableThinking setting", () => {
-    const body = buildMossChatRequest({
-      model: "qwen3.5-27b",
-      messages: sampleMessages(),
-      slotId: 0,
-      enableThinking: false,
-    });
-
-    expect(body.chat_template_kwargs).toEqual({ enable_thinking: false });
+    expect(body.chat_template_kwargs).toBeUndefined();
   });
 
   it("keeps the slot-pinning fields for KV cache reuse", () => {
     const messages = sampleMessages();
-    const body = buildMossChatRequest({
+    const body = buildChatRequest({
       model: "qwen3.5-27b",
       messages,
       slotId: 2,
-
-      enableThinking: true,
+      stream: false,
     });
 
     expect(body.model).toBe("qwen3.5-27b");

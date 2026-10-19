@@ -158,7 +158,7 @@ Large batches are supported (up to 5,000 images per session). In **For Anima mod
 
 **Model selector:** Auto-populated with vision models from your server. Pick the one you want.
 
-**Max image dimension** (optional, Krea 2 and MOSS-Image): images are downscaled to 1536px by default. Raise the value (256-4096, alongside a matching `--image-max-tokens` on the server) for more detail.
+**Max image dimension** (optional, Krea 2 mode only): images are downscaled to 1536px by default. Raise the value (256-4096, alongside a matching `--image-max-tokens` on the server) for more detail.
 
 **Krea 2 mode** adds the prompt configuration:
 
@@ -171,7 +171,7 @@ Large batches are supported (up to 5,000 images per session). In **For Anima mod
 
 **For Anima mode** uses its own built-in prompts - there is no editable system/user message (see [For Anima Mode](#for-anima-mode)).
 
-**MOSS-Image mode** uses the MOSS-Image guide's recaptioner prompt. You can toggle **thinking mode** (on by default - the guide recommends it for more accurate captions) and optionally give a **subject description** of what is being captioned, so the model names and describes it consistently.
+**MOSS-Image mode** gets the same prompt editor: the **recaptioner prompt** (user message) defaults to the MOSS-Image guide's prompt and is fully editable - your version is used as-is for every image, with per-image grounding (subject description, reference caption) appended automatically. You can optionally add a **system message** and a **subject description** of what is being captioned, so the model names and describes the subject consistently.
 
 ### Step 5: Start Captioning
 
@@ -279,7 +279,7 @@ The ZIP contains, per image: the image itself, a `.txt` with the final caption (
 
 ## MOSS-Image Mode
 
-This mode implements the image-captioning recipe from the [MOSS-Image user guide](https://github.com/OpenMOSS/MOSS-Image/blob/main/USERGUIDE.md#post-training) (Post-Training, "Image Captioning"). Each image gets the guide's recaptioner prompt and the model answers with a strict JSON caption object - the data format used to post-train MOSS-Image-Base:
+This mode implements the image-captioning recipe from the [MOSS-Image user guide](https://github.com/OpenMOSS/MOSS-Image/blob/main/USERGUIDE.md#post-training) (Post-Training, "Image Captioning"). Each image gets the recaptioner prompt (editable in the config phase; the guide's prompt is the default) and the model answers with a strict JSON caption object - the data format used to post-train MOSS-Image-Base:
 
 ```json
 {
@@ -293,7 +293,7 @@ This mode implements the image-captioning recipe from the [MOSS-Image user guide
 
 **Subject description (optional):** in the config phase, describe the subject that appears in the images (a character, product, or scene). The model uses it to name and describe the subject consistently across all captions.
 
-**Options:** thinking mode is on by default (the guide recommends it for more accurate captions; it adds the model's reasoning to the collapsible reasoning panel). Sampling and the output length are the llama-server's pre-configured defaults - the app does not override them per request. Each image has a 15-minute timeout.
+**Options:** sampling and the output length are the llama-server's pre-configured defaults - the app does not override them per request. Each image has a 15-minute timeout.
 
 ### Downloaded Captions
 

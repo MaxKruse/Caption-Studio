@@ -5,14 +5,15 @@
  * (post-training section): a single recaptioner prompt asks the VLM for
  * exactly one JSON object (long/medium/short captions + watermark boxes +
  * borders) - the caption format used to post-train MOSS-Image-Base.
+ * The recaptioner prompt is config `userPrompt` (the MOSS-Image guide's
+ * prompt by default, editable via the UI prompt editor); an optional
+ * `systemPrompt` (config) is added as a system message when non-empty.
+ * The request body is non-streaming (`stream: false` - the shape the
+ * app reads) plus this app's slot-pinning fields for deterministic KV
+ * cache reuse. Sampling (temperature, top_p) and the output budget are
+ * NOT sent - the llama-server has them pre-configured.
  *
- * The request body is non-streaming (the shape the app reads) plus the
- * thinking toggle (`chat_template_kwargs.enable_thinking`) and this
- * app's slot-pinning fields for deterministic KV cache reuse. Sampling
- * (temperature, top_p) and the output budget are NOT sent - the
- * llama-server has them pre-configured.
- *
- * Optional grounding, appended to the prompt only when present:
+ * Grounding, appended to the prompt only when present:
  * - `subjectDescription` (config): what the subject in the images is.
  * - Reference captions: a `captions` file per image (index-paired)
  *   grounds the model on the original caption.
@@ -45,7 +46,6 @@ import {
   type RejectedImage,
 } from "@/lib/caption-route";
 import { readFileBuffer, chatComplete, readChatCompletion } from "@/lib/caption-helpers";
-import { buildMossChatRequest } from "@/lib/llama-request";
 import { buildMossCaptionPrompt, parseMossCaption } from "@/lib/moss-prompt";
 import { registerSession, unregisterSession } from "@/lib/session-registry";
 import { createSseStream } from "@/lib/sse";
@@ -68,7 +68,7 @@ interface ImageTask {
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Per-image timeout: thinking mode plus a long JSON caption is slow. */
+/** Per-image timeout: a long JSON caption can be slow. */
 const API_TIMEOUT_MS = 15 * 60 * 1000;
 
 /** Client-side ceiling for parallel image processing. */
@@ -79,9 +79,10 @@ const MAX_CONCURRENCY = 8;
 // ---------------------------------------------------------------------------
 
 /**
- * Recaption one image: read it from the session dir, build the guide's
- * single user message (text prompt first, image second), call the model
- * non-streaming, and write the normalized JSON caption object to disk.
+ * Recaption one image: read it from the session dir, build the messages
+ * (optional system message, then the user message with the recaptioner
+ * prompt first and the image second), call the model non-streaming, and
+ * write the normalized JSON caption object to disk.
  */
 async function processImage(
   task: ImageTask,
@@ -89,7 +90,8 @@ async function processImage(
   normalizedUrl: string,
   model: string,
   slotId: number,
-  enableThinking: boolean,
+  systemPrompt: string,
+  userPrompt: string,
   subjectDescription: string,
   maxImageDimension: number | undefined,
   sendEvent: (type: string, data: unknown) => void,
@@ -118,17 +120,19 @@ async function processImage(
     const base64 = apiBuffer.toString("base64");
     if (abortSignal.aborted) return;
 
-    // Guide message shape: one user message, text part first, then the
-    // image part (no system message - the prompt carries all instructions).
-    const messages: Array<Record<string, unknown>> = [
-      {
-        role: "user",
-        content: [
-          { type: "text", text: buildMossCaptionPrompt(subjectDescription, task.reference) },
-          { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } },
-        ],
-      },
-    ];
+    // Recaptioner message shape: optional system message, then one user
+    // message with the text prompt first and the image part second.
+    const messages: Array<Record<string, unknown>> = [];
+    if (systemPrompt.trim()) {
+      messages.push({ role: "system", content: systemPrompt.trim() });
+    }
+    messages.push({
+      role: "user",
+      content: [
+        { type: "text", text: buildMossCaptionPrompt(userPrompt, subjectDescription, task.reference) },
+        { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } },
+      ],
+    });
 
     const response = await chatComplete(normalizedUrl, {
       model,
@@ -136,7 +140,7 @@ async function processImage(
       slotId,
       timeoutMs: API_TIMEOUT_MS,
       signal: abortSignal,
-      body: buildMossChatRequest({ model, messages, slotId, enableThinking }),
+      stream: false,
     });
 
     const result = await readChatCompletion(response, abortSignal);
@@ -296,7 +300,8 @@ export async function POST(request: NextRequest) {
             normalizedUrl,
             config.model,
             slotId,
-            config.enableThinking,
+            config.systemPrompt,
+            config.userPrompt,
             config.subjectDescription,
             config.maxImageDimension,
             sendEvent,

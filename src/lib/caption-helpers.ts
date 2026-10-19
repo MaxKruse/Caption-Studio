@@ -42,8 +42,11 @@ export interface ChatCompleteParams {
   signal?: AbortSignal;
   /** Max retries on 5xx/429 (default 3). */
   maxRetries?: number;
-  /** Full request body override (sent verbatim, skipping buildChatRequest). */
-  body?: Record<string, unknown>;
+  /**
+   * Whether the response is streamed (default true). MOSS-Image mode
+   * reads a single non-streaming JSON body, so it sends stream: false.
+   */
+  stream?: boolean;
 }
 
 /**
@@ -59,14 +62,14 @@ export async function chatComplete(
   normalizedUrl: string,
   params: ChatCompleteParams
 ): Promise<Response> {
-  const { model, messages, slotId, timeoutMs, signal, maxRetries } = params;
+  const { model, messages, slotId, timeoutMs, signal, maxRetries, stream } = params;
 
   const response = await fetchWithRetry(
     `${normalizedUrl}/v1/chat/completions`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(params.body ?? buildChatRequest({ model, messages, slotId })),
+      body: JSON.stringify(buildChatRequest({ model, messages, slotId, stream })),
       cache: "no-store",
     },
     timeoutMs,

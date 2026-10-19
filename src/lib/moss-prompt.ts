@@ -13,11 +13,12 @@
 // ---------------------------------------------------------------------------
 
 /**
- * The recaptioner prompt from the MOSS-Image user guide, minus its
- * reference-caption section: grounding (subject description and/or the
- * per-image reference caption) is appended by `buildMossCaptionPrompt`
- * only when present, so the prompt never carries a dangling "reference:
- * (none)" line.
+ * The default recaptioner prompt from the MOSS-Image user guide, minus
+ * its reference-caption section. It is the default for the editable
+ * recaptioner prompt (config `userPrompt`, UI prompt editor); grounding
+ * (subject description and/or the per-image reference caption) is
+ * appended by `buildMossCaptionPrompt` only when present, so the
+ * prompt never carries a dangling "reference: (none)" line.
  */
 export const MOSS_CAPTION_PROMPT = `You are an image recaptioner. Return exactly one JSON object with this schema:
 {
@@ -51,8 +52,10 @@ Rules:
 - Return only the JSON object, without Markdown or explanations.`;
 
 /**
- * Build the per-image caption prompt: the base recaptioner prompt plus
- * optional grounding sections, appended only when present:
+ * Build the per-image caption prompt: the recaptioner prompt (the
+ * caller's `basePrompt`, usually config `userPrompt`; the guide's
+ * prompt is the default) plus optional grounding sections, appended
+ * only when present:
  *
  * - `subjectDescription` (batch-level): what the subject in the images
  *   is, so the model can name and describe it consistently.
@@ -60,10 +63,11 @@ Rules:
  *   a reference, correct unsupported claims" instruction travels with it.
  */
 export function buildMossCaptionPrompt(
+  basePrompt: string,
   subjectDescription: string,
   reference: string
 ): string {
-  let prompt = MOSS_CAPTION_PROMPT;
+  let prompt = basePrompt.trim();
   const subject = subjectDescription.trim();
   if (subject) {
     prompt += `\n\nThe subject in the image is: ${subject}`;
