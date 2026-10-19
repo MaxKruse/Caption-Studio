@@ -15,10 +15,8 @@
 /**
  * The default recaptioner prompt from the MOSS-Image user guide, minus
  * its reference-caption section. It is the default for the editable
- * recaptioner prompt (config `userPrompt`, UI prompt editor); grounding
- * (subject description and/or the per-image reference caption) is
- * appended by `buildMossCaptionPrompt` only when present, so the
- * prompt never carries a dangling "reference: (none)" line.
+ * recaptioner prompt, sent as the system message (config `systemPrompt`,
+ * UI prompt editor).
  */
 export const MOSS_CAPTION_PROMPT = `You are an image recaptioner. Return exactly one JSON object with this schema:
 {
@@ -52,9 +50,15 @@ Rules:
 - Return only the JSON object, without Markdown or explanations.`;
 
 /**
- * Build the per-image caption prompt: the recaptioner prompt (the
- * caller's `basePrompt`, usually config `userPrompt`; the guide's
- * prompt is the default) plus optional grounding sections, appended
+ * The default per-image user-message instruction, paired with
+ * `MOSS_CAPTION_PROMPT` (system message) in MOSS-Image mode.
+ */
+export const MOSS_USER_PROMPT = `Caption this image.`;
+
+/**
+ * Build the per-image user message text: the caller's per-image
+ * instruction (`basePrompt`, config `userPrompt`, default
+ * `MOSS_USER_PROMPT`) plus optional grounding sections, appended
  * only when present:
  *
  * - `subjectDescription` (batch-level): what the subject in the images

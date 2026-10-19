@@ -5,9 +5,10 @@
  * (post-training section): a single recaptioner prompt asks the VLM for
  * exactly one JSON object (long/medium/short captions + watermark boxes +
  * borders) - the caption format used to post-train MOSS-Image-Base.
- * The recaptioner prompt is config `userPrompt` (the MOSS-Image guide's
- * prompt by default, editable via the UI prompt editor); an optional
- * `systemPrompt` (config) is added as a system message when non-empty.
+ * The recaptioner prompt is config `systemPrompt` (the MOSS-Image
+ * guide's prompt by default, editable via the UI prompt editor), sent
+ * as the system message; config `userPrompt` (default "Caption this
+ * image.") is the per-image instruction, with grounding appended.
  * The request body is non-streaming (`stream: false` - the shape the
  * app reads) plus this app's slot-pinning fields for deterministic KV
  * cache reuse. Sampling (temperature, top_p) and the output budget are
@@ -80,9 +81,9 @@ const MAX_CONCURRENCY = 8;
 
 /**
  * Recaption one image: read it from the session dir, build the messages
- * (optional system message, then the user message with the recaptioner
- * prompt first and the image second), call the model non-streaming, and
- * write the normalized JSON caption object to disk.
+ * (system message with the recaptioner prompt, then the user message
+ * with the per-image instruction first and the image second), call the
+ * model non-streaming, and write the normalized JSON caption object to
  */
 async function processImage(
   task: ImageTask,
@@ -120,8 +121,9 @@ async function processImage(
     const base64 = apiBuffer.toString("base64");
     if (abortSignal.aborted) return;
 
-    // Recaptioner message shape: optional system message, then one user
-    // message with the text prompt first and the image part second.
+    // Message shape: system message with the recaptioner prompt, then
+    // the user message with the per-image instruction text first and
+    // the image part second.
     const messages: Array<Record<string, unknown>> = [];
     if (systemPrompt.trim()) {
       messages.push({ role: "system", content: systemPrompt.trim() });

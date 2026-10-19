@@ -171,7 +171,7 @@ Large batches are supported (up to 5,000 images per session). In **For Anima mod
 
 **For Anima mode** uses its own built-in prompts - there is no editable system/user message (see [For Anima Mode](#for-anima-mode)).
 
-**MOSS-Image mode** gets the same prompt editor: the **recaptioner prompt** (user message) defaults to the MOSS-Image guide's prompt and is fully editable - your version is used as-is for every image, with per-image grounding (subject description, reference caption) appended automatically. You can optionally add a **system message** and a **subject description** of what is being captioned, so the model names and describes the subject consistently.
+**MOSS-Image mode** gets the same prompt editor: the **recaptioner prompt** (system message) defaults to the MOSS-Image guide's prompt and is fully editable - your version is used as-is for every image. The **user message** is a short per-image instruction (default "Caption this image.") with per-image grounding (subject description, reference caption) appended automatically. You can optionally add a **subject description** of what is being captioned, so the model names and describes the subject consistently.
 
 ### Step 5: Start Captioning
 
@@ -279,7 +279,7 @@ The ZIP contains, per image: the image itself, a `.txt` with the final caption (
 
 ## MOSS-Image Mode
 
-This mode implements the image-captioning recipe from the [MOSS-Image user guide](https://github.com/OpenMOSS/MOSS-Image/blob/main/USERGUIDE.md#post-training) (Post-Training, "Image Captioning"). Each image gets the recaptioner prompt (editable in the config phase; the guide's prompt is the default) and the model answers with a strict JSON caption object - the data format used to post-train MOSS-Image-Base:
+This mode implements the image-captioning recipe from the [MOSS-Image user guide](https://github.com/OpenMOSS/MOSS-Image/blob/main/USERGUIDE.md#post-training) (Post-Training, "Image Captioning"). Each image is sent with the recaptioner prompt as the system message (editable in the config phase; the guide's prompt is the default) plus a short user message (default "Caption this image."), and the model answers with a strict JSON caption object - the data format used to post-train MOSS-Image-Base:
 
 ```json
 {

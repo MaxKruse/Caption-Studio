@@ -5,8 +5,7 @@
 
 "use client";
 import { useState, useCallback, useRef, createContext, useContext } from "react";
-
-import { MOSS_CAPTION_PROMPT } from "@/lib/moss-prompt";
+import { MOSS_CAPTION_PROMPT, MOSS_USER_PROMPT } from "@/lib/moss-prompt";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -40,7 +39,8 @@ export interface SessionState {
   // Krea 2 mode prompts (phase 1)
   systemPrompt: string;
   userPrompt: string;
-  // MOSS-Image mode prompts (recaptioner; system message optional)
+  // MOSS-Image mode prompts (recaptioner = system message, per-image
+  // instruction = user message)
   mossSystemPrompt: string;
   mossUserPrompt: string;
   // WD Tagger (For Anima auto-tagging)
@@ -108,8 +108,8 @@ const DEFAULT_STATE: SessionState = {
     + `weave patterns, and trim details (braiding, embroidery, frayed edges, piping, buttons, buckles, belts). `
     + `Transcribe any visible text verbatim in double quotes. `
     + `Include positive constraints where relevant (sharp focus, clean background, correct anatomy, no watermark, no logos).`,
-  mossSystemPrompt: "",
-  mossUserPrompt: MOSS_CAPTION_PROMPT,
+  mossSystemPrompt: MOSS_CAPTION_PROMPT,
+  mossUserPrompt: MOSS_USER_PROMPT,
   tagMinProbability: 0.35,
   tagMaxTags: 50,
   tagEncourage: "",

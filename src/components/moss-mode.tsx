@@ -1,10 +1,10 @@
 /**
  * MOSS-Image mode orchestrator.
  *
- * Recaptions images with an editable recaptioner prompt (the
- * MOSS-Image guide's prompt is the default; the prompt editor mirrors
- * the Krea 2 workflow): one non-streaming call per image that returns
- * a strict JSON caption object (long/medium/short captions + watermark
+ * Recaptions images with the recaptioner prompt as the system message
+ * (the MOSS-Image guide's prompt is the default, fully editable in the
+ * prompt editor): one non-streaming call per image that returns a
+ * strict JSON caption object (long/medium/short captions + watermark
  * boxes + borders), the data format used to post-train MOSS-Image-Base.
  *
  * Phases: upload -> configure -> processing -> results. Grounding for
@@ -319,7 +319,12 @@ export function MossMode({ serverUrl, onBack }: MossModeProps) {
                   abortControllerRef.current = new AbortController();
                   await handleStart();
                 }}
-                disabled={!state.model || !state.mossUserPrompt.trim() || isProcessing}
+                disabled={
+                  !state.model ||
+                  !state.mossSystemPrompt.trim() ||
+                  !state.mossUserPrompt.trim() ||
+                  isProcessing
+                }
               >
                 Start Captioning
               </Button>

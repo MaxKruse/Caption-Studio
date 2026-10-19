@@ -3,8 +3,8 @@
  *
  * Binds to mode-specific session state: Krea 2 edits its phase-1 prompts
  * (plus trigger words, which are Krea 2 only); MOSS-Image edits its
- * recaptioner prompt (the guide's prompt is the default) and an optional
- * system message.
+ * recaptioner prompt (system message, guide's prompt default) and its
+ * per-image instruction (user message).
  */
 
 "use client";
@@ -37,19 +37,27 @@ export function PromptEditor({ mode = "krea2" }: PromptEditorProps) {
 
   return (
     <div className="space-y-4">
-      {/* System Prompt */}
-      <Textarea
-        label="System Message"
-        value={systemValue}
-        onChange={(e) => setSystem(e.target.value)}
-        placeholder={
-          isMoss
-            ? "Optional - the recaptioner prompt works without a system message..."
-            : "You are a helpful assistant that describes images..."
-        }
-        rows={3}
-        className="text-sm font-mono"
-      />
+      {/* System Message */}
+      <div className="space-y-2">
+        <Textarea
+          label="System Message"
+          value={systemValue}
+          onChange={(e) => setSystem(e.target.value)}
+          placeholder={
+            isMoss
+              ? "The recaptioner prompt - defaults to the MOSS-Image guide's prompt..."
+              : "You are a helpful assistant that describes images..."
+          }
+          rows={isMoss ? 8 : 3}
+          className="text-sm font-mono"
+        />
+        {isMoss && (
+          <p className="text-xs text-slate-500">
+            Defaults to the MOSS-Image guide&apos;s recaptioner prompt. Sent as the
+            system message and used as-is for every image.
+          </p>
+        )}
+      </div>
 
       {/* Trigger Words (Krea 2 only, prepended to user prompt) */}
       {!isMoss && (
@@ -81,17 +89,17 @@ export function PromptEditor({ mode = "krea2" }: PromptEditorProps) {
           onChange={(e) => setUser(e.target.value)}
           placeholder={
             isMoss
-              ? "The recaptioner prompt - defaults to the MOSS-Image guide's prompt..."
+              ? "Caption this image."
               : "Describe this image in detail..."
           }
-          rows={isMoss ? 8 : 4}
+          rows={isMoss ? 2 : 4}
           className="text-sm font-mono"
         />
         {isMoss && (
           <p className="text-xs text-slate-500">
-            Defaults to the MOSS-Image guide&apos;s recaptioner prompt. Your edits are
-            used as-is for every image; per-image grounding (subject description,
-            reference caption) is appended automatically.
+            Short per-image instruction, sent with the image; grounding
+            (subject description, reference caption) is appended automatically
+            when present.
           </p>
         )}
       </div>

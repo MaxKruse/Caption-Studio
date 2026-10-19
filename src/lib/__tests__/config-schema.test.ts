@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { krea2ConfigSchema, forAnimaConfigSchema, mossConfigSchema } from "@/lib/config-schema";
-import { MOSS_CAPTION_PROMPT } from "@/lib/moss-prompt";
+import { MOSS_CAPTION_PROMPT, MOSS_USER_PROMPT } from "@/lib/moss-prompt";
 
 describe("config schema validation", () => {
   describe("krea2ConfigSchema", () => {
@@ -69,28 +69,42 @@ describe("config schema validation", () => {
       });
       expect(result.success).toBe(true);
       if (result.success) {
-        // The MOSS-Image guide's recaptioner prompt is the default
-        // user prompt (the base schema's userPrompt default is "").
-        expect(result.data.userPrompt).toBe(MOSS_CAPTION_PROMPT);
+        // The recaptioner prompt (system message) defaults to the
+        // MOSS-Image guide's prompt and the user instruction to the
+        // short caption request; both override the base schema
+        // defaults via this extend.
+        expect(result.data.systemPrompt).toBe(MOSS_CAPTION_PROMPT);
+        expect(result.data.userPrompt).toBe(MOSS_USER_PROMPT);
         expect(result.data.subjectDescription).toBe("");
       }
     });
 
-    it("honors an explicit userPrompt and subjectDescription", () => {
+    it("honors an explicit systemPrompt, userPrompt, and subjectDescription", () => {
       const result = mossConfigSchema.safeParse({
         serverUrl: "http://localhost:8080",
         model: "qwen3.5-27b",
+        systemPrompt: "Answer in JSON only.",
         userPrompt: "Describe the image in haiku form.",
         subjectDescription: "a silver-haired woman in a red cloak",
       });
       expect(result.success).toBe(true);
       if (result.success) {
+        expect(result.data.systemPrompt).toBe("Answer in JSON only.");
         expect(result.data.userPrompt).toBe("Describe the image in haiku form.");
         expect(result.data.subjectDescription).toBe("a silver-haired woman in a red cloak");
       }
     });
 
-    it("rejects an empty userPrompt (the recaptioner prompt is the core of the mode)", () => {
+    it("rejects an empty systemPrompt (the recaptioner prompt is the core of the mode)", () => {
+      const result = mossConfigSchema.safeParse({
+        serverUrl: "http://localhost:8080",
+        model: "qwen3.5-27b",
+        systemPrompt: "",
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects an empty userPrompt", () => {
       const result = mossConfigSchema.safeParse({
         serverUrl: "http://localhost:8080",
         model: "qwen3.5-27b",

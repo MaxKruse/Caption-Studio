@@ -19,6 +19,7 @@ import {
   makeChatJsonResponse,
 } from "@/lib/__tests__/test-helpers";
 import { readCaption } from "@/lib/temp-files";
+import { MOSS_CAPTION_PROMPT, MOSS_USER_PROMPT } from "@/lib/moss-prompt";
 
 // ---------------------------------------------------------------------------
 // Stub server
@@ -93,9 +94,10 @@ async function postMoss(
   );
 }
 
+/** Content parts of the user message (messages[1]; messages[0] is the system recaptioner prompt). */
 function contentParts(body: Record<string, unknown>): Array<Record<string, unknown>> {
   const messages = body.messages as Array<Record<string, unknown>>;
-  return messages[0].content as Array<Record<string, unknown>>;
+  return messages[1].content as Array<Record<string, unknown>>;
 }
 
 function sessionIdOf(event: { data: unknown }): string {
@@ -157,24 +159,26 @@ describe("moss route - request format", () => {
     expect(body.n_cache_reuse).toBe(256);
   });
 
-  it("sends a single user message with the text part before the image part", async () => {
+  it("sends the recaptioner prompt as system message and the instruction as user message", async () => {
     const response = await postMoss({ serverUrl: "http://localhost:8080", model: "test-model" });
     const events = await collectSseEvents(response);
     expect(findEvent(events, "done")).toBeDefined();
 
     const body = chatCalls[0];
     const messages = body.messages as Array<Record<string, unknown>>;
-    expect(messages.length).toBe(1);
-    expect(messages[0].role).toBe("user");
+    expect(messages.length).toBe(2);
+    expect(messages[0].role).toBe("system");
+    expect(messages[0].content).toBe(MOSS_CAPTION_PROMPT);
+    expect(messages[1].role).toBe("user");
     const content = contentParts(body);
     expect(content.length).toBe(2);
     expect(content[0].type).toBe("text");
-    expect(String(content[0].text)).toContain("You are an image recaptioner.");
+    expect(String(content[0].text)).toBe(MOSS_USER_PROMPT);
     expect(content[1].type).toBe("image_url");
     expect(imagePartUrl(content[1])).toContain("data:image/jpeg;base64,");
   });
 
-  it("sends the custom user prompt, and the optional system prompt when set", async () => {
+  it("honors custom systemPrompt and userPrompt", async () => {
     const response = await postMoss({
       serverUrl: "http://localhost:8080",
       model: "test-model",
@@ -189,9 +193,9 @@ describe("moss route - request format", () => {
     expect(messages[0].role).toBe("system");
     expect(messages[0].content).toBe("Stay in Japanese.");
     expect(messages[1].role).toBe("user");
-    const userContent = messages[1].content as Array<Record<string, unknown>>;
+    const userContent = contentParts(body);
     expect(userContent[0].type).toBe("text");
-    expect(String(userContent[0].text)).toContain("Describe the image in one sentence.");
+    expect(String(userContent[0].text)).toBe("Describe the image in one sentence.");
     expect(userContent[1].type).toBe("image_url");
   });
 
