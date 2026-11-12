@@ -53,6 +53,9 @@ export async function consumeSseStream(
 ): Promise<void> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
+  // Partial-block buffer: holds decoded bytes that do not yet form a complete
+  // "\n\n"-delimited SSE block, and carries the remainder over to the next
+  // chunk (a block can span multiple reads).
   let buffer = "";
 
   while (true) {

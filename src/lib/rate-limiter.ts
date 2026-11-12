@@ -6,6 +6,11 @@
 export class RateLimiter {
   private maxRequests: number;
   private windowMs: number;
+  /**
+   * Sliding-window state: IP -> request timestamps still inside the window.
+   * check() prunes stale entries on every call, so the array only ever holds
+   * timestamps from the current window.
+   */
   private records = new Map<string, number[]>();
 
   constructor(maxRequests: number, windowMs: number) {
