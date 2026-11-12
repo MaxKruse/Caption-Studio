@@ -511,7 +511,7 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-slate-100">For Anima Mode</h2>
+          <h2 className="text-xl font-semibold text-slate-100">Anima Mode</h2>
           <p className="text-sm text-slate-400">
             Auto-tag with WD Tagger, then enhance with LLM
           </p>
@@ -704,7 +704,7 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
                   Redo Tagging
                 </Button>
                 <Button variant="primary" onClick={handleContinueToLlm}>
-                  Continue to LLM Tagging
+                  Continue to Captioning
                 </Button>
               </div>
             </div>
@@ -746,7 +746,7 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
           {appPhase === "llm-processing" && (
             <div className="text-center">
               <span className="text-sm font-medium text-indigo-300">
-                Enhancing captions with LLM...
+                Enhancing tags with LLM...
               </span>
             </div>
           )}

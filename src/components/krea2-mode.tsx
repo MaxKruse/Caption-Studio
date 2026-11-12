@@ -349,7 +349,7 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
         <div>
           <h2 className="text-xl font-semibold text-slate-100">Krea 2 Mode</h2>
           <p className="text-sm text-slate-400">
-            Caption, refine, and distill for krea2 prompts
+            Caption, refine, and distill for Krea 2 prompts
           </p>
         </div>
         <Button variant="ghost" size="sm" onClick={onBack}>
@@ -406,7 +406,7 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
                 Describe the character/subject that appears across all images.
                 Phase 2 will remove these consistent features from the captions,
                 leaving only image-unique details. Phase 3 distills the result
-                into a concise krea2-optimized prompt.
+                into a concise prompt optimized for Krea 2.
               </p>
               <Textarea
                 value={state.characterDescription}

@@ -60,10 +60,10 @@ export function ModeSelector({ onModeSelected }: ModeSelectorProps) {
             <div className="space-y-3">
               <div className="flex items-center gap-3">
                 <span className="text-2xl">A</span>
-                <h3 className="text-lg font-semibold text-slate-100">For Anima Mode</h3>
+                <h3 className="text-lg font-semibold text-slate-100">Anima Mode</h3>
               </div>
               <p className="text-sm text-slate-400">
-                Enhance existing danbooru-style tags (from taggui) with natural
+                Enhance existing booru-style tags with natural
                 language descriptions. The LLM adds spatial relationships, mood,
                 and atmosphere that tags alone cannot express.
               </p>
@@ -73,7 +73,7 @@ export function ModeSelector({ onModeSelected }: ModeSelectorProps) {
                 <li>Final caption = tags + LLM addition</li>
                 <li>Optimized for Anima (CircleStone Labs 2B anime model)</li>
               </ul>
-              <Button className="w-full mt-2">Start For Anima Mode</Button>
+              <Button className="w-full mt-2">Start Anima Mode</Button>
             </div>
           </button>
         </Card>
@@ -92,14 +92,14 @@ export function ModeSelector({ onModeSelected }: ModeSelectorProps) {
               <p className="text-sm text-slate-400">
                 Three-phase captioning for character-consistent image sets.
                 Phase 1 captions each image, Phase 2 removes character-consistent
-                features, and Phase 3 distills the result into a concise krea2
+                features, and Phase 3 distills the result into a concise Krea 2
                 prompt. Each image goes through all 3 phases as a single
                 multi-turn conversation.
               </p>
               <ul className="text-xs text-slate-500 space-y-1 list-disc list-inside">
                 <li>Phase 1: caption each image individually</li>
                 <li>Phase 2: per-image refinement (remove consistent features)</li>
-                <li>Phase 3: distill to a concise krea2 prompt (60-150 words)</li>
+                <li>Phase 3: distill to a concise Krea 2 prompt (60-150 words)</li>
                 <li>Requires character description for refinement</li>
               </ul>
               <Button className="w-full mt-2">Start Krea 2 Mode</Button>
