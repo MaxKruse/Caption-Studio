@@ -14,6 +14,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useSession } from "@/hooks/use-session";
 import { applyTokenDelta } from "@/lib/token-accumulate";
+import { applyImageEvent } from "@/lib/caption-lifecycle";
 import { consumeSseStream } from "@/lib/sse-client";
 import { triggerDownload } from "@/lib/download";
 import { fileToBase64 } from "@/lib/file-utils";
@@ -346,11 +347,9 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const failed = initialLlm.map((r) => ({
-        ...r,
-        status: "failed" as const,
-        error: signal?.aborted ? stopReasonRef.current : message,
-      }));
+      const failed = initialLlm.map((r) =>
+        applyImageEvent(r, { kind: "finalize", reason: signal?.aborted ? stopReasonRef.current : message })
+      );
       setLlmResults(failed);
       abortControllerRef.current = null;
       setIsProcessing(false);
@@ -360,7 +359,7 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: "Upload failed" }));
-      const failed = initialLlm.map((r) => ({ ...r, status: "failed" as const, error: error.error }));
+      const failed = initialLlm.map((r) => applyImageEvent(r, { kind: "finalize", reason: error.error }));
       setLlmResults(failed);
       abortControllerRef.current = null;
       setIsProcessing(false);
@@ -397,7 +396,7 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
         switch (event.type) {
           case "image_start": {
             const idx = (event.data as { index: number }).index;
-            if (localLlm[idx]) localLlm[idx] = { ...localLlm[idx], status: "processing" };
+            if (localLlm[idx]) localLlm[idx] = applyImageEvent(localLlm[idx], { kind: "start" });
             break;
           }
           case "token": {
@@ -426,15 +425,15 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
             const idx = completeData.index;
             if (localLlm[idx]) {
               localLlm[idx] = {
-                ...localLlm[idx],
-                status: completeData.status as CaptionResult["status"],
+                ...applyImageEvent(localLlm[idx], {
+                  kind: "complete",
+                  status: completeData.status as "completed" | "failed",
+                  error: completeData.error,
+                }),
                 caption: completeData.caption,
                 reasoningContent: completeData.reasoningContent,
-                error: completeData.error,
                 cachedTokens: completeData.cachedTokens,
                 promptTokens: completeData.promptTokens,
-                partialCaption: undefined,
-                partialReasoning: undefined,
               };
             }
             break;
@@ -464,16 +463,12 @@ export function ForAnimaMode({ serverUrl, onBack }: ForAnimaModeProps) {
     await Promise.all(chunkJobs);
 
     // Never leave images stuck as queued/processing: the stream ended
-    // (normal completion, abort, upload timeout, or server error).
-    for (const result of localLlm) {
-      if (result.status === "queued" || result.status === "processing") {
-        result.status = "failed";
-        result.error = signal?.aborted
-          ? stopReasonRef.current
-          : streamError ?? serverError ?? "The stream ended before this image finished";
-      }
-    }
-    setLlmResults([...localLlm]);
+    // (normal completion, abort, upload timeout, or server error). Finalize
+    // is a guarded transition - terminal rows are left untouched.
+    const reason = signal?.aborted
+      ? stopReasonRef.current
+      : streamError ?? serverError ?? "The stream ended before this image finished";
+    setLlmResults(localLlm.map((r) => applyImageEvent(r, { kind: "finalize", reason })));
 
     abortControllerRef.current = null;
     setIsProcessing(false);

@@ -18,6 +18,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useSession } from "@/hooks/use-session";
 import { consumeSseStream } from "@/lib/sse-client";
+import { applyImageEvent } from "@/lib/caption-lifecycle";
 import { triggerDownload } from "@/lib/download";
 import { CaptionResult, stopCaptionSession } from "@/lib/caption-result";
 import { buildSingleShotFormData } from "@/lib/upload-chunking";
@@ -117,11 +118,7 @@ export function MossMode({ serverUrl, onBack }: MossModeProps) {
 
       if (!response.ok) {
         const error = await response.json();
-        const failed = initialResults.map((r) => ({
-          ...r,
-          status: "failed" as const,
-          error: error.error,
-        }));
+        const failed = initialResults.map((r) => applyImageEvent(r, { kind: "finalize", reason: error.error }));
         setResults(failed);
         setIsProcessing(false);
         setPhase("results");
@@ -147,7 +144,7 @@ export function MossMode({ serverUrl, onBack }: MossModeProps) {
           case "image_start": {
             const idx = (event.data as { index: number }).index;
             if (localResults[idx]) {
-              localResults[idx] = { ...localResults[idx], status: "processing" };
+              localResults[idx] = applyImageEvent(localResults[idx], { kind: "start" });
             }
             break;
           }
@@ -164,11 +161,13 @@ export function MossMode({ serverUrl, onBack }: MossModeProps) {
             const idx = completeData.index;
             if (localResults[idx]) {
               localResults[idx] = {
-                ...localResults[idx],
-                status: completeData.status as CaptionResult["status"],
+                ...applyImageEvent(localResults[idx], {
+                  kind: "complete",
+                  status: completeData.status as "completed" | "failed",
+                  error: completeData.error,
+                }),
                 caption: completeData.caption,
                 reasoningContent: completeData.reasoningContent,
-                error: completeData.error,
                 cachedTokens: completeData.cachedTokens,
                 promptTokens: completeData.promptTokens,
               };
@@ -192,34 +191,25 @@ export function MossMode({ serverUrl, onBack }: MossModeProps) {
       });
 
       // Never leave images stuck as queued/processing: the stream ended
-      // (normal completion, user stop, or server error).
+      // (normal completion, user stop, or server error). Finalize is a
+      // guarded transition - terminal rows are left untouched.
       const aborted = abortControllerRef.current?.signal.aborted ?? false;
-      for (const result of localResults) {
-        if (result.status === "queued" || result.status === "processing") {
-          result.status = "failed";
-          result.error = aborted
-            ? "Stopped by user"
-            : serverError ?? "The stream ended before this image finished";
-        }
-      }
-      setResults([...localResults]);
+      const reason = aborted
+        ? "Stopped by user"
+        : serverError ?? "The stream ended before this image finished";
+      setResults(localResults.map((r) => applyImageEvent(r, { kind: "finalize", reason })));
 
       abortControllerRef.current = null;
       setIsProcessing(false);
       setPhase("results");
     } catch (error) {
       const aborted = error instanceof DOMException && error.name === "AbortError";
-      for (const result of localResults) {
-        if (result.status === "queued" || result.status === "processing") {
-          result.status = "failed";
-          result.error = aborted
-            ? "Stopped by user"
-            : error instanceof Error
-              ? error.message
-              : String(error);
-        }
-      }
-      setResults([...localResults]);
+      const reason = aborted
+        ? "Stopped by user"
+        : error instanceof Error
+          ? error.message
+          : String(error);
+      setResults(localResults.map((r) => applyImageEvent(r, { kind: "finalize", reason })));
       abortControllerRef.current = null;
       setIsProcessing(false);
       setPhase("results");
