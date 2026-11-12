@@ -54,6 +54,11 @@ src/
     llama-request.ts        — buildChatRequest(): id_slot pinning + cache_prompt + n_cache_reuse;
                               `stream` option (default true; moss mode sends `stream: false`)
     token-accumulate.ts     — applyTokenDelta(): client-side accumulation of delta token events
+    caption-lifecycle.ts    - applyImageEvent() (base per-image machine: For Anima/MOSS) and
+                              applyKrea2Event() (Krea 2 3-phase machine; `status` derived from
+                              `imagePhase` via statusForPhase so the two never disagree); terminal
+                              states absorbing + guarded finalize. Single source of truth for
+                              per-image status/phase in all three modes' SSE handlers
     caption-helpers.ts      — readFileBuffer, fetchWithTimeout, fetchWithRetry, streamResponse,
                               chatComplete (slot-pinned call + timeout + error mapping; optional
                               `stream` pass-through), readChatCompletion (non-streaming
@@ -279,7 +284,38 @@ The GET endpoint streams the entire session directory into an `img/` folder in t
 
 Concurrency = min(8, the server's `--parallel` discovered via /v1/models). When discovery fails (3s timeout, old server without `status.args`, model-id mismatch) the route falls back to concurrency 1 and emits a `warning` SSE event - in-flight requests never exceed the server's slot count. Each worker is pinned to its own llama.cpp slot for deterministic KV cache reuse.
 
+### Per-image lifecycle (client)
+
+`src/lib/caption-lifecycle.ts` is the single source of truth for the per-image
+status/phase state machines that all three mode components run inside their SSE
+handlers (and that the unit tests exercise directly). Two pure transition
+functions, both returning a new row (React-friendly) and preserving extra fields:
+
+- `applyImageEvent(row, event)` - the base machine used by For Anima and MOSS.
+  `queued -> processing -> completed | failed`, driven by `image_start`
+  (`start`), `image_complete` (`complete`), and a guarded `finalize` (stream ended).
+- `applyKrea2Event(row, event)` - Krea 2's 3-phase machine. `imagePhase` is the
+  single source of truth for pipeline position
+  (`idle -> captioning -> refining -> distilling -> completed | failed`); `status`
+  is always derived from it via `statusForPhase`, so the two fields cannot
+  disagree. Events: `start`, `phase`, `phase-complete` (one per phase), `finalize`.
+
+In both machines the terminal states (`completed`/`failed`) are absorbing: a late
+event is ignored, and `finalize` only affects rows still queued/processing. Token
+accumulation (deltas -> partials) and caption/token-stats data stay in the caller;
+the module owns only `status`, `imagePhase`, `error`, and partial clearing.
+
 ## Key Gotchas
+
+### Krea 2 status stays "processing" until phase 3
+
+In Krea 2, `status` is derived from `imagePhase` (see caption-lifecycle.ts). A row
+stays `processing` through all three phases and only becomes `completed` when
+phase 3 (distill) completes - it is NOT `completed` after phase 1. That is
+intentional: the image is still refining/distilling, so marking it completed early
+would show a green dot / full-opacity thumbnail mid-pipeline and would let the
+finalize guard skip a stream that ends between phases. Do not "fix" this back to
+marking a row completed after each phase's `*_complete` event.
 
 ### No Auth Header
 

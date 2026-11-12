@@ -14,6 +14,9 @@ interface ModelSelectorProps {
 
 export function ModelSelector({ serverUrl }: ModelSelectorProps) {
   const { state, setModel, setModelParallel } = useSession();
+  // Fetch state machine: idle -> loading -> ready (models set) | error.
+  // hasFetched runs fetchModels exactly once on mount, even if the callback
+  // identity changes (it depends on state.model).
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

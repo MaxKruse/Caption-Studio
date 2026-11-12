@@ -10,6 +10,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useSession } from "@/hooks/use-session";
 import { applyTokenDelta } from "@/lib/token-accumulate";
+import { applyKrea2Event, type Krea2ImagePhase } from "@/lib/caption-lifecycle";
 import { consumeSseStream } from "@/lib/sse-client";
 import { triggerDownload } from "@/lib/download";
 import { CaptionResult, stopCaptionSession } from "@/lib/caption-result";
@@ -28,11 +29,10 @@ import { Textarea } from "@/components/ui/textarea";
 // ---------------------------------------------------------------------------
 
 type Phase = "upload" | "configure" | "processing" | "results";
-type ImagePhase = "captioning" | "refining" | "distilling" | "completed" | "failed";
 
 /** Krea 2 extends the shared result with the per-image pipeline phase. */
 interface Krea2CaptionResult extends CaptionResult {
-  imagePhase: "idle" | ImagePhase;
+  imagePhase: Krea2ImagePhase;
 }
 
 /** Accumulate phase token stats into the per-image totals. */
@@ -150,12 +150,7 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
 
       if (!response.ok) {
         const error = await response.json();
-        const failed = initialResults.map((r) => ({
-          ...r,
-          status: "failed" as const,
-          imagePhase: "failed" as const,
-          error: error.error,
-        }));
+        const failed = initialResults.map((r) => applyKrea2Event(r, { kind: "finalize", reason: error.error }));
         setResults(failed);
         setIsProcessing(false);
         setPhase("results");
@@ -181,25 +176,17 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
             const phaseData = event.data as { phase: string; index?: number };
             const idx = phaseData.index;
             if (idx !== undefined && localResults[idx]) {
-              const imagePhase = phaseData.phase as ImagePhase;
-              localResults[idx] = {
-                ...localResults[idx],
-                status: "processing",
-                imagePhase,
-                partialCaption: undefined,
-                partialReasoning: undefined,
-              };
+              localResults[idx] = applyKrea2Event(localResults[idx], {
+                kind: "phase",
+                phase: phaseData.phase as "captioning" | "refining" | "distilling",
+              });
             }
             break;
           }
           case "image_start": {
             const idx = (event.data as { index: number }).index;
             if (localResults[idx]) {
-              localResults[idx] = {
-                ...localResults[idx],
-                status: "processing",
-                imagePhase: "captioning",
-              };
+              localResults[idx] = applyKrea2Event(localResults[idx], { kind: "start" });
             }
             break;
           }
@@ -231,18 +218,17 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
             if (localResults[idx]) {
               localResults[idx] = withTokenStats(
                 {
-                  ...localResults[idx],
-                  status: completeData.status as CaptionResult["status"],
+                  ...applyKrea2Event(localResults[idx], {
+                    kind: "phase-complete",
+                    phase: 1,
+                    status: completeData.status as "completed" | "failed",
+                    error: completeData.error,
+                  }),
                   caption: completeData.caption,
                   reasoningContent: completeData.reasoningContent,
-                  error: completeData.error,
                 },
                 completeData
               );
-              // If failed, mark phase as failed
-              if (completeData.status === "failed") {
-                localResults[idx].imagePhase = "failed";
-              }
             }
             break;
           }
@@ -261,17 +247,17 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
             if (localResults[idx]) {
               localResults[idx] = withTokenStats(
                 {
-                  ...localResults[idx],
+                  ...applyKrea2Event(localResults[idx], {
+                    kind: "phase-complete",
+                    phase: 2,
+                    status: completeData.status as "completed" | "failed",
+                    error: completeData.status === "failed" ? "Refinement failed" : undefined,
+                  }),
                   caption: completeData.caption,
                   reasoningContent: completeData.reasoningContent,
                 },
                 completeData
               );
-              if (completeData.status === "failed") {
-                localResults[idx].imagePhase = "failed";
-                localResults[idx].status = "failed";
-                localResults[idx].error = "Refinement failed";
-              }
             }
             break;
           }
@@ -290,15 +276,14 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
             if (localResults[idx]) {
               localResults[idx] = withTokenStats(
                 {
-                  ...localResults[idx],
-                  status: completeData.status as CaptionResult["status"],
-                  imagePhase:
-                    completeData.status === "completed" ? "completed" : "failed",
+                  ...applyKrea2Event(localResults[idx], {
+                    kind: "phase-complete",
+                    phase: 3,
+                    status: completeData.status as "completed" | "failed",
+                    error: completeData.error,
+                  }),
                   caption: completeData.caption,
                   reasoningContent: completeData.reasoningContent,
-                  error: completeData.error,
-                  partialCaption: undefined,
-                  partialReasoning: undefined,
                 },
                 completeData
               );
@@ -322,36 +307,25 @@ export function Krea2Mode({ serverUrl, onBack }: Krea2ModeProps) {
       });
 
       // Never leave images stuck as queued/processing: the stream ended
-      // (normal completion, user stop, or server error).
+      // (normal completion, user stop, or server error). Finalize is a
+      // guarded transition - terminal rows are left untouched.
       const aborted = abortControllerRef.current?.signal.aborted ?? false;
-      for (const result of localResults) {
-        if (result.status === "queued" || result.status === "processing") {
-          result.status = "failed";
-          result.imagePhase = "failed";
-          result.error = aborted
-            ? "Stopped by user"
-            : serverError ?? "The stream ended before this image finished";
-        }
-      }
-      setResults([...localResults]);
+      const reason = aborted
+        ? "Stopped by user"
+        : serverError ?? "The stream ended before this image finished";
+      setResults(localResults.map((r) => applyKrea2Event(r, { kind: "finalize", reason })));
 
       abortControllerRef.current = null;
       setIsProcessing(false);
       setPhase("results");
     } catch (error) {
       const aborted = error instanceof DOMException && error.name === "AbortError";
-      for (const result of localResults) {
-        if (result.status === "queued" || result.status === "processing") {
-          result.status = "failed";
-          result.imagePhase = "failed";
-          result.error = aborted
-            ? "Stopped by user"
-            : error instanceof Error
-              ? error.message
-              : String(error);
-        }
-      }
-      setResults([...localResults]);
+      const reason = aborted
+        ? "Stopped by user"
+        : error instanceof Error
+          ? error.message
+          : String(error);
+      setResults(localResults.map((r) => applyKrea2Event(r, { kind: "finalize", reason })));
       abortControllerRef.current = null;
       setIsProcessing(false);
       setPhase("results");

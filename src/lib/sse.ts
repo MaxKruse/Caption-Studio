@@ -48,6 +48,10 @@ export function createSseStream(
   const encoder = new TextEncoder();
   const keepaliveMs = options.keepaliveMs ?? DEFAULT_KEEPALIVE_MS;
   let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
+  // Terminal flag: once set (by closeStream, an enqueue throw, or a consumer
+  // cancel), sendRaw/closeStream become no-ops and the keepalive timer stops.
+  // It guards against enqueuing to an already-cancelled ReadableStream, which
+  // would otherwise throw.
   let closed = false;
   let keepaliveInterval: ReturnType<typeof setInterval> | undefined;
 
